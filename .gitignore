@@ -1,0 +1,38 @@
+# Gradle build files and cache
+.gradle/
+build/
+out/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Kotlin Multiplatform
+.kotlin/
+*.hprof
+
+# JetBrains IntelliJ IDEA / WebStorm / Android Studio
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+*.tmp
+*.bak
+
+# Compose Native Distributions (Keep source, ignore local output packages)
+build/compose/binaries/
+build/compose/tmp/
+
+# User Scratch & Local Overrides
+local.properties
+scratch/
+*.swp
+*~
