@@ -30,6 +30,7 @@ desktop.ini
 # Compose Native Distributions (Keep source, ignore local output packages)
 build/compose/binaries/
 build/compose/tmp/
+dist/
 
 # User Scratch & Local Overrides
 local.properties
