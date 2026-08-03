@@ -75,7 +75,7 @@ object FileManager {
         }
     }
 
-    private fun generateStandaloneHtml(state: PresentationState): String {
+    internal fun generateStandaloneHtml(state: PresentationState): String {
         val theme = state.currentTheme
         val bgHex = String.format("#%06X", 0xFFFFFF and theme.background.value.toInt())
         val surfaceHex = String.format("#%06X", 0xFFFFFF and theme.surface.value.toInt())
@@ -159,12 +159,13 @@ object FileManager {
                     .quote { font-size: 1.8rem; font-style: italic; color: $textPrimaryHex; border-left: 4px solid $primaryHex; padding-left: 20px; margin-top: 30px; }
                     .quote cite { display: block; font-size: 1rem; color: $textMutedHex; margin-top: 12px; font-style: normal; font-weight: bold; }
                     .metric { margin-top: 30px; }
-                    .metric-val { display: block; font-size: 4rem; font-weight: 900; color: $primaryHex; }
-                    .metric-lbl { font-size: 1.2rem; color: $textMutedHex; text-transform: uppercase; letter-spacing: 2px; }
-                    .data-table { width: 100%; border-collapse: collapse; margin-top: 20px; border-radius: 8px; overflow: hidden; background: $surfaceHex; }
-                    .data-table th, .data-table td { padding: 12px 16px; text-align: left; color: $textPrimaryHex; border-bottom: 1px solid rgba(255,255,255,0.08); }
-                    .data-table th { background: rgba(255,255,255,0.05); color: $primaryHex; font-weight: bold; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1px; }
-                    .slide-footer { display: flex; justify-content: space-between; font-size: 0.85rem; color: $textMutedHex; font-family: monospace; }
+                    .metric-val { display: block; font-size: 4.5rem; font-weight: 900; color: $primaryHex; line-height: 1; }
+                    .metric-lbl { display: block; font-size: 1.3rem; color: $textMutedHex; margin-top: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+                    .data-table { width: 100%; border-collapse: collapse; margin-top: 24px; font-size: 1.1rem; }
+                    .data-table th, .data-table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); color: $textPrimaryHex; }
+                    .data-table th { background: rgba(255,255,255,0.05); color: $primaryHex; font-weight: 700; }
+                    .slide-image { max-height: 300px; object-fit: contain; border-radius: 8px; margin-top: 20px; }
+                    .slide-footer { display: flex; justify-content: space-between; font-size: 0.9rem; color: $textMutedHex; font-weight: 500; }
                 </style>
             </head>
             <body>
@@ -190,7 +191,7 @@ object FileManager {
         """.trimIndent()
     }
 
-    private fun escapeHtml(text: String): String {
+    internal fun escapeHtml(text: String): String {
         return text.replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
