@@ -1,6 +1,6 @@
 # 👑 Skaldoria — Comprehensive User Guide & Feature Manual
 
-**The Realm of the Master Storyteller**  
+**The Realm of the Master Storyteller**
 *A 120 FPS native presentation studio powered by Kotlin Multiplatform & Compose Desktop.*
 
 ---
@@ -35,7 +35,7 @@
    - [Audience Live Interaction Portal (`/audience`)](#audience-live-interaction-portal-audience)
 9. [Themes, Corporate Access Codes & Contrast Science](#9-themes-corporate-access-codes--contrast-science)
    - [Selecting Themes](#selecting-themes)
-   - [Unlocking Restricted Corporate Themes (`DB_CORP_2026`)](#unlocking-restricted-corporate-themes)
+   - [Unlocking Restricted Corporate Themes](#unlocking-restricted-corporate-themes)
    - [WCAG 2.1 AA Adaptive Contrast Engine](#wcag-21-aa-adaptive-contrast-engine)
 10. [Exporting Decks (HTML & PDF)](#10-exporting-decks-html--pdf)
 11. [Complete Keyboard Shortcuts Reference](#11-complete-keyboard-shortcuts-reference)
@@ -44,7 +44,7 @@
 
 ## 1. Introduction & Philosophy
 
-Skaldoria transforms Markdown files into modern, interactive presentation decks rendered at **120 FPS** using hardware-accelerated Compose Desktop. 
+Skaldoria transforms Markdown files into modern, interactive presentation decks rendered at **120 FPS** using hardware-accelerated Compose Desktop.
 
 ### Core Principles
 - **Story Over Menus**: You write in standard Markdown text; Skaldoria handles visual design, typography, contrast ratios, and animations.
@@ -329,7 +329,6 @@ Choose from curated high-contrast presentation themes in the top bar:
 ### Unlocking Restricted Corporate Themes
 Enterprise corporate themes (e.g. **Deutsche Börse Executive**) are gated behind security access codes:
 1. Click the **Theme Selector** -> **Corporate Themes**.
-2. Enter the authorized access code: `DB_CORP_2026`.
 3. The theme instantly unlocks and applies across all editor and presentation surfaces.
 
 ### WCAG 2.1 AA Adaptive Contrast Engine

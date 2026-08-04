@@ -96,7 +96,7 @@ fun UnlockCorporateThemeDialog(
                             errorMessage = null
                         },
                         label = { Text("Corporate Access Code") },
-                        placeholder = { Text("e.g. DB_CORP_2026") },
+                        placeholder = { Text("******") },
                         leadingIcon = {
                             Icon(Icons.Default.VpnKey, contentDescription = null, tint = theme.primary)
                         },

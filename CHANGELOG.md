@@ -27,7 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Recursive-descent brace matching supporting arbitrarily nested fractions (`\frac{a}{b}`), roots, subscripts, and superscripts.
   - Complete mapping for Greek mathematical glyphs (`\alpha`, `\beta`, `\Delta`, `\Omega`, `\pi`) and operators.
 - **Restricted Corporate Themes & Access Code Gate**:
-  - Gated institutional themes ("Deutsche Börse Executive") behind secure access codes (`DB_CORP_2026`).
   - Interactive `UnlockCorporateThemeDialog` with instant live theme activation upon validation.
 - **WCAG 2.1 AA Adaptive Contrast Science**:
   - `AdaptiveContrastEnforcer` and `ColorScience` engines calculating relative luminance and adjusting HSL lightness.

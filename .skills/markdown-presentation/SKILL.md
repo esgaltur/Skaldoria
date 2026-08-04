@@ -272,7 +272,6 @@ $$ \Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_
 ## 7. Enterprise Corporate Themes & Access Control
 
 Skaldoria supports corporate enterprise styling (e.g., "Deutsche Börse" theme) with strict access control and WCAG 2.1 color contrast compliance:
-- **Access Code Gate**: Corporate themes are protected behind an unlock code dialog (`DB_CORP_2026`, `deutsche-borse`, `DB2026`).
 - **Adaptive Contrast Enforcer**: Automatically computes relative luminance using WCAG 2.1 standards ($CR \ge 4.5:1$), ensuring all text, keywords, and borders maintain crisp readability on light/white backgrounds.
 
 ---
