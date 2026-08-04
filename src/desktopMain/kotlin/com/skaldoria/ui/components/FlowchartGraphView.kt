@@ -94,9 +94,10 @@ fun FlowchartGraphView(
             labelWidths = labelWidths
         )
 
-        // 3. Draw edges from the scene.
+        // 3. Draw subgraph frames, then edges, into one canvas behind the node cards.
         val edgePlaceable = subcompose("edges") {
             Canvas(Modifier) {
+                drawSubgraphFrames(diagram.groups, scene, theme, measurer)
                 drawFlowchartEdges(scene, theme, measurer)
             }
         }.first().measure(Constraints.fixed(scene.width, scene.height))
@@ -118,6 +119,69 @@ private val EDGE_LABEL_STYLE = TextStyle(
     fontWeight = FontWeight.SemiBold,
     fontFamily = FontFamily.Monospace
 )
+
+/** Title style for a `subgraph` frame — shares one definition with its measurement. */
+private val GROUP_TITLE_STYLE = TextStyle(
+    fontSize = 11.sp,
+    fontWeight = FontWeight.Bold,
+    fontFamily = FontFamily.Monospace
+)
+
+/** Breathing room between a subgraph's member nodes and its frame. */
+private const val GROUP_PADDING = 18f
+private const val GROUP_TITLE_BAND = 20f
+
+/**
+ * Draws a labelled frame around each `subgraph`'s member nodes.
+ *
+ * The layout engine has no notion of clusters, so the frame is derived *after* arrangement
+ * from the bounding box of the members. That keeps subgraph support entirely additive — a
+ * diagram without them lays out exactly as before — at the cost of not guaranteeing that a
+ * group's members end up adjacent. In practice they do, because members are almost always
+ * connected to each other and the layered layout already places connected nodes together.
+ */
+private fun DrawScope.drawSubgraphFrames(
+    groups: List<DiagramGroup>,
+    scene: FlowchartScene,
+    theme: PresentationTheme,
+    measurer: TextMeasurer
+) {
+    for (group in groups) {
+        val rects = group.nodeIds.mapNotNull { scene.nodes[it]?.rect }
+        if (rects.isEmpty()) continue
+
+        val left = rects.minOf { it.left } - GROUP_PADDING
+        val top = rects.minOf { it.top } - GROUP_PADDING - GROUP_TITLE_BAND
+        val right = rects.maxOf { it.right } + GROUP_PADDING
+        val bottom = rects.maxOf { it.bottom } + GROUP_PADDING
+
+        drawRoundRect(
+            color = theme.primary.copy(alpha = 0.05f),
+            topLeft = Offset(left, top),
+            size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f)
+        )
+        drawRoundRect(
+            color = theme.primary.copy(alpha = 0.35f),
+            topLeft = Offset(left, top),
+            size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 1.2f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f))
+            )
+        )
+
+        if (group.title.isNotBlank()) {
+            val layoutResult = measurer.measure(
+                text = group.title,
+                style = GROUP_TITLE_STYLE.copy(color = theme.primary),
+                maxLines = 1
+            )
+            translate(left + 10f, top + 5f) { drawText(layoutResult) }
+        }
+    }
+}
 
 /**
  * Draws all edges from a flowchart scene.

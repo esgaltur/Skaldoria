@@ -122,8 +122,18 @@ flowchart LR
 ```
 - **Trigger**: Fenced code block with `mermaid` language tag or directive `<!-- layout: diagram -->`.
 - **Supported Diagram Types**:
-  - `flowchart LR` / `graph TD`: Flowcharts with node shapes `[Rectangle]`, `(Rounded)`, `{Decision}`, `((Circle))` and branch labels `-->|Yes|`.
-  - `sequenceDiagram`: Actor headers, message arrows `Alice ->> Bob: Hello`, and return signals.
+  - `flowchart LR` / `graph TD` — laid out from the real graph, so branches fan out rather than
+    forming a chain. Node shapes `[Rectangle]`, `(Rounded)`, `((Circle))`, `{Decision}`,
+    `{{Hexagon}}`, `[(Datastore)]`. Edge labels in both forms: `-->|Yes|` and mid-link
+    `-- Yes -->`. Chains (`A --> B --> C`) and dashed (`-.->`) / thick (`==>`) arrows work.
+    `subgraph <id> [Title] … end` draws a labelled frame around its members; `classDef`, `class`,
+    `style`, `linkStyle`, `click` and `direction` are skipped.
+  - `sequenceDiagram` — real lifelines and time axis. `participant X as Name` (declaration order is
+    preserved), all eight arrows (`->`, `->>`, `-->`, `-->>`, `-x`, `--x`, `-)`, `--)`),
+    `loop` / `alt` / `else` / `opt` / `par` frames, `Note over|left of|right of`,
+    `activate`/`deactivate` (and the `->>+` / `-->>-` shorthand), self-calls, and `autonumber`.
+- **Not supported**: state, class, ER and Gantt diagrams — those blocks fall back to showing their
+  source. Diagrams larger than the slide are scaled to fit rather than clipped.
 
 ---
 
@@ -205,7 +215,7 @@ Side-by-side layout displaying text alongside an architecture diagram or screens
 - Automated anycast DNS routing
 - Sub-5ms edge TLS termination
 
-![Global Network Topology](https://images.unsplash.com/photo-1558494949-ef010cbdcc31)
+![Global Network Topology](assets/topology.png)
 
 <!-- note: Point to the edge node clusters illustrated in the diagram. -->
 ```
@@ -222,6 +232,9 @@ Items can be persisted as HTML comment directives or task list items:
 ```markdown
 <!-- parking-lot: [ ] What is the maximum throughput per shard? | slide:4 -->
 <!-- parking-lot: [x] Can we run on air-gapped clusters? | Yes, via the offline bundle | slide:2 -->
+
+<!-- Skaldoria adds an id: field automatically when it writes these back: -->
+<!-- parking-lot: [ ] What is the maximum throughput per shard? | slide:4 | id:6f1c2b... -->
 ```
 
 Or as standard Markdown task lists:

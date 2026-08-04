@@ -302,6 +302,38 @@ Skaldoria includes an embedded, zero-dependency socket server (`java.net.ServerS
 2. Click **Start Server**.
 3. Point your smartphone camera at the generated **QR Code** to open the companion immediately.
 
+### Two links, two different levels of authority
+
+The dialog offers **two** QR codes, and the difference matters:
+
+| | **Speaker** link | **Audience** link |
+| :--- | :--- | :--- |
+| Drives the deck (next / jump / blackout / timer) | ✅ | ❌ |
+| Shows your speaker notes | ✅ | ❌ notes are withheld |
+| Votes in polls, asks and upvotes questions | ✅ | ✅ |
+| Dismisses questions | ✅ | ❌ |
+
+The **speaker link contains a session token — treat it like a password.** Anyone who has it can
+drive your presentation. Share the *audience* link with the room; never the speaker one.
+
+The token is regenerated every time you press **Start Server**, so a QR you shared at a previous
+talk stops working. Pressing **Stop Server** invalidates it immediately.
+
+### If your phone cannot reach the companion
+
+Almost always one of two things:
+
+1. **The phone is on a different network.** Guest Wi-Fi with client isolation is the usual culprit —
+   the phone can reach the internet but not your laptop.
+2. **The advertised address belongs to a virtual adapter.** If you run VirtualBox, VMware, Hyper-V,
+   Docker, WSL or a VPN, your machine has several IP addresses and only one of them is reachable
+   from the room.
+
+Skaldoria picks the adapter carrying your default route and ranks virtual adapters last, but when
+more than one candidate exists the pairing dialog shows a **network address picker**. Each entry
+names its adapter and is badged `ACTIVE` (the routed one) or `VIRTUAL`. If the QR does not work,
+pick a different address — one starting `192.168.` or `10.` that matches your phone's Wi-Fi.
+
 ### Speaker Mobile Remote (`/remote`)
 * **Slide Navigation**: Giant Next (<kbd>→</kbd>) and Prev (<kbd>←</kbd>) touch buttons with haptic feedback.
 * **Live Notes**: View current slide notes in large, scrollable text on your phone.
@@ -311,8 +343,16 @@ Skaldoria includes an embedded, zero-dependency socket server (`java.net.ServerS
 
 ### Audience Live Interaction Portal (`/audience`)
 * Audience members connect by scanning the QR code on the modal or directly from **Live Poll Slides**.
-* **Vote in Polls**: 1-tap voting on active slide options.
+* **Vote in Polls**: 1-tap voting on active slide options. The portal shows the poll for whichever
+  slide is **currently on screen**, so the room can only vote while you are on it.
+* **One vote per device.** Voting again *replaces* the previous choice rather than adding to it, so
+  totals cannot be inflated by refreshing the page.
 * **Ask Questions**: Submit questions for the speaker with live upvoting (+1) by other attendees.
+  Submissions are rate-limited per device and the queue is capped.
+
+> **Want to rehearse the whole flow?** Open `examples/companion_test_deck` — 17 slides covering
+> every layout with two live polls, Q&A and a pre-seeded parking lot. Each slide's speaker note
+> tells you what to try on it.
 
 ---
 

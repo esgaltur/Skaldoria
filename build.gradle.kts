@@ -13,7 +13,7 @@ group = "com.skaldoria"
  * `BuildInfo.VERSION` the UI displays — previously the number was written out twice here
  * and was not reachable from Kotlin at all, so the running app could not report itself.
  */
-val appVersion = "1.0.0"
+val appVersion = "1.2.0"
 version = appVersion
 
 /**
