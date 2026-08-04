@@ -28,6 +28,8 @@ import java.awt.datatransfer.StringSelection
 /**
  * Interactive pairing modal for connecting smartphones and tablets
  * as wireless slide clickers, speaker notes monitors, and audience live interaction.
+ *
+ * Features instant scannable QR Code generation and one-click URL copying.
  */
 @Composable
 fun RemotePairingDialog(
@@ -43,13 +45,15 @@ fun RemotePairingDialog(
     val presenterUrl = "$baseUrl/remote"
     val audienceUrl = "$baseUrl/audience"
 
-    var copiedPresenter by remember { mutableStateOf(false) }
-    var copiedAudience by remember { mutableStateOf(false) }
+    var selectedQrTab by remember { mutableStateOf(0) } // 0: Speaker Clicker, 1: Audience Portal
+    var copiedUrl by remember { mutableStateOf(false) }
+
+    val currentUrl = if (selectedQrTab == 0) presenterUrl else audienceUrl
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
-                .width(500.dp)
+                .width(520.dp)
                 .shadow(24.dp, RoundedCornerShape(20.dp), spotColor = theme.primary.copy(alpha = 0.25f))
                 .clip(RoundedCornerShape(20.dp))
                 .background(theme.surface)
@@ -79,7 +83,7 @@ fun RemotePairingDialog(
                                 .background(theme.primary.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.PhoneAndroid, null, tint = theme.primary, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.QrCode, null, tint = theme.primary, modifier = Modifier.size(20.dp))
                         }
                         Column {
                             Text(
@@ -89,7 +93,7 @@ fun RemotePairingDialog(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Live clicker, notes & interactive audience",
+                                text = "Scan QR code to connect mobile devices",
                                 color = theme.textMuted,
                                 fontSize = 12.sp
                             )
@@ -100,7 +104,7 @@ fun RemotePairingDialog(
                     }
                 }
 
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(16.dp))
 
                 // Server Status Card
                 Card(
@@ -108,7 +112,7 @@ fun RemotePairingDialog(
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = theme.background)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(14.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -125,7 +129,7 @@ fun RemotePairingDialog(
                                         .background(if (state.isRemoteServerRunning) theme.success else theme.textMuted)
                                 )
                                 Text(
-                                    text = if (state.isRemoteServerRunning) "SERVER ACTIVE" else "SERVER STOPPED",
+                                    text = if (state.isRemoteServerRunning) "SERVER RUNNING" else "SERVER STOPPED",
                                     color = if (state.isRemoteServerRunning) theme.success else theme.textMuted,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
@@ -152,98 +156,142 @@ fun RemotePairingDialog(
                         if (state.remoteServerError != null) {
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                text = "⚠️ Server Notice: ${state.remoteServerError}",
+                                text = "⚠️ Notice: ${state.remoteServerError}",
                                 color = Color(0xFFF87171),
                                 fontSize = 11.sp
                             )
                         }
+                    }
+                }
 
-                        if (state.isRemoteServerRunning) {
-                            Spacer(Modifier.height(14.dp))
+                if (state.isRemoteServerRunning) {
+                    Spacer(Modifier.height(16.dp))
 
-                            // 1. Presenter Clicker Link
-                            Text(
-                                text = "📱 Speaker Clicker & Notes URL:",
-                                color = theme.textSecondary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(Modifier.height(4.dp))
+                    // QR Mode Selector Tabs
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(theme.background)
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                selectedQrTab = 0
+                                copiedUrl = false
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selectedQrTab == 0) theme.surfaceVariant else Color.Transparent,
+                                contentColor = if (selectedQrTab == 0) theme.primary else theme.textMuted
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(theme.surface)
-                                    .border(1.dp, theme.cardBorder, RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text(
-                                    text = presenterUrl,
-                                    color = theme.primary,
-                                    fontSize = 13.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                IconButton(
-                                    onClick = {
-                                        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(presenterUrl), null)
-                                        copiedPresenter = true
-                                    },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.ContentCopy,
-                                        "Copy",
-                                        tint = if (copiedPresenter) theme.success else theme.textMuted,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
+                                Icon(Icons.Default.PhoneAndroid, null, modifier = Modifier.size(15.dp))
+                                Text("Speaker Remote", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
+                        }
 
-                            Spacer(Modifier.height(12.dp))
-
-                            // 2. Audience Interaction Link
-                            Text(
-                                text = "👥 Audience Live Polls & Q&A URL:",
-                                color = theme.accent,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(Modifier.height(4.dp))
+                        Button(
+                            onClick = {
+                                selectedQrTab = 1
+                                copiedUrl = false
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selectedQrTab == 1) theme.surfaceVariant else Color.Transparent,
+                                contentColor = if (selectedQrTab == 1) theme.accent else theme.textMuted
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(theme.surface)
-                                    .border(1.dp, theme.cardBorder, RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text(
-                                    text = audienceUrl,
-                                    color = theme.accent,
-                                    fontSize = 13.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                IconButton(
-                                    onClick = {
-                                        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(audienceUrl), null)
-                                        copiedAudience = true
-                                    },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.ContentCopy,
-                                        "Copy",
-                                        tint = if (copiedAudience) theme.success else theme.textMuted,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
+                                Icon(Icons.Default.People, null, modifier = Modifier.size(15.dp))
+                                Text("Audience Portal", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    // Scannable QR Code Canvas Card
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                        modifier = Modifier
+                            .size(190.dp)
+                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            QrCodeView(
+                                content = currentUrl,
+                                modifier = Modifier.size(170.dp),
+                                darkColor = if (selectedQrTab == 0) Color(0xFF0F172A) else Color(0xFF0F172A),
+                                lightColor = Color.White,
+                                quietZoneModules = 2,
+                                cornerRadius = 12.dp
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    Text(
+                        text = if (selectedQrTab == 0)
+                            "Point phone camera to open Speaker Clicker & Notes"
+                        else
+                            "Audience scans this to participate in Live Polls & Q&A",
+                        color = theme.textMuted,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // URL Copy Box
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(theme.background)
+                            .border(1.dp, theme.cardBorder, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = currentUrl,
+                            color = if (selectedQrTab == 0) theme.primary else theme.accent,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                        IconButton(
+                            onClick = {
+                                Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(currentUrl), null)
+                                copiedUrl = true
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                if (copiedUrl) Icons.Default.Check else Icons.Default.ContentCopy,
+                                "Copy URL",
+                                tint = if (copiedUrl) theme.success else theme.textMuted,
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
                     }
                 }
@@ -257,7 +305,7 @@ fun RemotePairingDialog(
                 ) {
                     Icon(Icons.Default.Wifi, null, tint = theme.accent, modifier = Modifier.size(16.dp))
                     Text(
-                        text = "Devices must be connected to the same local network.",
+                        text = "Phone & laptop must be connected to the same Wi-Fi network.",
                         color = theme.textMuted,
                         fontSize = 11.sp
                     )

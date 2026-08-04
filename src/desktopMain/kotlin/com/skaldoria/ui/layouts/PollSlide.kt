@@ -27,6 +27,7 @@ import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideElement
 import com.skaldoria.remote.RemoteCompanionServer
 import com.skaldoria.theme.PresentationTheme
+import com.skaldoria.ui.components.QrCodeView
 
 @Composable
 fun PollSlide(
@@ -194,41 +195,67 @@ fun PollSlide(
             }
         }
 
-        // Live Joining Banner
+        // Live Joining Banner with Scannable QR Code
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(14.dp))
                 .background(theme.surfaceVariant.copy(alpha = 0.6f))
-                .border(1.dp, theme.cardBorder, RoundedCornerShape(12.dp))
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .border(1.dp, theme.cardBorder, RoundedCornerShape(14.dp))
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Icon(Icons.Default.PhoneAndroid, null, tint = theme.primary, modifier = Modifier.size(16.dp))
-                Text(
-                    text = "Vote from phone:",
-                    color = theme.textMuted,
-                    fontSize = 13.sp
-                )
-                Text(
-                    text = serverUrl,
-                    color = theme.primary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace
-                )
+                // High-Contrast QR Code for Instant Smartphone Camera Scanning
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.White)
+                        .padding(2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    QrCodeView(
+                        content = serverUrl,
+                        modifier = Modifier.fillMaxSize(),
+                        darkColor = Color(0xFF0F172A),
+                        lightColor = Color.White,
+                        quietZoneModules = 1,
+                        cornerRadius = 4.dp
+                    )
+                }
+
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Default.PhoneAndroid, null, tint = theme.primary, modifier = Modifier.size(15.dp))
+                        Text(
+                            text = "Scan QR or visit link to vote:",
+                            color = theme.textMuted,
+                            fontSize = 12.sp
+                        )
+                    }
+                    Text(
+                        text = serverUrl,
+                        color = theme.primary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
             }
 
             Text(
                 text = "Total Votes: $totalVotes",
                 color = theme.accent,
                 fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
+                fontSize = 14.sp,
                 fontFamily = FontFamily.Monospace
             )
         }

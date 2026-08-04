@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **WCAG 2.1 AA Adaptive Contrast Science**:
   - `AdaptiveContrastEnforcer` and `ColorScience` engines calculating relative luminance and adjusting HSL lightness.
   - Guarantees $CR \ge 4.5:1$ across all light surfaces, eliminating low-contrast light gray syntax collisions.
+- **Pure Kotlin QR Code Generator & Visual Pairing**:
+  - Zero-dependency ISO/IEC 18004 Model 2 QR generator (`QrCodeGenerator`) rendering directly on GPU-accelerated Compose canvases (`QrCodeView`).
+  - Interactive QR switcher in `RemotePairingDialog` allowing instant smartphone scanning for both Speaker Remote and Audience Portal.
+  - Scannable high-contrast QR badge embedded directly into live `PollSlide` presentation footers for frictionless audience participation.
 - **Zero-Dependency Native Socket Companion Server**:
   - Re-engineered HTTP/1.1 micro-server using standard `java.net.ServerSocket` in `java.base`, eliminating all `com.sun.net.httpserver` JPMS module errors across minimal JREs.
   - Sub-millisecond cold boot latency and 0 KB external footprint.
