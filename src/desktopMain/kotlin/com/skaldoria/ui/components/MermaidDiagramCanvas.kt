@@ -4,15 +4,15 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowColumn
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material3.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,12 +23,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.skaldoria.core.diagram.SequenceDiagramParser
 import com.skaldoria.theme.PresentationTheme
 
 /**
@@ -243,6 +243,13 @@ fun MermaidDiagramCanvas(
     var showRawCode by remember { mutableStateOf(false) }
     val diagram = remember(code) { MermaidParser.parse(code) }
 
+    // MMD-2/MMD-3: sequence diagrams get their own model and renderer. The flowchart
+    // node/edge model cannot express ordering or nesting, so reusing it dropped
+    // participants, half the arrow types, and every block construct.
+    val sequence = remember(code) {
+        if (diagram.type == "sequence") SequenceDiagramParser.parse(code) else null
+    }
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -317,15 +324,15 @@ fun MermaidDiagramCanvas(
                         .padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (diagram.nodes.isEmpty()) {
+                    if (sequence != null && !sequence.isEmpty) {
+                        SequenceDiagramView(sequence, theme, Modifier.fillMaxSize())
+                    } else if (diagram.nodes.isEmpty()) {
                         Text(
                             text = code,
                             color = theme.textMuted,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 13.sp
                         )
-                    } else if (diagram.type == "sequence") {
-                        SequenceDiagramRenderer(diagram, theme)
                     } else {
                         FlowchartDiagramRenderer(diagram, theme)
                     }
@@ -556,98 +563,6 @@ private fun ArrowConnector(
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SequenceDiagramRenderer(
-    diagram: ParsedDiagram,
-    theme: PresentationTheme
-) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.SpaceBetween
-    ) {
-        // Actors Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceAround
-        ) {
-            diagram.nodes.forEach { actor ->
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = theme.surfaceVariant,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, theme.primary)
-                ) {
-                    Text(
-                        text = actor.label,
-                        color = theme.textPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                    )
-                }
-            }
-        }
-
-        // Sequence Messages
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            diagram.edges.forEach { edge ->
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = theme.background.copy(alpha = 0.5f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, theme.cardBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "${edge.fromId} ➔ ${edge.toId}",
-                            color = theme.primary,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = edge.label ?: "",
-                            color = theme.textPrimary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-        }
-
-        // Actors Footer
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceAround
-        ) {
-            diagram.nodes.forEach { actor ->
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = theme.surfaceVariant,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, theme.primary)
-                ) {
-                    Text(
-                        text = actor.label,
-                        color = theme.textPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                     )
                 }
             }

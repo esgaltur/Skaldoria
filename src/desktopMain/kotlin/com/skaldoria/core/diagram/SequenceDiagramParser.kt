@@ -158,9 +158,11 @@ object SequenceDiagramParser {
                 mentionOrder.add(toId)
 
                 steps.add(SequenceStep.Message(fromId, toId, match.groupValues[5].trim(), arrow))
-                // `A->>+B` activates the receiver, `A->>-B` deactivates it.
+                // Mermaid's shorthand is asymmetric: `A->>+B` activates the *receiver*,
+                // while `B-->>-A` deactivates the *sender* — the `-` closes the activation
+                // the replying participant was already inside.
                 if (activation == "+") steps.add(SequenceStep.Activation(toId, true))
-                if (activation == "-") steps.add(SequenceStep.Activation(toId, false))
+                if (activation == "-") steps.add(SequenceStep.Activation(fromId, false))
             }
         }
 
