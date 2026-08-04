@@ -99,8 +99,8 @@ fun FullscreenDeck(
         if (currentSlide != null) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize(0.92f)
-                    .aspectRatio(16f / 9f),
+                    .fillMaxSize()
+                    .padding(horizontal = 28.dp, vertical = 20.dp),
                 contentAlignment = Alignment.Center
             ) {
                 AnimatedContent(

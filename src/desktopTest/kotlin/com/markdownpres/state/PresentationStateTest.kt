@@ -88,8 +88,12 @@ class PresentationStateTest {
         assertFalse(state.isPresenterModeActive)
         assertTrue(state.isTimerRunning)
 
+        state.isFullscreen = false
+        state.isPresenterModeActive = false
+
         state.startPresenting(presenterMode = true)
         assertTrue(state.isPresenterModeActive)
+        assertTrue(state.isFullscreen)
     }
 
     @Test

@@ -9,13 +9,14 @@ class BuiltinThemesTest {
     @Test
     fun testBuiltinThemesCompleteness() {
         val themes = BuiltinThemes.all
-        assertEquals(4, themes.size)
+        assertEquals(5, themes.size)
 
         val themeNames = themes.map { it.name }.toSet()
         assertTrue(themeNames.contains("Nord Dark"))
         assertTrue(themeNames.contains("Sleek Light"))
         assertTrue(themeNames.contains("Cyber Midnight"))
         assertTrue(themeNames.contains("Minimalist Editorial"))
+        assertTrue(themeNames.contains("Deutsche Börse"))
     }
 
     @Test

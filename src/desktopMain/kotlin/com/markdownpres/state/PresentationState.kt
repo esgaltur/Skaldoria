@@ -276,6 +276,7 @@ class PresentationState(
         isTimerRunning = true
         if (presenterMode) {
             isPresenterModeActive = true
+            isFullscreen = true
         } else {
             isFullscreen = true
         }
