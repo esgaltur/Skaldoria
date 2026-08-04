@@ -108,7 +108,33 @@ object BuiltinThemes {
         badgeText = Color(0xFFC2410C)
     )
 
-    val all = listOf(NordDark, SleekLight, CyberMidnight, MinimalistEditorial)
+    val DeutscheBorseExecutive = PresentationTheme(
+        id = "deutsche-borse-executive",
+        name = "Deutsche Börse Executive",
+        isDark = false,
+        background = Color(0xFFFFFFFF),
+        surface = Color(0xFFFFFFFF),
+        surfaceVariant = Color(0xFFF4F5F8),
+        cardBorder = Color(0xFFD2D2D2),
+        primary = Color(0xFF000099),
+        accent = Color(0xFFFFCC00),
+        success = Color(0xFF007A33),
+        warning = Color(0xFFC77700),
+        textPrimary = Color(0xFF1A1A2E),
+        textSecondary = Color(0xFF666666),
+        textMuted = Color(0xFF919191),
+        codeBackground = Color(0xFF14142B),
+        codeText = Color(0xFFF2F2F7),
+        codeKeyword = Color(0xFF7A7AFF),
+        codeString = Color(0xFF4CAF50),
+        codeComment = Color(0xFF919191),
+        codeNumber = Color(0xFFFFCC00),
+        codeHighlightLine = Color(0x22000099),
+        badgeBackground = Color(0xFFE6E6F5),
+        badgeText = Color(0xFF000099)
+    )
+
+    val all = listOf(NordDark, SleekLight, CyberMidnight, MinimalistEditorial, DeutscheBorseExecutive)
 
     fun getById(id: String): PresentationTheme = all.find { it.id == id } ?: NordDark
 }
