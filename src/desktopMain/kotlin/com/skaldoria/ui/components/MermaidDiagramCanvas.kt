@@ -334,7 +334,8 @@ fun MermaidDiagramCanvas(
                             fontSize = 13.sp
                         )
                     } else {
-                        FlowchartDiagramRenderer(diagram, theme)
+                        // MMD-1: laid out from the graph, not from parse order.
+                        FlowchartGraphView(diagram, theme)
                     }
                 }
             }
@@ -342,84 +343,8 @@ fun MermaidDiagramCanvas(
     }
 }
 
-/**
- * Finds the edge that actually joins [from] to [to].
- *
- * The previous predicate used `||`, which matched any edge merely *starting* at [from]
- * or *ending* at [to], so labels attached to the wrong connector (MMD-4).
- */
-private fun ParsedDiagram.edgeBetween(from: DiagramNode, to: DiagramNode): DiagramEdge? =
-    edges.find { it.fromId == from.id && it.toId == to.id }
-
-/**
- * Renders the node chain, wrapping onto additional lines instead of running off the canvas.
- *
- * `FlowRow`/`FlowColumn` replace the plain `Row`/`Column`, which measured each child
- * against the *remaining* main-axis space — past roughly six nodes later children were
- * handed a maxWidth near zero, collapsed to a sliver, and were then clipped by the
- * surface's rounded-corner clip (OVF-2). Combined with `FitToCanvas` upstream, content
- * now wraps first and shrinks second.
- *
- * This is a containment fix, not the real thing: nodes are still emitted in parse order as
- * a linear chain, so branches and merges are drawn wrong, and a connector at the end of a
- * wrapped line points into empty space. MMD-1 replaces this with a layered graph layout —
- * expect to delete this function rather than extend it.
- */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FlowchartDiagramRenderer(
-    diagram: ParsedDiagram,
-    theme: PresentationTheme
-) {
-    val nodes = diagram.nodes
-    if (diagram.isHorizontal) {
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalArrangement = Arrangement.Center
-        ) {
-            FlowchartChain(diagram, nodes, isHorizontal = true, theme = theme)
-        }
-    } else {
-        FlowColumn(
-            modifier = Modifier.fillMaxHeight(),
-            verticalArrangement = Arrangement.Center,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            FlowchartChain(diagram, nodes, isHorizontal = false, theme = theme)
-        }
-    }
-}
-
-/**
- * The node/connector emission shared by both orientations, which previously existed as
- * two near-identical copies differing only in the `isHorizontal` flag.
- */
-@Composable
-private fun FlowchartChain(
-    diagram: ParsedDiagram,
-    nodes: List<DiagramNode>,
-    isHorizontal: Boolean,
-    theme: PresentationTheme
-) {
-    nodes.forEachIndexed { index, node ->
-        NodeCard(node = node, theme = theme)
-
-        val next = nodes.getOrNull(index + 1)
-        if (next != null) {
-            val edge = diagram.edgeBetween(node, next)
-            ArrowConnector(
-                label = edge?.label,
-                isHorizontal = isHorizontal,
-                isDashed = edge?.isDashed ?: false,
-                theme = theme
-            )
-        }
-    }
-}
-
-@Composable
-private fun NodeCard(
+internal fun NodeCard(
     node: DiagramNode,
     theme: PresentationTheme
 ) {
@@ -465,106 +390,6 @@ private fun NodeCard(
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ArrowConnector(
-    label: String?,
-    isHorizontal: Boolean,
-    isDashed: Boolean,
-    theme: PresentationTheme
-) {
-    if (isHorizontal) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(horizontal = 8.dp)
-        ) {
-            if (label != null) {
-                Surface(
-                    color = theme.surfaceVariant,
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.padding(bottom = 2.dp)
-                ) {
-                    Text(
-                        text = label,
-                        color = theme.primary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-
-            Canvas(modifier = Modifier.size(50.dp, 20.dp)) {
-                val y = size.height / 2
-                val startX = 0f
-                val endX = size.width
-
-                drawLine(
-                    color = theme.primary,
-                    start = Offset(startX, y),
-                    end = Offset(endX, y),
-                    strokeWidth = 2.5f,
-                    cap = StrokeCap.Round
-                )
-
-                // Arrow head
-                val arrowHead = Path().apply {
-                    moveTo(endX, y)
-                    lineTo(endX - 10f, y - 6f)
-                    lineTo(endX - 10f, y + 6f)
-                    close()
-                }
-                drawPath(arrowHead, color = theme.primary)
-            }
-        }
-    } else {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(vertical = 6.dp)
-        ) {
-            Canvas(modifier = Modifier.size(20.dp, 40.dp)) {
-                val x = size.width / 2
-                val startY = 0f
-                val endY = size.height
-
-                drawLine(
-                    color = theme.primary,
-                    start = Offset(x, startY),
-                    end = Offset(x, endY),
-                    strokeWidth = 2.5f,
-                    cap = StrokeCap.Round
-                )
-
-                // Arrow head
-                val arrowHead = Path().apply {
-                    moveTo(x, endY)
-                    lineTo(x - 6f, endY - 10f)
-                    lineTo(x + 6f, endY - 10f)
-                    close()
-                }
-                drawPath(arrowHead, color = theme.primary)
-            }
-
-            if (label != null) {
-                Surface(
-                    color = theme.surfaceVariant,
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.padding(start = 6.dp)
-                ) {
-                    Text(
-                        text = label,
-                        color = theme.primary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
             }
         }
     }
