@@ -10,7 +10,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
-import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.markdownpres.state.PresentationState
@@ -26,36 +25,45 @@ private fun loadAppIcon(): Painter? = runCatching {
     stream.use { BitmapPainter(loadImageBitmap(it)) }
 }.getOrNull()
 
-/**
- * Builds the window state for the fullscreen presentation deck. If a second
- * monitor is present, the deck is positioned and sized to that monitor and made
- * fullscreen there, keeping the editor and presenter console independent on the
- * primary screen. With a single monitor it simply goes fullscreen on the primary.
- */
-private fun fullscreenDeckWindowState(): WindowState {
-    val env = GraphicsEnvironment.getLocalGraphicsEnvironment()
-    val primary = env.defaultScreenDevice
-    val secondary = env.screenDevices.firstOrNull { it != primary }
-    return if (secondary != null) {
-        val b = secondary.defaultConfiguration.bounds
-        WindowState(
-            placement = WindowPlacement.Fullscreen,
-            position = WindowPosition(b.x.dp, b.y.dp),
-            size = DpSize(b.width.dp, b.height.dp)
-        )
-    } else {
-        WindowState(placement = WindowPlacement.Fullscreen)
-    }
-}
-
 fun main() = application {
     val state = remember { PresentationState() }
     val appIcon = remember { loadAppIcon() }
     val mainWindowState = rememberWindowState(width = 1240.dp, height = 840.dp)
 
-    // Main Studio Window — always hosts the editor (or the welcome screen).
-    // The fullscreen presentation deck is a separate, independent window (below)
-    // so toggling it never re-lays-out or repositions this window.
+    // Detect multi-monitor topology cleanly
+    val (primaryBounds, secondaryBounds) = remember {
+        val env = GraphicsEnvironment.getLocalGraphicsEnvironment()
+        val primary = env.defaultScreenDevice
+        val pBounds = primary.defaultConfiguration.bounds
+        val secondary = env.screenDevices.firstOrNull { it != primary }
+        val sBounds = secondary?.defaultConfiguration?.bounds
+        Pair(pBounds, sBounds)
+    }
+
+    // Fullscreen presentation deck window state — remembered across toggles.
+    // If a secondary monitor is connected, position it on the secondary display.
+    val deckWindowState = rememberWindowState(
+        placement = WindowPlacement.Maximized,
+        position = if (secondaryBounds != null) {
+            WindowPosition(secondaryBounds.x.dp, secondaryBounds.y.dp)
+        } else {
+            WindowPosition.PlatformDefault
+        },
+        size = if (secondaryBounds != null) {
+            DpSize(secondaryBounds.width.dp, secondaryBounds.height.dp)
+        } else {
+            DpSize(1280.dp, 720.dp)
+        }
+    )
+
+    // Speaker console window state — remembered so its position and size never reset on timer ticks.
+    // Positioned on the primary monitor with ample space for notes and timer.
+    val presenterWindowState = rememberWindowState(
+        position = WindowPosition((primaryBounds.x + 50).dp, (primaryBounds.y + 40).dp),
+        size = DpSize(1100.dp, 750.dp)
+    )
+
+    // Main Studio Window — always hosts the editor (or welcome screen)
     Window(
         onCloseRequest = ::exitApplication,
         icon = appIcon,
@@ -104,11 +112,8 @@ fun main() = application {
         }
     }
 
-    // Dedicated, independent Presentation Deck window. Opens fullscreen on the
-    // secondary monitor when one is available (so the editor / presenter console
-    // stay usable on the primary screen); otherwise fullscreen on the primary.
+    // Presentation Deck Window
     if (state.isFullscreen) {
-        val deckWindowState = remember { fullscreenDeckWindowState() }
         Window(
             onCloseRequest = { state.isFullscreen = false },
             icon = appIcon,
@@ -119,20 +124,14 @@ fun main() = application {
         }
     }
 
-    // Dedicated Secondary Speaker / Presenter Notes Window.
-    // Kept always-on-top so it stays visible when the main deck goes fullscreen
-    // (otherwise the borderless fullscreen deck covers it and it looks like the
-    // presenter view "disappeared").
+    // Dedicated Speaker / Presenter Notes Window
     if (state.isPresenterModeActive) {
         Window(
             onCloseRequest = { state.isPresenterModeActive = false },
             icon = appIcon,
             title = "Skaldoria — Speaker Console & Notes",
             alwaysOnTop = true,
-            state = WindowState(
-                width = 1080.dp,
-                height = 720.dp
-            )
+            state = presenterWindowState
         ) {
             PresenterView(
                 state = state,
