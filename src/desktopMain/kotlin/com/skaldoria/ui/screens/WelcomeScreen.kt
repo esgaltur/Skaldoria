@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.skaldoria.BuildInfo
 import com.skaldoria.state.PresentationState
 import com.skaldoria.theme.PresentationTheme
 
@@ -62,6 +63,15 @@ fun WelcomeScreen(state: PresentationState) {
                 fontSize = 16.sp,
                 fontFamily = FontFamily.Monospace,
                 letterSpacing = 2.sp
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                // Generated from `appVersion` in build.gradle.kts — see BuildInfo.
+                text = BuildInfo.DISPLAY_VERSION,
+                color = theme.textMuted.copy(alpha = 0.7f),
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.sp
             )
 
             Spacer(Modifier.height(40.dp))

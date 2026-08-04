@@ -365,7 +365,7 @@ object DeckExporter {
         // Footer
         g.color = textMutedColor
         g.font = Font("Monospaced", Font.PLAIN, 20)
-        g.drawString("SKALDORIA", 100, EXPORT_HEIGHT - 60)
+        g.drawString("SKALDORIA ${com.skaldoria.BuildInfo.DISPLAY_VERSION}", 100, EXPORT_HEIGHT - 60)
         val progressText = "${slide.index + 1} / $totalSlides"
         val progressWidth = g.fontMetrics.stringWidth(progressText)
         g.drawString(progressText, EXPORT_WIDTH - 100 - progressWidth, EXPORT_HEIGHT - 60)
@@ -406,7 +406,7 @@ object DeckExporter {
                     $elementsHtml
                 </div>
                 <div class="slide-footer">
-                    <span>${slide.layoutType.displayName}</span>
+                    <span>${slide.layoutType.displayName} · Skaldoria ${com.skaldoria.BuildInfo.DISPLAY_VERSION}</span>
                     <span>${slide.index + 1} / ${state.slides.size}</span>
                 </div>
             </div>

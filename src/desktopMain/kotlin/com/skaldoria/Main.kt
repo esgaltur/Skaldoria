@@ -74,7 +74,7 @@ fun main() = application {
             exitApplication()
         },
         icon = appIcon,
-        title = "Skaldoria Studio",
+        title = "Skaldoria Studio — ${BuildInfo.DISPLAY_VERSION}",
         state = mainWindowState,
         onKeyEvent = { event ->
             if (event.type == androidx.compose.ui.input.key.KeyEventType.KeyDown) {
@@ -136,7 +136,7 @@ fun main() = application {
         Window(
             onCloseRequest = { state.isFullscreen = false },
             icon = appIcon,
-            title = "Skaldoria — Presentation Deck",
+            title = "Skaldoria — Presentation Deck (${BuildInfo.DISPLAY_VERSION})",
             state = deckWindowState
         ) {
             FullscreenDeck(state)
@@ -148,7 +148,7 @@ fun main() = application {
         Window(
             onCloseRequest = { state.isPresenterModeActive = false },
             icon = appIcon,
-            title = "Skaldoria — Speaker Console & Notes",
+            title = "Skaldoria — Speaker Console & Notes (${BuildInfo.DISPLAY_VERSION})",
             alwaysOnTop = true,
             state = presenterWindowState
         ) {
