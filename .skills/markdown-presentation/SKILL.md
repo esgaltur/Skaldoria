@@ -1,20 +1,20 @@
 ---
 name: markdown-presentation
-description: Expert guide, syntax patterns, and best practices for creating engaging, high-impact presentations using standard Markdown with Skaldoria Presentation Studio. Use this skill whenever authoring slides, converting documents or notes to slide decks, structuring presentation outlines, adding syntax highlights, benchmark tables, quotes, hero metrics, or speaker notes.
+description: Expert guide, syntax patterns, and best practices for creating engaging, high-impact presentations using standard Markdown with Skaldoria Presentation Studio. Use this skill whenever authoring slides, converting documents or notes to slide decks, structuring presentation outlines, adding syntax highlights, Mermaid diagrams, LaTeX math equations, benchmark tables, quotes, hero metrics, pacing targets, or speaker notes.
 ---
 
 # Markdown Presentation Authoring Guide (Skaldoria Studio)
 
-This skill provides comprehensive guidelines and reference templates for authoring presentation decks using **pure standard Markdown** (without proprietary tags or heavy configuration).
+This skill provides comprehensive guidelines, syntax patterns, and best practices for authoring presentation decks using **pure standard Markdown** (without proprietary tags or heavy configuration).
 
 ---
 
 ## 1. Core Design Philosophy
 
 When composing slides in Markdown, follow the **One Idea Per Slide** principle:
-- **Scannability**: Audiences should understand the core message in under 3 seconds.
-- **Visual Rhythm**: Alternate between text/bullets, side-by-side code splits, hero quotes, data tables, and big metrics.
-- **Zero Proprietary Syntax**: Slides must remain 100% valid, readable Markdown anywhere (GitHub, Obsidian, IDEs).
+- **Scannability**: Audiences should grasp the core takeaway in under 3 seconds.
+- **Visual Rhythm**: Alternate between text/bullets, side-by-side code splits, Mermaid architecture diagrams, LaTeX formulas, hero quotes, data tables, and big metrics.
+- **Zero Proprietary Syntax**: Slides remain 100% valid, readable Markdown anywhere (GitHub, Obsidian, IDEs).
 
 ---
 
@@ -30,7 +30,7 @@ Always leave a blank line before and after the `---` separator.
 
 ## 3. Heuristic Layout Triggers & Syntax Reference
 
-The layout engine inspects the structural semantics of each slide section to select the optimal layout:
+The Skaldoria layout engine inspects the structural semantics of each slide section to automatically select the optimal layout:
 
 ### A. Title / Hero Slide (`SlideLayoutType.HERO_TITLE`)
 Used for opening decks, keynote intros, or section title cards.
@@ -87,12 +87,58 @@ fun render(slide: Slide) {
 
 ---
 
-### D. Data Table / Matrix Slide (`SlideLayoutType.DATA_TABLE`)
+### D. Mermaid Architecture & Flowchart Slide (`SlideLayoutType.DIAGRAM`)
+Renders interactive, styled node-and-arrow diagrams, sequence flows, and component pipelines natively.
+```markdown
+## Distributed Presentation Pipeline
+### Real-Time Presentation Sync Engine
+
+```mermaid
+flowchart LR
+    Editor[Markdown Studio] -->|Compile AST| Engine[Skaldoria Core]
+    Engine -->|Direct 120 FPS| Deck[Fullscreen Projector]
+    Engine -->|WebSocket Sync| Mobile[Companion Remote]
+    Engine -->|Auto Pacing| Presenter[Speaker HUD]
+```
+
+<!-- note: Point out the zero-allocation pipeline between the editor and the projector. -->
+```
+- **Trigger**: Fenced code block with `mermaid` language tag or directive `<!-- layout: diagram -->`.
+- **Supported Diagram Types**:
+  - `flowchart LR` / `graph TD`: Flowcharts with node shapes `[Rectangle]`, `(Rounded)`, `{Decision}`, `((Circle))` and branch labels `-->|Yes|`.
+  - `sequenceDiagram`: Actor headers, message arrows `Alice ->> Bob: Hello`, and return signals.
+
+---
+
+### E. LaTeX Mathematical Formula Slide (`SlideLayoutType.MATH_FORMULA`)
+Renders mathematical equations with typography, stacked fractions, root symbols, Greek glyphs, and superscripts/subscripts.
+```markdown
+## Algorithmic Pacing Formula
+### Speaker Rhythm Optimization
+
+$$ \Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{current} $$
+
+- **Pacing Delta ($\Delta t$)**: Computes exact time offset relative to scheduled slide milestones
+- **Target Allocation**: Automatically balances talk time across all slides in the deck
+
+<!-- note: Explain how the pacing delta calculates drift per slide. -->
+```
+- **Trigger**: `$$ ... $$` math block delimiters, ` ```math ```` code fences, or directive `<!-- layout: math -->`.
+- **Supported Math Syntax**:
+  - Fractions: `\frac{numerator}{denominator}`
+  - Roots: `\sqrt{x}` or `\sqrt[n]{x}`
+  - Greek Letters: `\alpha`, `\beta`, `\gamma`, `\delta`, `\Delta`, `\Psi`, `\Omega`, `\Sigma`, `\pi`
+  - Calculus & Operators: `\int`, `\sum`, `\prod`, `\lim`, `\approx`, `\neq`, `\le`, `\ge`, `\to`, `\Rightarrow`
+  - Subscripts & Superscripts: `x_i`, `a_{n-1}`, `x^2`, `e^{-i\pi}`
+
+---
+
+### F. Data Table / Matrix Slide (`SlideLayoutType.DATA_TABLE`)
 Renders comparison matrices, benchmark results, and feature grids with styled headers and zebra striping.
 ```markdown
 ## Framework Benchmark Matrix
 
-| Metric | Web / Electron | Flutter | Kotlin Multiplatform |
+| Metric | Web / Electron | Flutter | Skaldoria Studio |
 | :--- | :--- | :--- | :--- |
 | Memory Footprint | 350 MB - 600 MB | 95 MB | 45 MB - 65 MB |
 | Startup Latency | 1.8s - 3.2s | 0.8s | 0.25s (Instant) |
@@ -105,7 +151,7 @@ Renders comparison matrices, benchmark results, and feature grids with styled he
 
 ---
 
-### E. Big Quote Slide (`SlideLayoutType.BIG_QUOTE`)
+### G. Big Quote Slide (`SlideLayoutType.BIG_QUOTE`)
 High-impact editorial slide for thought leadership, philosophy, or keynote reflections.
 ```markdown
 ## Guiding Philosophy
@@ -119,7 +165,7 @@ High-impact editorial slide for thought leadership, philosophy, or keynote refle
 
 ---
 
-### F. Hero Metric Slide (`SlideLayoutType.BIG_METRIC`)
+### H. Hero Metric Slide (`SlideLayoutType.BIG_METRIC`)
 Stat callout displaying massive numbers, percentages, or growth metrics.
 ```markdown
 ## Performance SLA
@@ -132,7 +178,7 @@ Stat callout displaying massive numbers, percentages, or growth metrics.
 
 ---
 
-### G. Split: Text & Media Slide (`SlideLayoutType.SPLIT_TEXT_MEDIA`)
+### I. Split: Text & Media Slide (`SlideLayoutType.SPLIT_TEXT_MEDIA`)
 Side-by-side layout displaying text alongside an architecture diagram or screenshot.
 ```markdown
 ## Global Edge Network
@@ -163,7 +209,32 @@ Notes are extracted automatically for the Presenter View and are never displayed
 
 ---
 
-## 5. Live Presenter Controls & Keybindings
+## 5. Presenter Pacing Gauge & Rehearsal Optimization
+
+Skaldoria includes an intelligent Pacing HUD to prevent running overtime:
+- **Target Presets**: Set target talk duration (`5m`, `10m`, `15m`, `20m`, `30m`, `45m`, or `Off`).
+- **Live Rhythm Drift**: Calculates `idealElapsedSeconds` for the active slide and shows drift offset (e.g. `+30s BEHIND PACE` or `-15s AHEAD OF PACE`).
+- **Visual Status Badges**:
+  - 🟢 **ON TRACK** (Emerald): Within ±15 seconds of target pace
+  - 🔵 **AHEAD** (Cyan): Ahead of target schedule
+  - 🟠 **BEHIND** (Amber): Over 20 seconds behind schedule
+  - 🔴 **OVERTIME** (Red): Total allocated talk duration exceeded
+
+---
+
+## 6. Mobile Companion Remote Control
+
+Control presentations wirelessly from any smartphone or tablet:
+1. Open Presenter View (<kbd>F1</kbd> or <kbd>Ctrl+M</kbd>).
+2. Click **Mobile Remote** or scan the on-screen QR Code.
+3. Your mobile browser instantly pairs via local WebSocket to trigger:
+   - Next / Previous slide navigation
+   - Stage Blackout (<kbd>B</kbd>) and Whiteout (<kbd>W</kbd>)
+   - Real-time slide number and presentation status display
+
+---
+
+## 7. Live Presenter Controls & Keybindings
 
 | Action | Shortcut |
 | :--- | :--- |
@@ -173,28 +244,35 @@ Notes are extracted automatically for the Presenter View and are never displayed
 | **Toggle Pen Drawing Mode** | <kbd>P</kbd> |
 | **Undo Last Stroke** | <kbd>Ctrl+Z</kbd> |
 | **Clear Slide Annotations** | <kbd>C</kbd> |
+| **Blackout Screen (Stage Focus)** | <kbd>B</kbd> |
+| **Whiteout Screen (Brainstorming)** | <kbd>W</kbd> |
+| **Grid Slide Overview / Sorter** | <kbd>G</kbd> |
 | **Spotlight Quick Jump** | <kbd>Ctrl+K</kbd> / <kbd>Ctrl+P</kbd> |
+| **Export to PDF / HTML / Images** | <kbd>Ctrl+E</kbd> |
+| **Theme Studio & Custom Themes** | <kbd>Ctrl+Shift+T</kbd> |
+| **Presenter Console (Dual Monitor)**| <kbd>F1</kbd> / <kbd>Ctrl+M</kbd> |
+| **Fullscreen Presentation Deck** | <kbd>F5</kbd> / <kbd>Ctrl+Enter</kbd> |
 | **Exit Fullscreen / Close Modal** | <kbd>Esc</kbd> |
 
 ---
 
-## 6. Multi-File Presentations & Project Files (.mdpres)
+## 8. Multi-File Presentations & Project Manifests (`.skaldoria` / `.mdpres`)
 
 For large decks (30-100+ slides) or collaborative team presentations, split slides into separate markdown files managed by a project manifest.
 
 ### Structure of a Multi-File Presentation:
 ```
 my_presentation/
-├── deck.mdpres                 # Project Manifest
+├── deck.skaldoria              # Project Manifest
 └── slides/
     ├── 01_hero_title.md
-    ├── 02_problem_statement.md
-    ├── 03_architecture.md
+    ├── 02_architecture_diagram.md
+    ├── 03_math_pacing.md
     ├── 04_code_deep_dive.md
     └── 05_conclusion.md
 ```
 
-### Project Manifest (`deck.mdpres` or `deck.json`):
+### Project Manifest (`deck.skaldoria` or `deck.mdpres`):
 ```json
 {
   "name": "Cloud Native Keynote 2026",
@@ -202,8 +280,8 @@ my_presentation/
   "transition": "FADE",
   "slides": [
     "slides/01_hero_title.md",
-    "slides/02_problem_statement.md",
-    "slides/03_architecture.md",
+    "slides/02_architecture_diagram.md",
+    "slides/03_math_pacing.md",
     "slides/04_code_deep_dive.md",
     "slides/05_conclusion.md"
   ]
@@ -218,10 +296,8 @@ my_presentation/
 
 ---
 
-## 7. Curated Examples
+## 9. Export Options
 
-Refer to the included examples:
-- [Modular Project Deck (Multi-File)](examples/modular_project_deck/deck.mdpres)
-- [Technical Keynote Deck](examples/technical_keynote.md)
-- [Product & Startup Pitch](examples/product_pitch.md)
-- [Architecture Deep Dive](examples/architecture_deep_dive.md)
+- **Printable 16:9 PDF**: High-resolution print styling with complete KaTeX and Mermaid runtime rendering.
+- **Standalone HTML Presentation**: Zero-dependency single-file HTML package with built-in dark UI, slide transitions, keyboard controls, and auto-loaded KaTeX/Mermaid assets.
+- **Slide Image Bundle**: High-resolution 1920x1080 PNG image package zipped for distribution.

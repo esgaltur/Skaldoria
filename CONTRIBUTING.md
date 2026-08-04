@@ -10,9 +10,9 @@ All contributions to Skaldoria must strictly follow **SOLID principles**, **Clea
 
 ### 1. Single Responsibility Principle (SRP)
 - Keep components focused on a single responsibility:
-  - **Parsing**: Keep markdown parsing and AST transformations in `com.markdownpres.core.parser`.
-  - **State**: Keep reactive state mutations in `com.markdownpres.state.PresentationState`.
-  - **Persistence**: File and project I/O belongs in `com.markdownpres.project` and `com.markdownpres.export`.
+  - **Parsing**: Keep markdown parsing and AST transformations in `com.skaldoria.core.parser`.
+  - **State**: Keep reactive state mutations in `com.skaldoria.state.PresentationState`.
+  - **Persistence**: File and project I/O belongs in `com.skaldoria.project` and `com.skaldoria.export`.
   - **UI Renderers**: Compose UI functions must be purely presentational.
 
 ### 2. Open / Closed Principle (OCP)
