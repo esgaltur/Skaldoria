@@ -711,7 +711,7 @@ object RemoteCompanionServer {
 </head>
 <body>
     <div class="header">
-        <div class="logo">⚡ SKALDORIA</div>
+        <div class="logo">⚡ SKALDORIA <span style="font-size:0.7rem;color:#64748b;font-weight:600;">${com.skaldoria.BuildInfo.DISPLAY_VERSION}</span></div>
         <div class="timer-badge" id="timer">00:00</div>
     </div>
 
@@ -908,7 +908,7 @@ object RemoteCompanionServer {
 <body>
     <div class="header">
         <div class="brand">⚡ SKALDORIA AUDIENCE</div>
-        <div class="subtitle">Live Presentation Interactive Portal</div>
+        <div class="subtitle">Live Presentation Interactive Portal · ${com.skaldoria.BuildInfo.DISPLAY_VERSION}</div>
     </div>
 
     <!-- Active Poll Section -->
