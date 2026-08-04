@@ -56,6 +56,34 @@ object RemoteCompanionServer {
     private const val MAX_HEADER_COUNT = 64
     private const val MAX_BODY_BYTES = 1024 * 1024
 
+    /**
+     * SEC-5: per-client token bucket over write endpoints. Sized so ordinary use — voting,
+     * asking a question, upvoting a few — never trips it, while a script hammering the
+     * endpoint does.
+     */
+    private const val RATE_LIMIT_BURST = 12
+    private const val RATE_LIMIT_REFILL_PER_SECOND = 0.5
+
+    private class TokenBucket(var tokens: Double, var lastRefillNanos: Long)
+
+    private val rateBuckets = java.util.concurrent.ConcurrentHashMap<String, TokenBucket>()
+
+    private fun allowRequest(clientKey: String): Boolean {
+        val now = System.nanoTime()
+        val bucket = rateBuckets.computeIfAbsent(clientKey) { TokenBucket(RATE_LIMIT_BURST.toDouble(), now) }
+        synchronized(bucket) {
+            val elapsedSeconds = (now - bucket.lastRefillNanos) / 1_000_000_000.0
+            bucket.tokens = minOf(
+                RATE_LIMIT_BURST.toDouble(),
+                bucket.tokens + elapsedSeconds * RATE_LIMIT_REFILL_PER_SECOND
+            )
+            bucket.lastRefillNanos = now
+            if (bucket.tokens < 1.0) return false
+            bucket.tokens -= 1.0
+            return true
+        }
+    }
+
     fun isRunning(): Boolean = isRunningFlag.get()
 
     /** Pairing URL for the speaker's own device — carries the session token. Treat as a secret. */
@@ -166,6 +194,7 @@ object RemoteCompanionServer {
     fun stop() {
         isRunningFlag.set(false)
         sessionToken = ""
+        rateBuckets.clear()
         try {
             serverSocket?.close()
         } catch (_: Exception) {}
@@ -306,8 +335,13 @@ object RemoteCompanionServer {
                 queryParams.putAll(parseQueryParams(body))
             }
 
+            // SEC-5: on a LAN each audience device has its own address, so the peer
+            // address is a workable per-device identity for both rate limiting and
+            // one-ballot-per-device.
+            val clientKey = socket.inetAddress?.hostAddress ?: "unknown"
+
             // Route request
-            routeRequest(path, method, queryParams, headers, body, outputStream, state)
+            routeRequest(path, method, queryParams, headers, body, outputStream, state, clientKey)
         } catch (_: Exception) {
             // Socket or I/O error on client disconnect
         } finally {
@@ -338,10 +372,17 @@ object RemoteCompanionServer {
         headers: Map<String, String>,
         body: String,
         output: OutputStream,
-        state: PresentationState
+        state: PresentationState,
+        clientKey: String
     ) {
         if (path in WRITE_ENDPOINTS && method != "POST") {
             sendErrorResponse(output, "This endpoint requires POST", 405)
+            return
+        }
+
+        // SEC-5: throttle writes only — polling /api/state must stay free.
+        if (path in WRITE_ENDPOINTS && !allowRequest(clientKey)) {
+            sendErrorResponse(output, "Too many requests", 429)
             return
         }
 
@@ -368,7 +409,7 @@ object RemoteCompanionServer {
                 handleActionApi(output, params, state)
             }
             "/api/poll/vote" -> {
-                handlePollVoteApi(output, params, state)
+                handlePollVoteApi(output, params, state, clientKey)
             }
             "/api/qa/submit" -> {
                 handleQaSubmitApi(output, params, state)
@@ -465,13 +506,18 @@ object RemoteCompanionServer {
         }
     }
 
-    private fun handlePollVoteApi(output: OutputStream, params: Map<String, String>, state: PresentationState) {
+    private fun handlePollVoteApi(
+        output: OutputStream,
+        params: Map<String, String>,
+        state: PresentationState,
+        clientKey: String
+    ) {
         try {
             val slideIdx = (params["slideIndex"] ?: params["slide"])?.toIntOrNull() ?: state.currentSlideIndex
             val optionIdx = (params["optionIndex"] ?: params["option"])?.toIntOrNull()
 
             if (optionIdx != null && optionIdx >= 0) {
-                state.applyFromBackgroundThread { state.recordVote(slideIdx, optionIdx) }
+                state.applyFromBackgroundThread { state.recordVote(slideIdx, optionIdx, voterKey = clientKey) }
                 sendJsonResponse(output, """{"status":"ok", "votedSlide": $slideIdx, "votedOption": $optionIdx}""")
             } else {
                 sendJsonResponse(output, """{"status":"error", "message":"Invalid option"}""", 400)
@@ -570,6 +616,9 @@ object RemoteCompanionServer {
         401 -> "Unauthorized"
         404 -> "Not Found"
         405 -> "Method Not Allowed"
+        411 -> "Length Required"
+        413 -> "Payload Too Large"
+        429 -> "Too Many Requests"
         else -> "Internal Server Error"
     }
 

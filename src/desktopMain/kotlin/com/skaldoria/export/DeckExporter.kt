@@ -10,6 +10,10 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import javax.imageio.ImageIO
@@ -25,9 +29,15 @@ object DeckExporter {
     private const val EXPORT_HEIGHT = 1080
 
     /**
-     * Direct 1-click export of presentation to a native vector PDF file.
-     * Uses headless Chromium/Edge when available to generate a pixel-perfect 16:9 PDF.
-     * Gracefully falls back to printable HTML if no browser engine is detected.
+     * Direct 1-click export to a native vector PDF, via headless Chromium/Edge when one is
+     * available, falling back to printable HTML otherwise.
+     *
+     * PRF-5: the file dialog must stay on the calling (UI) thread, but everything after it
+     * — rendering, a 15-second `waitFor`, and image encoding — is moved onto [Dispatchers.IO].
+     * Previously the whole thing blocked the UI, freezing the app for up to 15 seconds.
+     *
+     * @param onSaved invoked on the IO thread once the file exists; marshal to the UI
+     *   yourself if you touch Compose state.
      */
     fun exportPdf(state: PresentationState, onSaved: (File) -> Unit) {
         val dialog = FileDialog(null as Frame?, "Export Presentation as PDF", FileDialog.SAVE)
@@ -37,60 +47,69 @@ object DeckExporter {
         val dir = dialog.directory
         val filename = dialog.file
         if (dir != null && filename != null) {
-            val targetPdf = File(dir, if (filename.endsWith(".pdf", ignoreCase = true)) filename else "$filename.pdf")
-
-            // 1. Generate clean print HTML to temp file
-            val tempHtml = File.createTempFile("skaldoria_deck_", ".html")
-            tempHtml.deleteOnExit()
-            val htmlContent = generatePrintableHtml(state, autoTriggerPrint = false)
-            tempHtml.writeText(htmlContent, Charsets.UTF_8)
-
-            // 2. Attempt Headless Chromium/Edge Vector PDF Rendering
-            val browserBinary = findHeadlessBrowser()
-            if (browserBinary != null) {
-                try {
-                    // EXP-5: the child writes progress to stderr. Left undrained, the pipe
-                    // buffer fills, the browser blocks forever, waitFor() times out, and
-                    // the code silently degrades to the HTML path — the cause of PDF
-                    // export "randomly" producing HTML instead.
-                    val process = ProcessBuilder(
-                        browserBinary.absolutePath,
-                        "--headless=new",
-                        "--disable-gpu",
-                        "--allow-file-access-from-files",
-                        "--no-pdf-header-footer",
-                        "--print-to-pdf=${targetPdf.absolutePath}",
-                        tempHtml.toURI().toString()
-                    )
-                        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                        .redirectError(ProcessBuilder.Redirect.DISCARD)
-                        .start()
-
-                    val finished = process.waitFor(15, TimeUnit.SECONDS)
-                    if (finished && targetPdf.exists() && targetPdf.length() > 0) {
-                        onSaved(targetPdf)
-                        try {
-                            Desktop.getDesktop().open(targetPdf)
-                        } catch (_: Exception) {}
-                        return
-                    }
-                } catch (_: Exception) {
-                    // Fallback below
-                }
-            }
-
-            // 3. Fallback: Save printable HTML and open default browser with auto-print
-            val fallbackHtml = File(dir, targetPdf.nameWithoutExtension + ".html")
-            fallbackHtml.writeText(generatePrintableHtml(state, autoTriggerPrint = true), Charsets.UTF_8)
-            onSaved(fallbackHtml)
-            try {
-                Desktop.getDesktop().browse(fallbackHtml.toURI())
-            } catch (_: Exception) {}
+            // Snapshot what the background job needs before leaving the UI thread.
+            exportScope.launch { exportPdfTo(dir, filename, state, onSaved) }
         }
     }
 
+    private val exportScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private fun exportPdfTo(dir: String, filename: String, state: PresentationState, onSaved: (File) -> Unit) {
+        val targetPdf = File(dir, if (filename.endsWith(".pdf", ignoreCase = true)) filename else "$filename.pdf")
+
+        // 1. Generate clean print HTML to temp file
+        val tempHtml = File.createTempFile("skaldoria_deck_", ".html")
+        tempHtml.deleteOnExit()
+        val htmlContent = generatePrintableHtml(state, autoTriggerPrint = false)
+        tempHtml.writeText(htmlContent, Charsets.UTF_8)
+
+        // 2. Attempt Headless Chromium/Edge Vector PDF Rendering
+        val browserBinary = findHeadlessBrowser()
+        if (browserBinary != null) {
+            try {
+                // EXP-5: the child writes progress to stderr. Left undrained, the pipe
+                // buffer fills, the browser blocks forever, waitFor() times out, and
+                // the code silently degrades to the HTML path — the cause of PDF
+                // export "randomly" producing HTML instead.
+                val process = ProcessBuilder(
+                    browserBinary.absolutePath,
+                    "--headless=new",
+                    "--disable-gpu",
+                    "--allow-file-access-from-files",
+                    "--no-pdf-header-footer",
+                    "--print-to-pdf=${targetPdf.absolutePath}",
+                    tempHtml.toURI().toString()
+                )
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start()
+
+                val finished = process.waitFor(15, TimeUnit.SECONDS)
+                if (finished && targetPdf.exists() && targetPdf.length() > 0) {
+                    onSaved(targetPdf)
+                    try {
+                        Desktop.getDesktop().open(targetPdf)
+                    } catch (_: Exception) {}
+                    return
+                }
+            } catch (_: Exception) {
+                // Fallback below
+            }
+        }
+
+        // 3. Fallback: Save printable HTML and open default browser with auto-print
+        val fallbackHtml = File(dir, targetPdf.nameWithoutExtension + ".html")
+        fallbackHtml.writeText(generatePrintableHtml(state, autoTriggerPrint = true), Charsets.UTF_8)
+        onSaved(fallbackHtml)
+        try {
+            Desktop.getDesktop().browse(fallbackHtml.toURI())
+        } catch (_: Exception) {}
+    }
+
     /**
-     * Exports all slides rendered at 1080p high-resolution PNGs packaged into a ZIP archive.
+     * Exports every slide as a 1080p PNG inside a ZIP archive.
+     *
+     * PRF-5: rendering runs off the UI thread. See [exportPdf].
      */
     fun exportImageBundleZip(state: PresentationState, onSaved: (File) -> Unit) {
         val dialog = FileDialog(null as Frame?, "Export Slide Images as ZIP", FileDialog.SAVE)
@@ -100,25 +119,29 @@ object DeckExporter {
         val dir = dialog.directory
         val filename = dialog.file
         if (dir != null && filename != null) {
-            val targetFile = File(dir, if (filename.endsWith(".zip", ignoreCase = true)) filename else "$filename.zip")
-
-            // EXP-6: `use` guarantees the stream closes. Previously a failing ImageIO.write
-            // left an open handle and a truncated archive on disk.
-            ZipOutputStream(FileOutputStream(targetFile)).use { zipOut ->
-                val theme = state.currentTheme
-                state.slides.forEachIndexed { index, slide ->
-                    val image = renderSlideToBufferedImage(slide, theme, state.slides.size)
-                    val byteStream = ByteArrayOutputStream()
-                    ImageIO.write(image, "PNG", byteStream)
-
-                    val entry = ZipEntry(String.format("slide_%02d.png", index + 1))
-                    zipOut.putNextEntry(entry)
-                    zipOut.write(byteStream.toByteArray())
-                    zipOut.closeEntry()
-                }
-            }
-            onSaved(targetFile)
+            exportScope.launch { exportImageBundleTo(dir, filename, state, onSaved) }
         }
+    }
+
+    private fun exportImageBundleTo(dir: String, filename: String, state: PresentationState, onSaved: (File) -> Unit) {
+        val targetFile = File(dir, if (filename.endsWith(".zip", ignoreCase = true)) filename else "$filename.zip")
+
+        // EXP-6: `use` guarantees the stream closes. Previously a failing ImageIO.write
+        // left an open handle and a truncated archive on disk.
+        ZipOutputStream(FileOutputStream(targetFile)).use { zipOut ->
+            val theme = state.currentTheme
+            state.slides.forEachIndexed { index, slide ->
+                val image = renderSlideToBufferedImage(slide, theme, state.slides.size)
+                val byteStream = ByteArrayOutputStream()
+                ImageIO.write(image, "PNG", byteStream)
+
+                val entry = ZipEntry(String.format("slide_%02d.png", index + 1))
+                zipOut.putNextEntry(entry)
+                zipOut.write(byteStream.toByteArray())
+                zipOut.closeEntry()
+            }
+        }
+        onSaved(targetFile)
     }
 
     private fun findHeadlessBrowser(): File? {

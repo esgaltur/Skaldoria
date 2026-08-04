@@ -38,16 +38,22 @@ import com.skaldoria.theme.PresentationTheme
 data class DiagramNode(
     val id: String,
     val label: String,
-    val shape: NodeShape = NodeShape.ROUNDED_RECT,
-    val styleClass: String? = null
+    val shape: NodeShape = NodeShape.ROUNDED_RECT
 )
 
+/**
+ * Node shapes the parser can actually produce.
+ *
+ * DED-4: `RECTANGLE` and `DATABASE` were never emitted by any code path, and `CIRCLE` was
+ * unreachable until MMD-6 fixed the alternation order. Removed rather than left as dead
+ * branches implying support that does not exist — reinstate alongside the parser support
+ * (`[[…]]`, `[(…)]`) if those forms are ever added. `DiagramNode.styleClass` went the same
+ * way: nothing ever set it, since `classDef`/`class` are not parsed.
+ */
 enum class NodeShape {
-    RECTANGLE,
     ROUNDED_RECT,
     CIRCLE,
-    DIAMOND,
-    DATABASE
+    DIAMOND
 }
 
 data class DiagramEdge(
@@ -350,10 +356,8 @@ internal fun NodeCard(
 ) {
     val shape = when (node.shape) {
         NodeShape.ROUNDED_RECT -> RoundedCornerShape(12.dp)
-        NodeShape.RECTANGLE -> RoundedCornerShape(4.dp)
         NodeShape.CIRCLE -> CircleShape
         NodeShape.DIAMOND -> RoundedCornerShape(8.dp)
-        NodeShape.DATABASE -> RoundedCornerShape(14.dp)
     }
 
     Box(
