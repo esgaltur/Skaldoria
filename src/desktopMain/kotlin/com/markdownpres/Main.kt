@@ -79,12 +79,16 @@ fun main() = application {
         }
     }
 
-    // Dedicated Secondary Speaker / Presenter Notes Window
+    // Dedicated Secondary Speaker / Presenter Notes Window.
+    // Kept always-on-top so it stays visible when the main deck goes fullscreen
+    // (otherwise the borderless fullscreen deck covers it and it looks like the
+    // presenter view "disappeared").
     if (state.isPresenterModeActive) {
         Window(
             onCloseRequest = { state.isPresenterModeActive = false },
             icon = appIcon,
             title = "Skaldoria — Speaker Console & Notes",
+            alwaysOnTop = true,
             state = WindowState(
                 width = 1080.dp,
                 height = 720.dp
