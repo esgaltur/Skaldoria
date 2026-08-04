@@ -518,6 +518,18 @@ class PresentationState(
         ConfigManager.addRecentProject(path, firstTitle, slides.size)
     }
 
+    /**
+     * Folder that relative image paths resolve against (COR-10).
+     *
+     * The project root in project mode, otherwise the folder holding the open `.md`. Null
+     * for an unsaved deck, where a relative path has nothing to be relative *to*.
+     */
+    val deckBaseDir: java.io.File?
+        get() = currentFilePath?.let { path ->
+            val file = java.io.File(path)
+            if (file.isDirectory) file else file.parentFile
+        }
+
     val currentSlide: Slide?
         get() = slides.getOrNull(currentSlideIndex)
 
