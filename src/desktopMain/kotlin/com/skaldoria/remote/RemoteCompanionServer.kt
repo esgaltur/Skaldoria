@@ -2,8 +2,6 @@ package com.skaldoria.remote
 
 import com.skaldoria.core.models.SlideElement
 import com.skaldoria.state.PresentationState
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -34,7 +32,56 @@ object RemoteCompanionServer {
     var currentPort: Int = 8888
         private set
 
+    /**
+     * SEC-2: per-session presenter credential, regenerated on every [start]. Presenter-scope
+     * routes require it; audience-scope routes do not. Delivered to the speaker's phone
+     * inside the pairing URL/QR ([presenterUrl]) and returned by the portal on each request
+     * as the `X-Skaldoria-Token` header.
+     *
+     * Sending it as a *custom header* is deliberate: it forces a CORS preflight for any
+     * cross-origin attempt, which closes the residual CSRF gap that POST-only (SEC-3) leaves
+     * open to cross-origin form submissions.
+     */
+    @Volatile
+    private var sessionToken: String = ""
+
+    /** Routes that drive the presentation or moderate the audience. Token required. */
+    private val PRESENTER_ENDPOINTS = setOf("/api/action", "/api/qa/dismiss")
+
+    /** SEC-4: ceiling on concurrent request handlers. */
+    private const val MAX_WORKER_THREADS = 16
+
+    /** SEC-7: caps on a hand-written parser reading from an untrusted network. */
+    private const val MAX_REQUEST_LINE_BYTES = 8 * 1024
+    private const val MAX_HEADER_COUNT = 64
+    private const val MAX_BODY_BYTES = 1024 * 1024
+
     fun isRunning(): Boolean = isRunningFlag.get()
+
+    /** Pairing URL for the speaker's own device — carries the session token. Treat as a secret. */
+    fun presenterUrl(): String =
+        "http://${getLocalIpAddress()}:$currentPort/remote?t=$sessionToken"
+
+    /** Pairing URL handed to the audience. Deliberately carries no token. */
+    fun audienceUrl(): String =
+        "http://${getLocalIpAddress()}:$currentPort/audience"
+
+    private fun generateSessionToken(): String {
+        val bytes = ByteArray(16)
+        java.security.SecureRandom().nextBytes(bytes)
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    }
+
+    /** Constant-time comparison so a token cannot be recovered by timing the response. */
+    private fun isAuthorized(params: Map<String, String>, headers: Map<String, String>): Boolean {
+        val expected = sessionToken
+        if (expected.isEmpty()) return false
+        val supplied = headers["x-skaldoria-token"] ?: params["t"] ?: params["token"] ?: return false
+        return java.security.MessageDigest.isEqual(
+            supplied.toByteArray(StandardCharsets.UTF_8),
+            expected.toByteArray(StandardCharsets.UTF_8)
+        )
+    }
 
     /**
      * Starts the embedded server with automatic port-fallback if the preferred port is occupied.
@@ -75,9 +122,13 @@ object RemoteCompanionServer {
 
         serverSocket = boundSocket
         currentPort = boundPort
+        sessionToken = generateSessionToken()
         isRunningFlag.set(true)
 
-        val exec = Executors.newCachedThreadPool { runnable ->
+        // SEC-4: bounded. `newCachedThreadPool` spawned a thread per connection with no
+        // ceiling, so a connection flood was an easy denial of service — and the portals'
+        // sub-second polling with `Connection: close` already churns connections hard.
+        val exec = Executors.newFixedThreadPool(MAX_WORKER_THREADS) { runnable ->
             Thread(runnable, "Skaldoria-HTTP-Worker").apply {
                 isDaemon = true
             }
@@ -114,6 +165,7 @@ object RemoteCompanionServer {
     @Synchronized
     fun stop() {
         isRunningFlag.set(false)
+        sessionToken = ""
         try {
             serverSocket?.close()
         } catch (_: Exception) {}
@@ -160,14 +212,33 @@ object RemoteCompanionServer {
     // HTTP REQUEST / RESPONSE PROCESSING
     // ==========================================
 
+    /**
+     * Reads one CRLF-terminated line as ASCII, without buffering beyond it.
+     *
+     * SEC-7: aborts past [limit] bytes so an endless request line cannot be read into
+     * memory. Returns null at end of stream or when the limit is exceeded.
+     */
+    private fun readAsciiLine(input: java.io.InputStream, limit: Int): String? {
+        val buffer = StringBuilder()
+        while (true) {
+            val b = input.read()
+            if (b == -1) return if (buffer.isEmpty()) null else buffer.toString()
+            if (b == '\n'.code) return buffer.toString().removeSuffix("\r")
+            if (buffer.length >= limit) return null
+            buffer.append(b.toChar())
+        }
+    }
+
     private fun handleClientSocket(socket: Socket, state: PresentationState) {
         try {
             socket.soTimeout = 10000 // 10s socket timeout
-            val inputStream = socket.getInputStream()
+            // Byte-oriented throughout: the request line and headers are ASCII, and the
+            // body is decoded once its exact byte length is known (EXP-4). A decoding
+            // reader here would consume bytes past the header block into its buffer.
+            val inputStream = java.io.BufferedInputStream(socket.getInputStream())
             val outputStream = socket.getOutputStream()
-            val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
 
-            val requestLine = reader.readLine() ?: return
+            val requestLine = readAsciiLine(inputStream, MAX_REQUEST_LINE_BYTES) ?: return
             val parts = requestLine.trim().split(" ")
             if (parts.size < 2) return
 
@@ -176,9 +247,10 @@ object RemoteCompanionServer {
 
             // Read Headers
             var contentLength = 0
+            var isChunked = false
             val headers = mutableMapOf<String, String>()
-            while (true) {
-                val line = reader.readLine() ?: break
+            while (headers.size < MAX_HEADER_COUNT) {
+                val line = readAsciiLine(inputStream, MAX_REQUEST_LINE_BYTES) ?: break
                 if (line.isEmpty()) break
                 val colonIdx = line.indexOf(':')
                 if (colonIdx > 0) {
@@ -188,25 +260,40 @@ object RemoteCompanionServer {
                     if (hName == "content-length") {
                         contentLength = hVal.toIntOrNull() ?: 0
                     }
+                    if (hName == "transfer-encoding" && hVal.contains("chunked", ignoreCase = true)) {
+                        isChunked = true
+                    }
                 }
             }
 
-            // Read Body if present
+            // SEC-7: this parser only understands Content-Length framing. Say so rather
+            // than mis-reading a chunked body as if it were raw bytes.
+            if (isChunked) {
+                sendErrorResponse(outputStream, "Chunked transfer-encoding is not supported", 411)
+                return
+            }
+
+            // EXP-4: Content-Length counts BYTES. The previous code read that many CHARS
+            // through a decoding reader, so any multi-byte body (any non-ASCII question)
+            // never satisfied the loop and blocked until the 10s socket timeout.
             var body = ""
-            if (contentLength > 0 && contentLength < 1024 * 1024) { // 1MB max body limit
-                val buf = CharArray(contentLength)
+            if (contentLength > 0) {
+                if (contentLength > MAX_BODY_BYTES) {
+                    sendErrorResponse(outputStream, "Request body too large", 413)
+                    return
+                }
+                val raw = ByteArray(contentLength)
                 var readTotal = 0
                 while (readTotal < contentLength) {
-                    val read = reader.read(buf, readTotal, contentLength - readTotal)
+                    val read = inputStream.read(raw, readTotal, contentLength - readTotal)
                     if (read == -1) break
                     readTotal += read
                 }
-                body = String(buf, 0, readTotal)
+                body = String(raw, 0, readTotal, StandardCharsets.UTF_8)
             }
 
-            // Handle CORS Preflight
             if (method == "OPTIONS") {
-                sendCorsPreflightResponse(outputStream)
+                sendNoContentResponse(outputStream)
                 return
             }
 
@@ -220,7 +307,7 @@ object RemoteCompanionServer {
             }
 
             // Route request
-            routeRequest(path, method, queryParams, body, outputStream, state)
+            routeRequest(path, method, queryParams, headers, body, outputStream, state)
         } catch (_: Exception) {
             // Socket or I/O error on client disconnect
         } finally {
@@ -230,23 +317,52 @@ object RemoteCompanionServer {
         }
     }
 
+    /**
+     * Endpoints that mutate presentation or audience state. These require POST so that
+     * a cross-origin page cannot trigger them with a bare `<img src="...">` or link
+     * (SEC-3). Combined with the session token (SEC-2) this closes the drive-by path.
+     */
+    private val WRITE_ENDPOINTS = setOf(
+        "/api/action",
+        "/api/poll/vote",
+        "/api/qa/submit",
+        "/api/qa/upvote",
+        "/api/qa/dismiss",
+        "/api/parking-lot/add"
+    )
+
     private fun routeRequest(
         path: String,
         method: String,
         params: Map<String, String>,
+        headers: Map<String, String>,
         body: String,
         output: OutputStream,
         state: PresentationState
     ) {
+        if (path in WRITE_ENDPOINTS && method != "POST") {
+            sendErrorResponse(output, "This endpoint requires POST", 405)
+            return
+        }
+
+        val authorized = isAuthorized(params, headers)
+
+        if (path in PRESENTER_ENDPOINTS && !authorized) {
+            sendErrorResponse(output, "Presenter session token required", 401)
+            return
+        }
+
         when (path) {
             "/", "/remote" -> {
+                // The portal itself carries no secrets; it is inert without a valid token,
+                // so it is served unconditionally rather than creating a pairing dead end.
                 sendHtmlResponse(output, getCompanionHtml())
             }
             "/audience" -> {
                 sendHtmlResponse(output, getAudienceHtml())
             }
             "/api/state" -> {
-                handleStateApi(output, state)
+                handleStateApi(output, state, includeNotes = authorized)
             }
             "/api/action" -> {
                 handleActionApi(output, params, state)
@@ -276,10 +392,14 @@ object RemoteCompanionServer {
     // API IMPLEMENTATIONS
     // ==========================================
 
-    private fun handleStateApi(output: OutputStream, state: PresentationState) {
+    private fun handleStateApi(output: OutputStream, state: PresentationState, includeNotes: Boolean) {
         try {
             val current = state.currentSlide
-            val notesJson = (current?.notes ?: emptyList()).joinToString(prefix = "[", postfix = "]") { n ->
+            // SEC-2: speaker notes are presenter-only. Audience devices reach this same
+            // endpoint, so the field is emitted empty rather than omitted — the portal JS
+            // treats "no notes" identically and needs no special case.
+            val visibleNotes = if (includeNotes) (current?.notes ?: emptyList()) else emptyList()
+            val notesJson = visibleNotes.joinToString(prefix = "[", postfix = "]") { n ->
                 "\"${escapeJson(n)}\""
             }
 
@@ -295,11 +415,9 @@ object RemoteCompanionServer {
                 """{"hasPoll": false}"""
             }
 
-            val questionsList = try {
-                state.audienceQuestions.toList()
-            } catch (_: Exception) {
-                emptyList()
-            }
+            // PRF-1: a consistent snapshot. This used to be a bare `.toList()` wrapped in a
+            // try/catch that swallowed the resulting ConcurrentModificationException.
+            val questionsList = state.audienceQuestionsSnapshot()
             val questionsJson = questionsList.joinToString(prefix = "[", postfix = "]") { q ->
                 """{"id": "${q.id}", "author": "${escapeJson(q.author)}", "text": "${escapeJson(q.text)}", "upvotes": ${q.upvotes}, "isAnswered": ${q.isAnswered}}"""
             }
@@ -329,14 +447,17 @@ object RemoteCompanionServer {
     private fun handleActionApi(output: OutputStream, params: Map<String, String>, state: PresentationState) {
         try {
             val action = params["action"] ?: params["cmd"]
-            when (action) {
-                "next" -> state.nextSlide()
-                "prev" -> state.previousSlide()
-                "jump" -> (params["index"] ?: params["slideIndex"] ?: params["slide"])?.toIntOrNull()?.let { state.goToSlide(it) }
-                "blackout" -> state.toggleBlackout()
-                "whiteout" -> state.toggleWhiteout()
-                "toggleTimer" -> state.toggleTimer()
-                "resetTimer" -> state.resetTimer()
+            // PRF-1: every mutation from an HTTP worker thread goes through a snapshot.
+            state.applyFromBackgroundThread {
+                when (action) {
+                    "next" -> state.nextSlide()
+                    "prev" -> state.previousSlide()
+                    "jump" -> (params["index"] ?: params["slideIndex"] ?: params["slide"])?.toIntOrNull()?.let { state.goToSlide(it) }
+                    "blackout" -> state.toggleBlackout()
+                    "whiteout" -> state.toggleWhiteout()
+                    "toggleTimer" -> state.toggleTimer()
+                    "resetTimer" -> state.resetTimer()
+                }
             }
             sendJsonResponse(output, """{"status":"ok"}""")
         } catch (t: Throwable) {
@@ -350,7 +471,7 @@ object RemoteCompanionServer {
             val optionIdx = (params["optionIndex"] ?: params["option"])?.toIntOrNull()
 
             if (optionIdx != null && optionIdx >= 0) {
-                state.recordVote(slideIdx, optionIdx)
+                state.applyFromBackgroundThread { state.recordVote(slideIdx, optionIdx) }
                 sendJsonResponse(output, """{"status":"ok", "votedSlide": $slideIdx, "votedOption": $optionIdx}""")
             } else {
                 sendJsonResponse(output, """{"status":"error", "message":"Invalid option"}""", 400)
@@ -366,7 +487,7 @@ object RemoteCompanionServer {
             val text = params["text"]?.trim() ?: ""
 
             if (text.isNotBlank()) {
-                val q = state.submitQuestion(author, text)
+                val q = state.applyFromBackgroundThread { state.submitQuestion(author, text) }
                 sendJsonResponse(output, """{"status":"ok", "id":"${q.id}"}""")
             } else {
                 sendJsonResponse(output, """{"status":"error", "message":"Empty question"}""", 400)
@@ -380,7 +501,7 @@ object RemoteCompanionServer {
         try {
             val id = params["id"]
             if (!id.isNullOrBlank()) {
-                state.upvoteQuestion(id)
+                state.applyFromBackgroundThread { state.upvoteQuestion(id) }
                 sendJsonResponse(output, """{"status":"ok"}""")
             } else {
                 sendJsonResponse(output, """{"status":"error", "message":"Missing question id"}""", 400)
@@ -394,7 +515,7 @@ object RemoteCompanionServer {
         try {
             val id = params["id"]
             if (!id.isNullOrBlank()) {
-                state.dismissQuestion(id)
+                state.applyFromBackgroundThread { state.dismissQuestion(id) }
                 sendJsonResponse(output, """{"status":"ok"}""")
             } else {
                 sendJsonResponse(output, """{"status":"error", "message":"Missing question id"}""", 400)
@@ -409,11 +530,13 @@ object RemoteCompanionServer {
             val text = params["question"] ?: params["text"] ?: ""
             val author = params["author"]
             if (text.isNotBlank()) {
-                state.addFollowUpQuestion(
-                    question = text.trim(),
-                    slideIndex = state.currentSlideIndex,
-                    author = author?.trim()?.ifBlank { null }
-                )
+                state.applyFromBackgroundThread {
+                    state.addFollowUpQuestion(
+                        question = text.trim(),
+                        slideIndex = state.currentSlideIndex,
+                        author = author?.trim()?.ifBlank { null }
+                    )
+                }
                 sendJsonResponse(output, """{"status":"ok"}""")
             } else {
                 sendJsonResponse(output, """{"status":"error", "message":"Empty question"}""", 400)
@@ -427,19 +550,31 @@ object RemoteCompanionServer {
     // UTILITY & RESPONSE WRITERS
     // ==========================================
 
-    private fun sendCorsPreflightResponse(output: OutputStream) {
+    /**
+     * SEC-3: no `Access-Control-Allow-*` headers are emitted anywhere. Both bundled
+     * portals are same-origin and do not need CORS; the previous wildcard let any
+     * website the presenter visited drive the deck. Do not reintroduce a wildcard —
+     * allow-list explicit origins if cross-origin access is ever required.
+     */
+    private fun sendNoContentResponse(output: OutputStream) {
         val raw = "HTTP/1.1 204 No Content\r\n" +
-                "Access-Control-Allow-Origin: *\r\n" +
-                "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n" +
-                "Access-Control-Allow-Headers: *\r\n" +
                 "Content-Length: 0\r\n" +
                 "Connection: close\r\n\r\n"
         output.write(raw.toByteArray(StandardCharsets.UTF_8))
         output.flush()
     }
 
+    private fun statusTextFor(statusCode: Int): String = when (statusCode) {
+        200 -> "OK"
+        400 -> "Bad Request"
+        401 -> "Unauthorized"
+        404 -> "Not Found"
+        405 -> "Method Not Allowed"
+        else -> "Internal Server Error"
+    }
+
     private fun sendJsonResponse(output: OutputStream, json: String, statusCode: Int = 200) {
-        sendResponse(output, statusCode, if (statusCode == 200) "OK" else "Error", "application/json; charset=utf-8", json.toByteArray(StandardCharsets.UTF_8))
+        sendResponse(output, statusCode, statusTextFor(statusCode), "application/json; charset=utf-8", json.toByteArray(StandardCharsets.UTF_8))
     }
 
     private fun sendHtmlResponse(output: OutputStream, html: String) {
@@ -461,9 +596,7 @@ object RemoteCompanionServer {
         val header = "HTTP/1.1 $statusCode $statusText\r\n" +
                 "Content-Type: $contentType\r\n" +
                 "Content-Length: ${body.size}\r\n" +
-                "Access-Control-Allow-Origin: *\r\n" +
-                "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n" +
-                "Access-Control-Allow-Headers: *\r\n" +
+                "X-Content-Type-Options: nosniff\r\n" +
                 "Connection: close\r\n\r\n"
         output.write(header.toByteArray(StandardCharsets.UTF_8))
         output.write(body)
@@ -569,6 +702,31 @@ object RemoteCompanionServer {
     <script>
         let currentTab = 'remote';
 
+        // SEC-2: the pairing QR points at /remote?t=<token>. Capture it, then strip it from
+        // the visible address bar so the credential is not shoulder-surfed or leaked via a
+        // shared screenshot. Sent as a custom header, which forces a CORS preflight on any
+        // cross-origin attempt and thereby closes the residual CSRF gap.
+        const SESSION_TOKEN = new URLSearchParams(location.search).get('t') || '';
+        if (SESSION_TOKEN && history.replaceState) {
+            history.replaceState(null, '', location.pathname);
+        }
+
+        function authFetch(url, options) {
+            const opts = options || {};
+            opts.headers = Object.assign({}, opts.headers, { 'X-Skaldoria-Token': SESSION_TOKEN });
+            return fetch(url, opts);
+        }
+
+        // SEC-1: every value that originates from an audience device or the deck
+        // author is inserted with textContent, never innerHTML. Do not "simplify"
+        // these builders back into template literals — that reintroduces stored XSS.
+        function el(tag, className, text) {
+            const node = document.createElement(tag);
+            if (className) node.className = className;
+            if (text !== undefined && text !== null) node.textContent = text;
+            return node;
+        }
+
         function showTab(t) {
             currentTab = t;
             document.getElementById('tab-remote').style.display = t === 'remote' ? 'flex' : 'none';
@@ -579,14 +737,14 @@ object RemoteCompanionServer {
 
         async function sendAction(action) {
             try {
-                await fetch('/api/action?action=' + encodeURIComponent(action));
+                await authFetch('/api/action?action=' + encodeURIComponent(action), { method: 'POST' });
                 pollState();
             } catch(e) {}
         }
 
         async function dismissQa(id) {
             try {
-                await fetch('/api/qa/dismiss?id=' + encodeURIComponent(id));
+                await authFetch('/api/qa/dismiss?id=' + encodeURIComponent(id), { method: 'POST' });
                 pollState();
             } catch(e) {}
         }
@@ -599,7 +757,7 @@ object RemoteCompanionServer {
 
         async function pollState() {
             try {
-                const res = await fetch('/api/state');
+                const res = await authFetch('/api/state');
                 if (!res.ok) return;
                 const data = await res.json();
                 document.getElementById('slide-index').innerText = 'Slide ' + (data.currentSlideIndex + 1) + ' of ' + data.totalSlides;
@@ -607,10 +765,18 @@ object RemoteCompanionServer {
                 document.getElementById('timer').innerText = formatTime(data.elapsedSeconds);
                 
                 const notesContainer = document.getElementById('notes');
+                notesContainer.textContent = '';
                 if (data.notes && data.notes.length > 0) {
-                    notesContainer.innerHTML = data.notes.map(n => '<p style="margin-bottom:8px;">' + n + '</p>').join('');
+                    data.notes.forEach(n => {
+                        const p = el('p', null, n);
+                        p.style.marginBottom = '8px';
+                        notesContainer.appendChild(p);
+                    });
                 } else {
-                    notesContainer.innerHTML = '<span style="color:#64748b;font-style:italic;">No notes for this slide.</span>';
+                    const empty = el('span', null, 'No notes for this slide.');
+                    empty.style.color = '#64748b';
+                    empty.style.fontStyle = 'italic';
+                    notesContainer.appendChild(empty);
                 }
 
                 document.getElementById('btn-blackout').className = data.isBlackout ? 'btn-action active' : 'btn-action';
@@ -620,21 +786,34 @@ object RemoteCompanionServer {
                 const qaCount = data.questions ? data.questions.length : 0;
                 document.getElementById('qa-count').innerText = qaCount;
                 const qaContainer = document.getElementById('qa-container');
+                qaContainer.textContent = '';
                 if (data.questions && data.questions.length > 0) {
-                    qaContainer.innerHTML = data.questions.map(q => `
-                        <div class="qa-item">
-                            <div>
-                                <div class="qa-text">${'$'}{q.text}</div>
-                                <div class="qa-author">${'$'}{q.author}</div>
-                            </div>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <span class="qa-votes">👍 ${'$'}{q.upvotes}</span>
-                                <button onclick="dismissQa('${'$'}{q.id}')" style="background:#dc2626; color:white; border:none; border-radius:6px; padding:6px 10px; font-size:0.75rem; cursor:pointer;">Dismiss</button>
-                            </div>
-                        </div>
-                    `).join('');
+                    data.questions.forEach(q => {
+                        const item = el('div', 'qa-item');
+
+                        const left = el('div');
+                        left.appendChild(el('div', 'qa-text', q.text));
+                        left.appendChild(el('div', 'qa-author', q.author));
+                        item.appendChild(left);
+
+                        const right = el('div');
+                        right.style.cssText = 'display:flex; align-items:center; gap:8px;';
+                        right.appendChild(el('span', 'qa-votes', '👍 ' + q.upvotes));
+
+                        // Listener closure instead of an inline onclick attribute: a quote
+                        // in q.id can no longer break out into markup.
+                        const dismiss = el('button', null, 'Dismiss');
+                        dismiss.style.cssText = 'background:#dc2626; color:white; border:none; border-radius:6px; padding:6px 10px; font-size:0.75rem; cursor:pointer;';
+                        dismiss.addEventListener('click', () => dismissQa(q.id));
+                        right.appendChild(dismiss);
+
+                        item.appendChild(right);
+                        qaContainer.appendChild(item);
+                    });
                 } else {
-                    qaContainer.innerHTML = '<div style="text-align:center; color:#64748b; padding:20px;">No questions submitted yet.</div>';
+                    const empty = el('div', null, 'No questions submitted yet.');
+                    empty.style.cssText = 'text-align:center; color:#64748b; padding:20px;';
+                    qaContainer.appendChild(empty);
                 }
             } catch(e) {}
         }
@@ -715,9 +894,19 @@ object RemoteCompanionServer {
         let lastVotedSlide = -1;
         let lastVotedOption = -1;
 
+        // SEC-1: every value that originates from another audience device is inserted
+        // with textContent, never innerHTML. Do not "simplify" these builders back into
+        // template literals — that reintroduces stored XSS.
+        function el(tag, className, text) {
+            const node = document.createElement(tag);
+            if (className) node.className = className;
+            if (text !== undefined && text !== null) node.textContent = text;
+            return node;
+        }
+
         async function votePoll(optIndex) {
             try {
-                await fetch('/api/poll/vote?slideIndex=' + currentActiveSlide + '&optionIndex=' + optIndex);
+                await fetch('/api/poll/vote?slideIndex=' + currentActiveSlide + '&optionIndex=' + optIndex, { method: 'POST' });
                 lastVotedSlide = currentActiveSlide;
                 lastVotedOption = optIndex;
                 document.getElementById('poll-voted-msg').style.display = 'block';
@@ -731,7 +920,7 @@ object RemoteCompanionServer {
             if (!text) return;
 
             try {
-                await fetch('/api/qa/submit?author=' + encodeURIComponent(author) + '&text=' + encodeURIComponent(text));
+                await fetch('/api/qa/submit?author=' + encodeURIComponent(author) + '&text=' + encodeURIComponent(text), { method: 'POST' });
                 document.getElementById('qa-text-input').value = '';
                 pollState();
             } catch(e) {}
@@ -739,7 +928,7 @@ object RemoteCompanionServer {
 
         async function upvoteQuestion(id) {
             try {
-                await fetch('/api/qa/upvote?id=' + encodeURIComponent(id));
+                await fetch('/api/qa/upvote?id=' + encodeURIComponent(id), { method: 'POST' });
                 pollState();
             } catch(e) {}
         }
@@ -755,36 +944,51 @@ object RemoteCompanionServer {
                 const pollSec = document.getElementById('poll-section');
                 if (data.poll && data.poll.hasPoll) {
                     pollSec.style.display = 'block';
-                    document.getElementById('poll-question').innerText = data.poll.question;
+                    document.getElementById('poll-question').textContent = data.poll.question;
 
                     const isVotedOnThisSlide = (lastVotedSlide === currentActiveSlide);
                     document.getElementById('poll-voted-msg').style.display = isVotedOnThisSlide ? 'block' : 'none';
 
                     const optsContainer = document.getElementById('poll-options');
-                    optsContainer.innerHTML = data.poll.options.map(opt => `
-                        <button class="poll-opt-btn ${'$'}{(isVotedOnThisSlide && lastVotedOption === opt.index) ? 'voted' : ''}" onclick="votePoll(${'$'}{opt.index})">
-                            <span>${'$'}{opt.text}</span>
-                            <span style="font-size:0.85rem; color:#94a3b8;">${'$'}{opt.votes} votes</span>
-                        </button>
-                    `).join('');
+                    optsContainer.textContent = '';
+                    data.poll.options.forEach(opt => {
+                        const voted = isVotedOnThisSlide && lastVotedOption === opt.index;
+                        const btn = el('button', voted ? 'poll-opt-btn voted' : 'poll-opt-btn');
+                        btn.appendChild(el('span', null, opt.text));
+                        const count = el('span', null, opt.votes + ' votes');
+                        count.style.cssText = 'font-size:0.85rem; color:#94a3b8;';
+                        btn.appendChild(count);
+                        btn.addEventListener('click', () => votePoll(opt.index));
+                        optsContainer.appendChild(btn);
+                    });
                 } else {
                     pollSec.style.display = 'none';
                 }
 
                 // Questions
                 const feed = document.getElementById('qa-feed');
+                feed.textContent = '';
                 if (data.questions && data.questions.length > 0) {
-                    feed.innerHTML = data.questions.map(q => `
-                        <div class="qa-card">
-                            <div class="qa-content">
-                                <div class="qa-author-label">${'$'}{q.author}</div>
-                                <div class="qa-text-body">${'$'}{q.text}</div>
-                            </div>
-                            <button class="upvote-btn" onclick="upvoteQuestion('${'$'}{q.id}')">👍 ${'$'}{q.upvotes}</button>
-                        </div>
-                    `).join('');
+                    data.questions.forEach(q => {
+                        const card = el('div', 'qa-card');
+
+                        const content = el('div', 'qa-content');
+                        content.appendChild(el('div', 'qa-author-label', q.author));
+                        content.appendChild(el('div', 'qa-text-body', q.text));
+                        card.appendChild(content);
+
+                        // Listener closure instead of an inline onclick attribute: a quote
+                        // in q.id can no longer break out into markup.
+                        const upvote = el('button', 'upvote-btn', '👍 ' + q.upvotes);
+                        upvote.addEventListener('click', () => upvoteQuestion(q.id));
+                        card.appendChild(upvote);
+
+                        feed.appendChild(card);
+                    });
                 } else {
-                    feed.innerHTML = '<div style="text-align:center; color:#64748b; padding:16px;">No questions submitted yet. Be the first!</div>';
+                    const empty = el('div', null, 'No questions submitted yet. Be the first!');
+                    empty.style.cssText = 'text-align:center; color:#64748b; padding:16px;';
+                    feed.appendChild(empty);
                 }
             } catch(e) {}
         }

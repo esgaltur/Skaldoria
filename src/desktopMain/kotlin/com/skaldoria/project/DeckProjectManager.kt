@@ -7,6 +7,56 @@ import java.io.File
 
 object DeckProjectManager {
 
+    /** COR-7: manifest values must be escaped or a quote in them produces unparseable JSON. */
+    private fun escapeJson(value: String): String =
+        value.replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+
+    /**
+     * COR-9: orders `2_intro.md` before `10_intro.md`. Plain lexicographic sorting put
+     * `10` first for any deck that was not zero-padded — and the app's own generator pads
+     * to two digits, so it breaks past 99 slides regardless.
+     */
+    internal val naturalOrder: Comparator<String> = Comparator { left, right ->
+        val chunk = Regex("""\d+|\D+""")
+        val leftParts = chunk.findAll(left.lowercase()).map { it.value }.toList()
+        val rightParts = chunk.findAll(right.lowercase()).map { it.value }.toList()
+
+        var result = 0
+        for (i in 0 until minOf(leftParts.size, rightParts.size)) {
+            val a = leftParts[i]
+            val b = rightParts[i]
+            val aNum = a.toLongOrNull()
+            val bNum = b.toLongOrNull()
+            result = if (aNum != null && bNum != null) aNum.compareTo(bNum) else a.compareTo(b)
+            if (result != 0) break
+        }
+        if (result != 0) result else leftParts.size.compareTo(rightParts.size)
+    }
+
+    /**
+     * SEC-6: deck projects are shared artefacts, so manifest paths are untrusted input.
+     * Resolves [relPath] against [rootDir] and returns null unless the canonical result
+     * stays inside the project. Without this, a manifest entry of `../../../../etc/passwd`
+     * reads arbitrary files into the editor — and [saveProject] would then write back to
+     * that same absolute path.
+     */
+    internal fun resolveWithinRoot(rootDir: File, relPath: String): File? {
+        return try {
+            val canonicalRoot = rootDir.canonicalFile
+            val candidate = File(canonicalRoot, relPath).canonicalFile
+            val rootPath = canonicalRoot.toPath()
+            val candidatePath = candidate.toPath()
+            if (candidatePath != rootPath && candidatePath.startsWith(rootPath)) candidate else null
+        } catch (_: Exception) {
+            // Unresolvable path (bad symlink, invalid characters, permission denied).
+            null
+        }
+    }
+
     /**
      * Loads a project from a manifest file (.mdpres, .json, or .md index).
      */
@@ -31,8 +81,8 @@ object DeckProjectManager {
                 val itemRegex = Regex("\"([^\"]+)\"")
                 itemRegex.findAll(arrayContent).forEach { itemMatch ->
                     val relPath = itemMatch.groupValues[1]
-                    val slideFile = File(rootDir, relPath)
-                    if (slideFile.exists()) {
+                    val slideFile = resolveWithinRoot(rootDir, relPath)
+                    if (slideFile != null && slideFile.isFile) {
                         slideEntries.add(
                             SlideFileEntry(
                                 relativePath = relPath,
@@ -55,8 +105,8 @@ object DeckProjectManager {
             includeRegex.findAll(text).forEach { match ->
                 val relPath = (match.groups[1] ?: match.groups[2])?.value
                 if (relPath != null) {
-                    val slideFile = File(rootDir, relPath)
-                    if (slideFile.exists()) {
+                    val slideFile = resolveWithinRoot(rootDir, relPath)
+                    if (slideFile != null && slideFile.isFile) {
                         slideEntries.add(
                             SlideFileEntry(
                                 relativePath = relPath,
@@ -72,7 +122,7 @@ object DeckProjectManager {
         // If no includes were found, treat directory's md files as slides
         if (slideEntries.isEmpty()) {
             val mdFiles = rootDir.listFiles { f -> f.isFile && f.extension.equals("md", ignoreCase = true) && f.name != file.name }
-                ?.sortedBy { it.name } ?: emptyList()
+                ?.sortedWith(compareBy(naturalOrder) { it.name }) ?: emptyList()
 
             mdFiles.forEach { mdFile ->
                 slideEntries.add(
@@ -108,7 +158,7 @@ object DeckProjectManager {
 
         val slidesDir = File(dir, "slides").takeIf { it.exists() && it.isDirectory } ?: dir
         val mdFiles = (slidesDir.listFiles { f -> f.isFile && f.extension.equals("md", ignoreCase = true) }
-            ?: emptyArray()).sortedBy { it.name }
+            ?: emptyArray()).sortedWith(compareBy(naturalOrder) { it.name })
 
         val entries = mdFiles.map { f ->
             val relPath = if (slidesDir == dir) f.name else "slides/${f.name}"
@@ -134,9 +184,16 @@ object DeckProjectManager {
         val rootDir = File(project.rootDir)
         if (!rootDir.exists()) rootDir.mkdirs()
 
-        // 1. Save each individual slide file
+        // 1. Save each individual slide file.
+        // SEC-6: re-validate on write. A project loaded before this guard existed, or
+        // mutated in memory, must not be able to write outside its own directory.
         project.slideFiles.forEach { entry ->
-            val target = File(entry.absolutePath)
+            val target = resolveWithinRoot(rootDir, entry.relativePath)
+            if (target == null) {
+                throw SecurityException(
+                    "Refusing to write slide outside the project directory: ${entry.relativePath}"
+                )
+            }
             target.parentFile?.mkdirs()
             target.writeText(entry.content)
         }
@@ -145,15 +202,17 @@ object DeckProjectManager {
         val manifestPath = project.manifestPath ?: File(rootDir, "deck.mdpres").absolutePath
         val manifestFile = File(manifestPath)
 
+        // COR-7: values were interpolated raw, so a quote in the project name produced a
+        // manifest that could no longer be parsed back.
         val jsonBuilder = StringBuilder()
         jsonBuilder.append("{\n")
-        jsonBuilder.append("  \"name\": \"${project.name}\",\n")
-        jsonBuilder.append("  \"theme\": \"${project.themeName}\",\n")
-        jsonBuilder.append("  \"transition\": \"${project.transition.name}\",\n")
+        jsonBuilder.append("  \"name\": \"${escapeJson(project.name)}\",\n")
+        jsonBuilder.append("  \"theme\": \"${escapeJson(project.themeName)}\",\n")
+        jsonBuilder.append("  \"transition\": \"${escapeJson(project.transition.name)}\",\n")
         jsonBuilder.append("  \"slides\": [\n")
         project.slideFiles.forEachIndexed { index, entry ->
             val comma = if (index < project.slideFiles.size - 1) "," else ""
-            jsonBuilder.append("    \"${entry.relativePath.replace("\\", "/")}\"$comma\n")
+            jsonBuilder.append("    \"${escapeJson(entry.relativePath.replace("\\", "/"))}\"$comma\n")
         }
         jsonBuilder.append("  ]\n")
         jsonBuilder.append("}\n")

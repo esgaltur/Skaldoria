@@ -22,25 +22,56 @@ object MarkdownSlideParser {
     private val DIRECTIVE_COMMENT_REGEX = Regex("""<!--\s*(layout|bg|background|transition|poll|vote):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
     private val DIRECTIVE_LINE_REGEX = Regex("""^(layout|bg|background|transition|poll|vote):\s*(.+)$""", RegexOption.IGNORE_CASE)
 
+    /**
+     * A big-metric value: a signed number, a percentage, an `x` multiplier, a currency
+     * amount, or a number with a magnitude suffix — followed by a short label.
+     *
+     * COR-4: a bare integer is deliberately *not* enough. Requiring a unit is what stops
+     * ordinary prose beginning with a year or a count from being promoted to a KPI slide.
+     */
+    private val METRIC_REGEX = Regex(
+        """^([+\-~]\d+(?:[.,]\d+)?[%xX]?|\d+(?:[.,]\d+)?\s*[%]|\d+(?:[.,]\d+)?\s*[xX]|\d+(?:[.,]\d+)?\s*[MBKmbk]\b|[$€£]\s?\d+(?:[.,]\d+)?\s*[MBKmbk]?)\s+(.{3,30})$"""
+    )
+
+    /** A slide's raw source lines together with the inclusive range they occupied. */
+    private data class RawSection(val lines: List<String>, val range: IntRange)
+
     fun parse(markdown: String): List<Slide> {
         val lines = markdown.lines()
-        val rawSections = mutableListOf<List<String>>()
-        var currentSection = mutableListOf<String>()
+        val rawSections = mutableListOf<RawSection>()
+        var currentLines = mutableListOf<String>()
+        var currentStart = -1
+
+        // COR-1: the section boundaries computed here are recorded on each Slide as
+        // sourceLineRange, so structural edits never have to re-derive them with a
+        // second, divergent splitter.
+        fun appendLine(index: Int, line: String) {
+            if (currentStart < 0) currentStart = index
+            currentLines.add(line)
+        }
+
+        fun flushSection(endExclusive: Int) {
+            if (currentLines.any { it.isNotBlank() } && currentStart >= 0) {
+                rawSections.add(RawSection(currentLines.toList(), currentStart..(endExclusive - 1)))
+            }
+            currentLines = mutableListOf()
+            currentStart = -1
+        }
 
         var inCodeFence = false
 
-        for (line in lines) {
+        for ((lineIndex, line) in lines.withIndex()) {
             val trimmed = line.trim()
 
             // Handle code block state
             if (trimmed.startsWith("```")) {
                 inCodeFence = !inCodeFence
-                currentSection.add(line)
+                appendLine(lineIndex, line)
                 continue
             }
 
             if (inCodeFence) {
-                currentSection.add(line)
+                appendLine(lineIndex, line)
                 continue
             }
 
@@ -49,28 +80,23 @@ object MarkdownSlideParser {
             val isHeading1or2 = HEADING_1_2_REGEX.matches(trimmed)
 
             if (isHr) {
-                if (currentSection.any { it.isNotBlank() }) {
-                    rawSections.add(currentSection)
-                    currentSection = mutableListOf()
-                }
+                // The rule itself belongs to no slide; it is regenerated on reassembly.
+                flushSection(lineIndex)
                 continue
             }
 
-            if (isHeading1or2 && currentSection.any { it.isNotBlank() }) {
+            if (isHeading1or2 && currentLines.any { it.isNotBlank() }) {
                 // If the section already has content or a heading, split it
-                val hasExistingHeading = currentSection.any { HEADING_1_2_REGEX.matches(it.trim()) }
-                if (hasExistingHeading || currentSection.size > 2) {
-                    rawSections.add(currentSection)
-                    currentSection = mutableListOf()
+                val hasExistingHeading = currentLines.any { HEADING_1_2_REGEX.matches(it.trim()) }
+                if (hasExistingHeading || currentLines.size > 2) {
+                    flushSection(lineIndex)
                 }
             }
 
-            currentSection.add(line)
+            appendLine(lineIndex, line)
         }
 
-        if (currentSection.any { it.isNotBlank() }) {
-            rawSections.add(currentSection)
-        }
+        flushSection(lines.size)
 
         // If markdown was completely empty
         if (rawSections.isEmpty()) {
@@ -84,12 +110,17 @@ object MarkdownSlideParser {
             )
         }
 
-        return rawSections.mapIndexed { index, sectionLines ->
-            parseSlideSection(index, sectionLines, isFirst = index == 0)
+        return rawSections.mapIndexed { index, section ->
+            parseSlideSection(index, section.lines, isFirst = index == 0, sourceRange = section.range)
         }
     }
 
-    private fun parseSlideSection(index: Int, lines: List<String>, isFirst: Boolean): Slide {
+    private fun parseSlideSection(
+        index: Int,
+        lines: List<String>,
+        isFirst: Boolean,
+        sourceRange: IntRange = IntRange.EMPTY
+    ): Slide {
         var title = ""
         var subtitle: String? = null
         val elements = mutableListOf<SlideElement>()
@@ -326,11 +357,19 @@ object MarkdownSlideParser {
 
             // 4. Headings
             val headingMatch = HEADING_1_2_REGEX.find(trimmed)
-            if (headingMatch != null && title.isEmpty()) {
+            if (headingMatch != null) {
                 flushList()
                 flushQuote()
                 flushTable()
-                title = headingMatch.groupValues[2].trim()
+                val headingText = headingMatch.groupValues[2].trim()
+                if (title.isEmpty()) {
+                    title = headingText
+                } else {
+                    // COR-5: a second `#`/`##` in one section (possible when the split
+                    // heuristic declines to split) used to fall through to the paragraph
+                    // branch and render with its literal `##` markers still attached.
+                    elements.add(SlideElement.Text(headingText, isLead = true))
+                }
                 continue
             }
 
@@ -382,7 +421,12 @@ object MarkdownSlideParser {
             }
 
             // 8. Standalone Big Metric (e.g. "99.99% Uptime" or "+140% Growth")
-            val metricMatch = Regex("""^([+\-~]?\d+(?:\.\d+)?%?|\$\d+(?:\.\d+)?[MBK]?)\s+(.{3,30})$""").find(trimmed)
+            //
+            // COR-4: the value must carry a unit — a percent sign, a currency prefix, a
+            // magnitude suffix, an explicit sign, or an `x` multiplier. Without that,
+            // any paragraph opening with a number was captured, so an ordinary line like
+            // "2024 Roadmap Overview" rendered as a full-slide KPI.
+            val metricMatch = METRIC_REGEX.find(trimmed)
             if (metricMatch != null && elements.isEmpty()) {
                 flushTable()
                 elements.add(SlideElement.Metric(metricMatch.groupValues[1], metricMatch.groupValues[2]))
@@ -421,7 +465,8 @@ object MarkdownSlideParser {
             elements = elements,
             notes = notes,
             customBackground = customBackground,
-            customTransition = customTransition
+            customTransition = customTransition,
+            sourceLineRange = sourceRange
         )
     }
 

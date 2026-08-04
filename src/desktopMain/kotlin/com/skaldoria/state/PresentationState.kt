@@ -1,13 +1,16 @@
 package com.skaldoria.state
 
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import com.skaldoria.config.ConfigManager
+import com.skaldoria.core.document.SlideDocument
 import com.skaldoria.core.models.AnnotationStroke
 import com.skaldoria.core.models.AudienceQuestion
 import com.skaldoria.core.models.DeckProject
@@ -23,6 +26,8 @@ import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.theme.PresentationTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -114,10 +119,18 @@ class PresentationState(
     val isProjectMode: Boolean
         get() = activeProject != null
 
+    /**
+     * COR-3: resolved through the slide→file map rather than by indexing [DeckProject.slideFiles]
+     * with the slide index. The positional assumption held only while every file contained
+     * exactly one slide; a single `---` inside any file shifted the mapping and the editor
+     * silently began writing to the wrong file.
+     */
     val currentSlideFile: SlideFileEntry?
         get() {
             val proj = activeProject ?: return null
-            return proj.slideFiles.getOrNull(currentSlideIndex.coerceIn(0, (proj.slideFiles.size - 1).coerceAtLeast(0)))
+            val fileIndex = proj.slideOwnerFileIndices().getOrNull(currentSlideIndex)
+                ?: return proj.slideFiles.lastOrNull()
+            return proj.slideFiles.getOrNull(fileIndex)
         }
 
     val currentEditorText: String
@@ -139,28 +152,35 @@ class PresentationState(
     var isFindRegex by mutableStateOf(false)
     var currentMatchIndex by mutableStateOf(0)
 
-    val findMatches: List<IntRange>
-        get() {
-            val query = findQuery
-            if (query.isEmpty()) return emptyList()
-            val text = currentEditorText
-            if (text.isEmpty()) return emptyList()
+    /**
+     * PRF-3: cached. This was an uncached computed property running `Regex.findAll` over
+     * the whole document — read three times inside `replaceCurrent` alone and on every
+     * recomposition of the find bar, i.e. a full-document scan per frame while typing.
+     * `derivedStateOf` recomputes only when the text, the query, or a flag actually changes.
+     */
+    private val findMatchesState = derivedStateOf {
+        val query = findQuery
+        if (query.isEmpty()) return@derivedStateOf emptyList()
+        val text = currentEditorText
+        if (text.isEmpty()) return@derivedStateOf emptyList()
 
-            return try {
-                if (isFindRegex) {
-                    val options = if (isFindCaseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
-                    val pattern = Regex(query, options)
-                    pattern.findAll(text).map { it.range }.toList()
-                } else {
-                    val patternString = if (isFindWholeWord) "\\b${Regex.escape(query)}\\b" else Regex.escape(query)
-                    val options = if (isFindCaseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
-                    val pattern = Regex(patternString, options)
-                    pattern.findAll(text).map { it.range }.toList()
-                }
-            } catch (_: Exception) {
-                emptyList()
+        try {
+            val options = if (isFindCaseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
+            val pattern = if (isFindRegex) {
+                Regex(query, options)
+            } else {
+                val literal = Regex.escape(query)
+                Regex(if (isFindWholeWord) "\\b$literal\\b" else literal, options)
             }
+            pattern.findAll(text).map { it.range }.toList()
+        } catch (_: Exception) {
+            // An in-progress regex the user is still typing is expected to be invalid.
+            emptyList()
         }
+    }
+
+    val findMatches: List<IntRange>
+        get() = findMatchesState.value
 
     fun openFind(withReplace: Boolean = false) {
         isFindOpen = true
@@ -286,17 +306,66 @@ class PresentationState(
         targetTalkDurationMinutes = minutes
     }
 
+    /**
+     * PRF-2: autosave is debounced instead of writing the whole document to disk on every
+     * keystroke. The old behaviour did a synchronous full-file write per character typed —
+     * the worst editor stall in an app that advertises 120 FPS.
+     */
+    private var draftSaveJob: Job? = null
+
+    private fun scheduleDraftSave(content: String) {
+        draftSaveJob?.cancel()
+        draftSaveJob = scope.launch(Dispatchers.IO) {
+            delay(DRAFT_SAVE_DEBOUNCE_MS)
+            ConfigManager.saveDraft(content)
+        }
+    }
+
     init {
-        // Start background timer ticker
+        // PRF-4: derive elapsed time from a monotonic clock rather than counting loop
+        // iterations. The old ticker incremented once per delay(1000), so scheduling jitter
+        // accumulated and the timer drifted behind wall clock over a long talk.
         scope.launch {
             while (true) {
-                delay(1000)
-                if (isTimerRunning) {
-                    elapsedSeconds++
+                delay(200)
+                val startedAt = timerStartedAtNanos
+                if (startedAt != null) {
+                    val running = (System.nanoTime() - startedAt) / 1_000_000_000L
+                    elapsedSeconds = accumulatedSeconds + running
                 }
             }
         }
     }
+
+    /** Monotonic timestamp of the current run, or null while paused. */
+    private var timerStartedAtNanos: Long? = null
+
+    /** Seconds banked from previous runs, so pausing does not lose time. */
+    private var accumulatedSeconds: Long = 0L
+
+    /** Releases the background timer. Call when the app shuts down. */
+    fun dispose() {
+        scope.cancel()
+    }
+
+    /**
+     * PRF-1: runs [mutation] inside an explicit snapshot.
+     *
+     * The companion server handles requests on `Skaldoria-HTTP-Worker` threads and calls
+     * straight into this state. Compose snapshot state tolerates concurrent *reads*, but
+     * un-snapshotted writes from a background thread race with composition — the symptom
+     * was a `ConcurrentModificationException` being swallowed by a try/catch around
+     * `audienceQuestions.toList()` in the state endpoint.
+     *
+     * Wrapping the write makes it atomic and publishes it to Compose as a single change,
+     * so readers never observe a half-applied mutation.
+     */
+    fun <T> applyFromBackgroundThread(mutation: () -> T): T =
+        Snapshot.withMutableSnapshot(mutation)
+
+    /** Consistent point-in-time copy of the audience queue, safe to read off-thread. */
+    fun audienceQuestionsSnapshot(): List<AudienceQuestion> =
+        Snapshot.withMutableSnapshot { audienceQuestions.toList() }
 
     fun increaseEditorFontSize() {
         if (editorFontSize < 32) editorFontSize += 2
@@ -325,7 +394,7 @@ class PresentationState(
             val combined = updatedProj.compileCombinedMarkdown()
             markdownText = combined
             slides = MarkdownSlideParser.parse(combined)
-            ConfigManager.saveDraft(combined)
+            scheduleDraftSave(combined)
         } else {
             updateMarkdown(newContent)
         }
@@ -372,7 +441,7 @@ class PresentationState(
         if (extractedFollowUps.isNotEmpty() && followUpQuestions.isEmpty()) {
             followUpQuestions.addAll(extractedFollowUps)
         }
-        ConfigManager.saveDraft(newMarkdown)
+        scheduleDraftSave(newMarkdown)
     }
 
     val hasNext: Boolean
@@ -499,11 +568,21 @@ class PresentationState(
     }
 
     fun toggleTimer() {
-        isTimerRunning = !isTimerRunning
+        if (isTimerRunning) {
+            // Bank the elapsed run before pausing.
+            timerStartedAtNanos?.let { accumulatedSeconds += (System.nanoTime() - it) / 1_000_000_000L }
+            timerStartedAtNanos = null
+            isTimerRunning = false
+        } else {
+            timerStartedAtNanos = System.nanoTime()
+            isTimerRunning = true
+        }
     }
 
     fun resetTimer() {
         elapsedSeconds = 0L
+        accumulatedSeconds = 0L
+        timerStartedAtNanos = null
         isTimerRunning = false
     }
 
@@ -561,7 +640,9 @@ class PresentationState(
     // Audience Q&A Stream
     fun submitQuestion(author: String, text: String): AudienceQuestion {
         val q = AudienceQuestion(
-            id = "q_${System.currentTimeMillis()}_${(1000..9999).random()}",
+            // COR-6: millisecond + 4-digit-random collides under the concurrent submissions
+            // this endpoint is explicitly built for; upvote/dismiss then hit the wrong item.
+            id = "q_${java.util.UUID.randomUUID()}",
             author = author.ifBlank { "Anonymous" },
             text = text.trim()
         )
@@ -670,7 +751,9 @@ class PresentationState(
     }
 
     fun startPresenting(presenterMode: Boolean = false) {
-        isTimerRunning = true
+        // Go through the same monotonic bookkeeping as toggleTimer (PRF-4); setting the
+        // flag directly would leave the start timestamp null and freeze elapsed time.
+        if (!isTimerRunning) toggleTimer()
         isBlackoutActive = false
         isWhiteoutActive = false
         if (presenterMode) {
@@ -681,62 +764,139 @@ class PresentationState(
         }
     }
 
-    // Slide Chunk Operations
-    private fun getSlideChunks(): List<String> {
-        val lines = markdownText.lines()
-        val chunks = mutableListOf<String>()
-        var current = StringBuilder()
-        var inCode = false
+    // ------------------------------------------------------------------
+    // Slide structural operations
+    //
+    // COR-1: boundaries come from SlideDocument, which reads Slide.sourceLineRange
+    // straight from the parser. The old private splitter here recognised only a literal
+    // `---`, disagreed with the parser about `##` heading splits and `----` rules, and so
+    // edited the wrong slide or silently did nothing.
+    //
+    // COR-2: in project mode the compiled markdown is a derived artefact. Writing an edit
+    // back to it left `activeProject` holding stale per-file content, and the next keystroke
+    // recompiled from those files and discarded the edit. Edits are now applied to the
+    // owning file.
+    // ------------------------------------------------------------------
 
-        for (line in lines) {
-            val trimmed = line.trim()
-            if (trimmed.startsWith("```")) {
-                inCode = !inCode
-                current.append(line).append("\n")
-                continue
-            }
-            if (!inCode && (trimmed == "---" || trimmed.startsWith("--- "))) {
-                chunks.add(current.toString().trimEnd())
-                current = StringBuilder()
-                continue
-            }
-            current.append(line).append("\n")
+    private fun document(): SlideDocument = SlideDocument.of(markdownText)
+
+    /** Index of the project file that produced the slide at [slideIndex], or null. */
+    private fun ownerFileIndex(slideIndex: Int): Int? =
+        activeProject?.slideOwnerFileIndices()?.getOrNull(slideIndex)
+
+    /** Position of [slideIndex] within its own file, for editing that file in isolation. */
+    private fun localSlideIndex(slideIndex: Int): Int? {
+        val owners = activeProject?.slideOwnerFileIndices() ?: return null
+        val fileIndex = owners.getOrNull(slideIndex) ?: return null
+        return slideIndex - owners.indexOf(fileIndex)
+    }
+
+    private fun writeProjectFile(fileIndex: Int, newContent: String) {
+        val proj = activeProject ?: return
+        if (fileIndex !in proj.slideFiles.indices) return
+
+        val updatedFiles = proj.slideFiles.toMutableList()
+        updatedFiles[fileIndex] = updatedFiles[fileIndex].copy(content = newContent)
+        val updatedProj = proj.copy(slideFiles = updatedFiles)
+        activeProject = updatedProj
+
+        val combined = updatedProj.compileCombinedMarkdown()
+        markdownText = combined
+        slides = MarkdownSlideParser.parse(combined)
+        if (currentSlideIndex >= slides.size) {
+            currentSlideIndex = (slides.size - 1).coerceAtLeast(0)
         }
-        if (current.isNotEmpty()) {
-            chunks.add(current.toString().trimEnd())
-        }
-        return if (chunks.isEmpty()) listOf(markdownText) else chunks
+        scheduleDraftSave(combined)
+    }
+
+    /**
+     * Applies a structural edit to the file owning [slideIndex]. Returns false when the
+     * deck is not a project or the slide cannot be located, so callers can fall back to
+     * editing the flat document.
+     */
+    private fun editOwningFile(slideIndex: Int, edit: (SlideDocument, Int) -> String?): Boolean {
+        val proj = activeProject ?: return false
+        val fileIndex = ownerFileIndex(slideIndex) ?: return false
+        val local = localSlideIndex(slideIndex) ?: return false
+        val entry = proj.slideFiles.getOrNull(fileIndex) ?: return false
+
+        val result = edit(SlideDocument.of(entry.content), local) ?: return false
+        writeProjectFile(fileIndex, result)
+        return true
     }
 
     fun moveSlide(fromIndex: Int, toIndex: Int) {
-        val chunks = getSlideChunks().toMutableList()
-        if (fromIndex !in chunks.indices || toIndex !in chunks.indices || fromIndex == toIndex) return
+        if (isProjectMode) {
+            // Reordering slides across files means reordering the files themselves; that
+            // is only well defined when each file holds exactly one slide.
+            val proj = activeProject ?: return
+            val owners = proj.slideOwnerFileIndices()
+            val oneSlidePerFile = owners.size == proj.slideFiles.size
+            if (oneSlidePerFile) {
+                if (fromIndex !in proj.slideFiles.indices || toIndex !in proj.slideFiles.indices) return
+                val reordered = proj.slideFiles.toMutableList()
+                reordered.add(toIndex, reordered.removeAt(fromIndex))
+                val updatedProj = proj.copy(slideFiles = reordered)
+                activeProject = updatedProj
+                val combined = updatedProj.compileCombinedMarkdown()
+                markdownText = combined
+                slides = MarkdownSlideParser.parse(combined)
+                currentSlideIndex = toIndex
+                scheduleDraftSave(combined)
+            } else if (ownerFileIndex(fromIndex) == ownerFileIndex(toIndex)) {
+                val local = localSlideIndex(fromIndex) ?: return
+                val localTo = localSlideIndex(toIndex) ?: return
+                if (editOwningFile(fromIndex) { doc, _ -> doc.move(local, localTo) }) {
+                    currentSlideIndex = toIndex
+                }
+            }
+            return
+        }
 
-        val item = chunks.removeAt(fromIndex)
-        chunks.add(toIndex, item)
-        val newMarkdown = chunks.joinToString("\n\n---\n\n")
-        updateMarkdown(newMarkdown)
+        val updated = document().move(fromIndex, toIndex) ?: return
+        updateMarkdown(updated)
         currentSlideIndex = toIndex
     }
 
     fun duplicateSlide(index: Int) {
-        val chunks = getSlideChunks().toMutableList()
-        if (index !in chunks.indices) return
+        if (isProjectMode) {
+            if (editOwningFile(index) { doc, local -> doc.duplicate(local) }) {
+                currentSlideIndex = index + 1
+            }
+            return
+        }
 
-        val duplicated = chunks[index]
-        chunks.add(index + 1, duplicated)
-        val newMarkdown = chunks.joinToString("\n\n---\n\n")
-        updateMarkdown(newMarkdown)
+        val updated = document().duplicate(index) ?: return
+        updateMarkdown(updated)
         currentSlideIndex = index + 1
     }
 
     fun deleteSlide(index: Int) {
-        val chunks = getSlideChunks().toMutableList()
-        if (chunks.size <= 1 || index !in chunks.indices) return
+        if (isProjectMode) {
+            val proj = activeProject ?: return
+            val fileIndex = ownerFileIndex(index) ?: return
+            val owners = proj.slideOwnerFileIndices()
 
-        chunks.removeAt(index)
-        val newMarkdown = chunks.joinToString("\n\n---\n\n")
-        updateMarkdown(newMarkdown)
+            // Last slide in its file: remove the file from the deck rather than leaving
+            // an empty one behind. The file itself is left on disk.
+            if (owners.count { it == fileIndex } <= 1) {
+                if (proj.slideFiles.size <= 1) return
+                val remaining = proj.slideFiles.toMutableList().apply { removeAt(fileIndex) }
+                val updatedProj = proj.copy(slideFiles = remaining)
+                activeProject = updatedProj
+                val combined = updatedProj.compileCombinedMarkdown()
+                markdownText = combined
+                slides = MarkdownSlideParser.parse(combined)
+                currentSlideIndex = (index - 1).coerceAtLeast(0)
+                scheduleDraftSave(combined)
+            } else if (editOwningFile(index) { doc, local -> doc.delete(local) }) {
+                currentSlideIndex = (index - 1).coerceAtLeast(0)
+            }
+            return
+        }
+
+        val updated = document().delete(index) ?: return
+        updateMarkdown(updated)
         currentSlideIndex = (index - 1).coerceAtLeast(0)
     }
 
@@ -756,12 +916,16 @@ class PresentationState(
             SlideLayoutType.POLL -> "## Audience Live Poll\n\n<!-- poll: Option A | Option B | Option C | Option D -->\n\n- Cast your vote in real-time from your phone!\n"
         }
 
-        val chunks = getSlideChunks().toMutableList()
-        val insertPos = (afterIndex + 1).coerceIn(0, chunks.size)
-        chunks.add(insertPos, template)
-        val newMarkdown = chunks.joinToString("\n\n---\n\n")
+        if (isProjectMode) {
+            if (editOwningFile(afterIndex) { doc, local -> doc.insert(local, template) }) {
+                currentSlideIndex = (afterIndex + 1).coerceAtMost((slides.size - 1).coerceAtLeast(0))
+            }
+            return
+        }
+
+        val newMarkdown = document().insert(afterIndex, template)
         updateMarkdown(newMarkdown)
-        currentSlideIndex = insertPos
+        currentSlideIndex = (afterIndex + 1).coerceIn(0, (slides.size - 1).coerceAtLeast(0))
     }
 
     fun resetToSample() {
@@ -789,6 +953,12 @@ class PresentationState(
     }
 
     companion object {
+        /**
+         * Quiet period before an autosave lands. Long enough that continuous typing never
+         * touches the disk, short enough that a crash loses at most a sentence.
+         */
+        private const val DRAFT_SAVE_DEBOUNCE_MS = 750L
+
         val BLANK_STARTER_MARKDOWN = """
 # Your Presentation Title
 ### A short, punchy subtitle

@@ -4,9 +4,77 @@ import com.skaldoria.core.parser.MarkdownSlideParser
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DeckProjectManagerTest {
+
+    /**
+     * SEC-6 — deck projects are shared artefacts, so manifest paths are untrusted.
+     * A `../` entry must not escape the project directory on load or on save.
+     */
+    @Test
+    fun `SEC-6 manifest entries cannot escape the project directory`() {
+        val root = File.createTempFile("sec6_deck_", "").apply { delete(); mkdirs() }
+        try {
+            val secret = File(root.parentFile, "sec6_secret_${System.nanoTime()}.md")
+            secret.writeText("# TOP SECRET outside the project")
+
+            File(root, "legit.md").writeText("# Legit Slide")
+            File(root, "deck.mdpres").writeText(
+                """
+                {
+                  "name": "Traversal Probe",
+                  "slides": ["legit.md", "../${secret.name}", "../../../../etc/passwd"]
+                }
+                """.trimIndent()
+            )
+
+            val project = DeckProjectManager.loadProjectFromManifest(File(root, "deck.mdpres"))
+
+            assertEquals(1, project.slideFiles.size, "only the in-project slide should load")
+            assertEquals("legit.md", project.slideFiles[0].relativePath)
+            assertFalse(
+                project.compileCombinedMarkdown().contains("TOP SECRET"),
+                "SEC-6: file outside the project was read into the deck"
+            )
+
+            // And the guard holds on the write path too.
+            val escaping = project.copy(
+                slideFiles = mutableListOf(
+                    project.slideFiles[0].copy(relativePath = "../${secret.name}", content = "# OVERWRITTEN")
+                )
+            )
+            assertFailsWith<SecurityException> { DeckProjectManager.saveProject(escaping) }
+            assertEquals(
+                "# TOP SECRET outside the project",
+                secret.readText(),
+                "SEC-6: file outside the project was overwritten"
+            )
+
+            secret.delete()
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `SEC-6 resolveWithinRoot accepts nested paths and rejects escapes`() {
+        val root = File.createTempFile("sec6_resolve_", "").apply { delete(); mkdirs() }
+        try {
+            File(root, "slides").mkdirs()
+            assertNotNull(DeckProjectManager.resolveWithinRoot(root, "slides/01.md"), "nested path allowed")
+            assertNull(DeckProjectManager.resolveWithinRoot(root, ".."), "parent rejected")
+            assertNull(DeckProjectManager.resolveWithinRoot(root, "../escape.md"), "traversal rejected")
+            assertNull(DeckProjectManager.resolveWithinRoot(root, "slides/../../escape.md"), "nested traversal rejected")
+            assertNull(DeckProjectManager.resolveWithinRoot(root, ""), "root itself rejected")
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 
     @Test
     fun testLoadSampleModularProject() {
