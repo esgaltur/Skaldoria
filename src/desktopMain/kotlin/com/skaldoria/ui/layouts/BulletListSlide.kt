@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.sp
 import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideElement
 import com.skaldoria.theme.PresentationTheme
+import com.skaldoria.ui.components.FitToCanvas
 import com.skaldoria.ui.components.MathFormulaRenderer
 import com.skaldoria.ui.components.inlineMarkdown
 
@@ -51,13 +52,20 @@ fun BulletListSlide(
 
         Spacer(Modifier.height(24.dp))
 
-        // Content Area — fills remaining height and centers vertically so
-        // bullets use the whole slide instead of clumping under the title.
-        Column(
-            verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
+        // Content Area — fills the remaining height, and shrinks the bullets to fit when
+        // there are more than the slide can hold. A 25-item list previously rendered nine
+        // items and silently dropped the rest.
+        //
+        // FitToCanvas takes the weight(1f) slot; the bullet Column inside it sizes to its
+        // own content, which is the shape FitToCanvas requires (see its docs).
+        FitToCanvas(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+        ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
+            modifier = Modifier.fillMaxWidth()
         ) {
             slide.elements.forEach { elem ->
                 when (elem) {
@@ -122,6 +130,7 @@ fun BulletListSlide(
                     else -> Unit
                 }
             }
+        }
         }
     }
 }
