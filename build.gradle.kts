@@ -65,11 +65,11 @@ kotlin {
                 implementation(compose.components.resources)
 
                 // JetBrains Official Markdown AST parser
-                implementation("org.jetbrains:markdown:0.7.3")
+                implementation("org.jetbrains:markdown:0.7.8")
 
                 // Coroutines & Desktop Swing dispatcher
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.1.0")
             }
         }
         val desktopTest by getting {
@@ -94,7 +94,7 @@ compose.desktop {
             )
             packageName = "Skaldoria"
             packageVersion = appVersion
-            description = "Skaldoria — Native 120 FPS Markdown Presentation Studio"
+            description = "Skaldoria — Native Markdown Presentation Studio"
             vendor = "Skaldoria"
 
             val iconsDir = project.file("src/desktopMain/resources/icons")
