@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -15,6 +17,11 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +35,7 @@ import com.markdownpres.ui.components.AppTooltip
 import com.markdownpres.ui.components.CommandPalette
 import com.markdownpres.ui.components.SlideSurface
 import com.markdownpres.ui.components.TopBar
+import kotlinx.coroutines.launch
 
 @Composable
 fun EditorWorkspace(
@@ -277,90 +285,144 @@ fun EditorWorkspace(
                 }
             }
 
-            // Bottom: Slide Thumbnails Filmstrip
-            LazyRow(
+            // Bottom: Slide Thumbnails Filmstrip (with auto-scroll + scroll arrows)
+            val filmstripState = rememberLazyListState()
+            val filmstripScope = rememberCoroutineScope()
+
+            // Auto-scroll the filmstrip so the current slide (e.g. a newly added one) is visible.
+            LaunchedEffect(state.currentSlideIndex, state.slides.size) {
+                if (state.slides.isNotEmpty()) {
+                    filmstripState.animateScrollToItem(
+                        state.currentSlideIndex.coerceIn(0, state.slides.size - 1)
+                    )
+                }
+            }
+
+            val canScrollLeft by remember {
+                derivedStateOf { filmstripState.canScrollBackward }
+            }
+            val canScrollRight by remember {
+                derivedStateOf { filmstripState.canScrollForward }
+            }
+
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(100.dp)
                     .background(state.currentTheme.surface)
-                    .border(1.dp, state.currentTheme.cardBorder)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    .border(1.dp, state.currentTheme.cardBorder),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                itemsIndexed(state.slides) { idx, slide ->
-                    val isSelected = idx == state.currentSlideIndex
+                // Left Scroll Arrow
+                FilmstripScrollButton(
+                    icon = Icons.Default.ChevronLeft,
+                    contentDescription = "Scroll Slides Left",
+                    enabled = canScrollLeft,
+                    theme = state.currentTheme
+                ) {
+                    filmstripScope.launch {
+                        val target = (filmstripState.firstVisibleItemIndex - 2).coerceAtLeast(0)
+                        filmstripState.animateScrollToItem(target)
+                    }
+                }
 
-                    AppTooltip(text = "Jump to Slide #${idx + 1}: ${slide.title}", theme = state.currentTheme) {
-                        Box(
-                            modifier = Modifier
-                                .width(130.dp)
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSelected) state.currentTheme.surfaceVariant else state.currentTheme.background)
-                                .border(
-                                    width = if (isSelected) 2.dp else 1.dp,
-                                    color = if (isSelected) state.currentTheme.primary else state.currentTheme.cardBorder,
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                                .clickable { state.goToSlide(idx) }
-                                .padding(8.dp)
-                        ) {
-                            Column(
-                                verticalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxSize()
+                LazyRow(
+                    state = filmstripState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    itemsIndexed(state.slides) { idx, slide ->
+                        val isSelected = idx == state.currentSlideIndex
+
+                        AppTooltip(text = "Jump to Slide #${idx + 1}: ${slide.title}", theme = state.currentTheme) {
+                            Box(
+                                modifier = Modifier
+                                    .width(130.dp)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) state.currentTheme.surfaceVariant else state.currentTheme.background)
+                                    .border(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) state.currentTheme.primary else state.currentTheme.cardBorder,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { state.goToSlide(idx) }
+                                    .padding(8.dp)
                             ) {
-                                Text(
-                                    text = slide.title,
-                                    color = if (isSelected) state.currentTheme.primary else state.currentTheme.textSecondary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 2
-                                )
-                                Text(
-                                    text = "#${idx + 1} • ${slide.layoutType.displayName}",
-                                    color = state.currentTheme.textMuted,
-                                    fontSize = 9.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
+                                Column(
+                                    verticalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    Text(
+                                        text = slide.title,
+                                        color = if (isSelected) state.currentTheme.primary else state.currentTheme.textSecondary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 2
+                                    )
+                                    Text(
+                                        text = "#${idx + 1} • ${slide.layoutType.displayName}",
+                                        color = state.currentTheme.textMuted,
+                                        fontSize = 9.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Add New Slide Card
+                    item {
+                        AppTooltip(text = if (state.isProjectMode) "Add New Modular Slide File" else "Add New Slide to Deck", theme = state.currentTheme) {
+                            Box(
+                                modifier = Modifier
+                                    .width(100.dp)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(state.currentTheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .border(1.dp, state.currentTheme.cardBorder, RoundedCornerShape(8.dp))
+                                    .clickable { state.addNewSlideFile("New Slide") }
+                                    .padding(8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Add Slide",
+                                        tint = state.currentTheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = if (state.isProjectMode) "+ Slide File" else "+ Slide",
+                                        color = state.currentTheme.textSecondary,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                // Add New Slide Card
-                item {
-                    AppTooltip(text = if (state.isProjectMode) "Add New Modular Slide File" else "Add New Slide to Deck", theme = state.currentTheme) {
-                        Box(
-                            modifier = Modifier
-                                .width(100.dp)
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(state.currentTheme.surfaceVariant.copy(alpha = 0.5f))
-                                .border(1.dp, state.currentTheme.cardBorder, RoundedCornerShape(8.dp))
-                                .clickable { state.addNewSlideFile("New Slide") }
-                                .padding(8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Add Slide",
-                                    tint = state.currentTheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text = if (state.isProjectMode) "+ Slide File" else "+ Slide",
-                                    color = state.currentTheme.textSecondary,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
+                // Right Scroll Arrow
+                FilmstripScrollButton(
+                    icon = Icons.Default.ChevronRight,
+                    contentDescription = "Scroll Slides Right",
+                    enabled = canScrollRight,
+                    theme = state.currentTheme
+                ) {
+                    filmstripScope.launch {
+                        val target = (filmstripState.firstVisibleItemIndex + 2)
+                            .coerceAtMost((state.slides.size - 1).coerceAtLeast(0))
+                        filmstripState.animateScrollToItem(target)
                     }
                 }
             }
@@ -371,6 +433,39 @@ fun EditorWorkspace(
             CommandPalette(
                 state = state,
                 onClose = { state.isCommandPaletteOpen = false }
+            )
+        }
+    }
+}
+
+@Composable
+private fun FilmstripScrollButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    theme: com.markdownpres.theme.PresentationTheme,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(36.dp)
+            .background(theme.surface),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(if (enabled) theme.surfaceVariant else androidx.compose.ui.graphics.Color.Transparent)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = if (enabled) theme.primary else theme.textMuted.copy(alpha = 0.25f),
+                modifier = Modifier.size(18.dp)
             )
         }
     }
