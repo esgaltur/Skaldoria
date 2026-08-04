@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skaldoria.core.models.PacingStatus
 import com.skaldoria.state.PresentationState
+import com.skaldoria.ui.components.ParkingLotView
 import com.skaldoria.ui.components.RemotePairingDialog
 import com.skaldoria.ui.components.SlideGridOverviewDialog
 import com.skaldoria.ui.components.SlideSurface
@@ -253,14 +254,15 @@ fun PresenterView(
                     .border(1.dp, state.currentTheme.cardBorder, RoundedCornerShape(14.dp))
                     .padding(16.dp)
             ) {
-                // Dual Tab Switcher
+                // 3-Way Tab Switcher (Notes, Live Q&A, Parking Lot)
+                val openParkingLotCount = state.followUpQuestions.count { !it.isAnswered }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
                         .background(state.currentTheme.background)
                         .padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     // Notes Tab Button
                     Button(
@@ -275,17 +277,17 @@ fun PresenterView(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.Notes, null, modifier = Modifier.size(14.dp))
-                            Text("Notes", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.AutoMirrored.Filled.Notes, null, modifier = Modifier.size(13.dp))
+                            Text("Notes", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
                     // Q&A Tab Button
                     Button(
                         onClick = { selectedRightTab = 1 },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1.1f),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (selectedRightTab == 1) state.currentTheme.surfaceVariant else Color.Transparent,
                             contentColor = if (selectedRightTab == 1) state.currentTheme.accent else state.currentTheme.textMuted
@@ -295,10 +297,34 @@ fun PresenterView(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.Default.QuestionAnswer, null, modifier = Modifier.size(14.dp))
-                            Text("Live Q&A (${state.audienceQuestions.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.QuestionAnswer, null, modifier = Modifier.size(13.dp))
+                            Text("Q&A (${state.audienceQuestions.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Parking Lot Tab Button
+                    Button(
+                        onClick = { selectedRightTab = 2 },
+                        modifier = Modifier.weight(1.2f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedRightTab == 2) state.currentTheme.surfaceVariant else Color.Transparent,
+                            contentColor = if (selectedRightTab == 2) state.currentTheme.primary else state.currentTheme.textMuted
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(vertical = 6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Default.Checklist, null, modifier = Modifier.size(13.dp))
+                            Text(
+                                if (openParkingLotCount > 0) "Parking Lot ($openParkingLotCount)" else "Parking Lot",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -390,7 +416,7 @@ fun PresenterView(
                             }
                         }
                     }
-                } else {
+                } else if (selectedRightTab == 1) {
                     // Live Audience Q&A Stream
                     Column(
                         modifier = Modifier
@@ -437,7 +463,7 @@ fun PresenterView(
                                                     .clip(RoundedCornerShape(12.dp))
                                                     .background(state.currentTheme.accent.copy(alpha = 0.2f))
                                                     .padding(horizontal = 8.dp, vertical = 2.dp)
-                                            ) {
+                                             ) {
                                                 Text(
                                                     text = "👍 ${q.upvotes}",
                                                     color = state.currentTheme.accent,
@@ -460,6 +486,12 @@ fun PresenterView(
                                             horizontalArrangement = Arrangement.End,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
+                                            TextButton(
+                                                onClick = { state.convertAudienceQuestionToParkingLot(q.id) },
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("📌 Park for Later", fontSize = 11.sp, color = state.currentTheme.accent)
+                                            }
                                             if (!q.isAnswered) {
                                                 TextButton(
                                                     onClick = { state.markQuestionAnswered(q.id) },
@@ -480,6 +512,13 @@ fun PresenterView(
                             }
                         }
                     }
+                } else {
+                    // Parking Lot & Unanswered Questions Follow-Up Tab
+                    ParkingLotView(
+                        state = state,
+                        theme = state.currentTheme,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
         }

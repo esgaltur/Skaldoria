@@ -3,6 +3,7 @@ package com.skaldoria.export
 import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideElement
 import com.skaldoria.state.PresentationState
+import com.skaldoria.ui.components.LatexSymbolMapper
 import java.awt.*
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
@@ -245,7 +246,8 @@ object DeckExporter {
                     g.fillRoundRect(100, currentY, 1720, 200, 16, 16)
                     g.color = primaryColor
                     g.font = Font("Serif", Font.ITALIC, 42)
-                    g.drawString(el.formula, 140, currentY + 110)
+                    val displayFormula = LatexSymbolMapper.preprocessDelimitersAndSymbols(el.formula)
+                    g.drawString(displayFormula, 140, currentY + 110)
                     currentY += 230
                     g.font = Font("SansSerif", Font.PLAIN, 32)
                 }

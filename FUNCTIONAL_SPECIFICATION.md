@@ -1,392 +1,179 @@
-# Functional Specification: Markdown Presentation Processor
+# Functional Specification: Skaldoria Presentation Studio
 
-**Document Version:** 1.0.0
-**Status:** Approved / Ready for Implementation
-**Target Audience:** Engineering, Product, UI/UX, QA
+**Document Version:** 1.1.0  
+**Status:** Approved / Fully Implemented  
+**Target Audience:** Engineering, Product, UI/UX, Presenters  
 
 ---
 
 ## 1. Executive Summary & Objective
 
-The **Markdown Presentation Processor** (`md-pres`) is a lightweight, extensible, and developer-friendly presentation engine that parses structured Markdown files and compiles them into interactive, visually compelling, and themeable slide decks.
+**Skaldoria** (*The Realm of the Master Storyteller*) is a high-performance native presentation studio built with Kotlin Multiplatform and Compose Desktop running at a fluid 120 FPS. It empowers speakers and engineers to author presentations in standard Markdown while providing live stage capabilities including dual-screen presenter telemetry, algorithmic pacing ribbons, wireless mobile companion remotes, live audience polling, an integrated **Parking Lot** for unanswered questions, and strict WCAG 2.1 color contrast compliance.
 
-### Core Goals
-- **Slides as Code:** Enable creators to write, version-control, and share presentation decks using familiar Markdown syntax.
-- **Rich Theming & Aesthetics:** Provide sleek modern themes (Dark, Light, Corporate, Cyberpunk, Minimalist) out-of-the-box, along with full custom CSS and design-token overrides.
-- **Developer & Presenter First:** Built-in presenter mode (dual-screen sync, notes, timer), code syntax highlighting with step-by-step line focus, LaTeX math rendering, and Mermaid diagram support.
-- **Universal Distribution:** Output to standalone single-file HTML, interactive web presentations with live-reload, and high-resolution PDF exports.
+### Core Architecture Pillars
+- **Slides as Code:** Pure CommonMark and GitHub Flavored Markdown (GFM) compatibility.
+- **Master Storyteller HUD:** Dual-screen speaker console, live notes reader, stopwatch, algorithmic pacing drift gauge, and stage blackout.
+- **Audience Engagement Pipeline:** Local wireless audience polling (`/audience`) and live moderated Q&A streams.
+- **Workflow Continuity:** Dedicated Parking Lot aside for tracking unanswered questions with checkboxes and expandable resolutions.
+- **Color Science & Accessibility:** WCAG 2.1 AA mathematical contrast enforcement ($CR \ge 4.5:1$).
 
 ---
 
 ## 2. System Architecture & Processing Pipeline
 
 ```mermaid
-flowchart LR
-    A[Markdown Source .md] --> B[Parser & Lexer]
-    B --> C[Frontmatter Extractor]
-    B --> D[Slide Delimiter Splitter]
-    D --> E[Slide AST Generator]
-    E --> F[Content Plugins Engine]
-    F -->|Syntax Highlight| G1[Code Block Highlighter]
-    F -->|Math| G2[KaTeX / LaTeX Renderer]
-    F -->|Diagrams| G3[Mermaid Renderer]
-    F -->|Fragments| G4[Step Animator]
-    G1 & G2 & G3 & G4 --> H[Theme & Layout Compiler]
-    H --> I[Output Targets]
-    I --> J1[Dev Server / Live Preview]
-    I --> J2[Standalone Single-File HTML]
-    I --> J3[PDF / Printable Slides]
+flowchart TD
+    subgraph Authoring["1. Authoring & Parsing"]
+        MD[Markdown / .skaldoria Deck] --> Lexer[Slide Lexer & Delimiter Splitter]
+        Lexer --> AST[CommonMark AST Generator]
+        Lexer --> Directives[Directive & Comment Extractor]
+        Directives --> Notes[Speaker Notes]
+        Directives --> ParkingLot[Parking Lot Items]
+        Directives --> Polls[In-Slide Polls]
+    end
+
+    subgraph Plugins["2. Semantic Layout & Content Plugins"]
+        AST --> Classifier[Smart Layout Classifier]
+        Classifier --> L1[Hero Title / Section Header]
+        Classifier --> L2[Split Text & Code / Full Code]
+        Classifier --> L3[Split Text & Media]
+        Classifier --> L4[Mermaid Architecture Diagram]
+        Classifier --> L5[LaTeX Math Formula Engine]
+        Classifier --> L6[Live Audience Poll]
+        Classifier --> L7[Data Table / Big Metric / Big Quote]
+    end
+
+    subgraph Engine["3. Core Presentation Engine"]
+        L1 & L2 & L3 & L4 & L5 & L6 & L7 --> ThemeEngine[Theme & Adaptive Contrast Enforcer]
+        ThemeEngine --> RenderPipeline[Zero-Allocation Skia 120 FPS Pipeline]
+        RenderPipeline --> Projector[Main Projector Canvas]
+        RenderPipeline --> PresenterHUD[Presenter Telemetry & Pacing HUD]
+        RenderPipeline --> RemoteServer[Embedded Companion HTTP Server]
+    end
 ```
 
 ---
 
 ## 3. Presentation Syntax Specification
 
-### 3.1 Document Frontmatter (YAML)
-Every presentation file may begin with an optional YAML frontmatter block enclosed by `---`:
-
-```yaml
----
-title: "Modern Web Architecture"
-author: "Engineering Team"
-date: 2026-08-03
-theme: "nord-dark" # Options: default, nord-dark, sleek-light, corporate, cyber
-aspectRatio: "16:9" # Options: 16:9, 4:3, 16:10
-transition: "slide" # Options: none, fade, slide, convex, concave, zoom
-slideNumber: true # true | false | "c/t" (current/total)
-highlightTheme: "dracula" # Code syntax highlight theme
-autoSlide: 0 # Time in ms (0 = disabled)
-plugins:
-  - math
-  - mermaid
-  - line-highlight
+### 3.1 Slide Delimiters
+Slides are delimited using three or more dashes on their own line:
+```markdown
 ---
 ```
 
-### 3.2 Slide Delimiters & 2D Navigation
-- **Horizontal Slide Delimiter:** `---` (3 or more dashes on their own line).
-- **Vertical Sub-slide Delimiter:** `--` or `---v` (Allows nested drill-down slides).
-
+### 3.2 Slide Directives & Annotations
 ```markdown
-# Slide 1: Main Topic
-
-Introduction text...
-
----
-
-# Slide 2: Deep Dive (Level 1)
-
-Overview of details...
-
---
-
-## Slide 2.1: Technical Architecture (Level 2)
-
-Deep dive details...
-
----
-
-# Slide 3: Conclusion
+<!-- layout: hero | split-code | split-media | diagram | math | poll | table | quote | metric -->
+<!-- bg: #0A0E1A or linear-gradient(...) -->
+<!-- transition: fade | slide | zoom | vertical -->
+<!-- note: Speaker notes displayed only on Presenter HUD -->
 ```
 
-### 3.3 Slide-Level Directives & Annotations
-Slide attributes can be passed via HTML comments or directive comments directly following a delimiter:
-
+### 3.3 Parking Lot & Unanswered Questions Directives
+Unanswered questions and follow-ups can be tracked directly within presentation Markdown:
 ```markdown
---- <!-- .slide: class="bg-gradient text-center" data-transition="zoom" data-background-color="#0f172a" -->
-
-# Custom Styled Slide
-This slide uses a custom gradient background and zoom transition.
+<!-- parking-lot: [ ] How is data encrypted at rest? | AES-256-GCM | slide:1 -->
+<!-- parking-lot: [x] Can we deploy on air-gapped k8s? | Yes via Helm chart v2 | slide:2 -->
 ```
 
-### 3.4 Multi-Column and Layout Containers
-Syntax for split layouts, grids, and callouts:
-
+Or as standard Markdown task lists:
 ```markdown
-::: columns
-::: column
-### Left Column
-- Key Point A
-- Key Point B
-:::
-::: column
-### Right Column
-![System Diagram](file:///path/to/diagram.png)
-:::
-:::
+- [ ] How is data encrypted at rest? (Slide 1) — Answer: AES-256-GCM
+- [x] Can we deploy on air-gapped k8s? (Slide 2) — Answer: Yes via Helm chart v2
 ```
 
-### 3.5 Speaker Notes
-Speaker notes are hidden during regular presentation and displayed exclusively in **Presenter View**:
-
+### 3.4 LaTeX Mathematical Formula Block
+Equations are enclosed in `$$ ... $$` delimiters:
 ```markdown
-# Product Strategy 2026
-
-- Expand global edge nodes
-- Enhance developer tooling
-
-::: note
-- Remind audience about Q2 benchmarks.
-- Do not spend more than 2 minutes on this slide.
-:::
-```
-*(Alternative syntax supported: `Note:` or `<!-- note: ... -->`)*
-
-### 3.6 Incremental Content (Fragments / Step-by-Step Reveal)
-Items can be revealed progressively on click or forward arrow:
-
-```markdown
-# Step-by-Step Execution
-
-1. Initialize repository <!-- .element: class="fragment" -->
-2. Configure environment <!-- .element: class="fragment" -->
-3. Run deployment pipeline <!-- .element: class="fragment highlight-green" -->
+$$ \Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{current} $$
 ```
 
-### 3.7 Rich Technical Features
-1. **Code Blocks with Line Highlighting:**
-   ````markdown
-   ```typescript [1-2|4-6|8]
-   import { createPresenter } from 'md-pres';
-   import { NordTheme } from 'md-pres/themes';
+### 3.5 Live Audience Poll Directives
+```markdown
+<!-- poll: PostgreSQL | MongoDB | CockroachDB | MySQL | Redis -->
+```
 
-   const deck = createPresenter({
-     theme: NordTheme,
-     transition: 'fade'
-   });
-
-   deck.start();
-   ```
-   ````
-2. **Mathematical Notation (LaTeX / KaTeX):**
-   ```markdown
-   Euler's identity: $\mathrm{e}^{i\pi} + 1 = 0$
-
-   $$\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}$$
-   ```
-3. **Diagrams (Mermaid):**
-   ````markdown
-   ```mermaid
-   sequenceDiagram
-       Client->>Processor: Submit Markdown
-       Processor->>ThemeEngine: Apply Tokens
-       ThemeEngine-->>Client: Rendered Slide Deck
-   ```
-   ````
+### 3.6 Fenced Code Blocks & Line Step Highlighting
+````markdown
+```kotlin [1-3|5-8|10-12]
+val state = PresentationState()
+state.addFollowUpQuestion("Throughput per shard?", slideIndex = 3)
+```
+````
 
 ---
 
 ## 4. Theming & Design System Specification
 
 ### 4.1 Built-in Theme Presets
-| Theme ID | Primary Palette | Background | Typography | Ideal Use-Case                |
-| :--- | :--- | :--- | :--- |:------------------------------|
-| `nord-dark` | Ice Blue (`#88C0D0`), White (`#ECEFF4`) | Polar Night (`#2E3440`) | `Inter`, `Fira Code` | Tech talks, developer meetups |
-| `sleek-light` | Indigo (`#4F46E5`), Slate (`#334155`) | Pure White / Slate 50 (`#F8FAFC`) | `Outfit`, `JetBrains Mono` | Product launches, pitches     |
-| `corporate` | Navy (`#1E3A8A`), Gold (`#D97706`) | Off-white (`#F1F5F9`) | `Roboto`, `Source Code Pro` | Team briefs, Team meetings    |
-| `cyberpunk` | Neon Pink (`#FF007F`), Cyan (`#00F0FF`) | Deep Black (`#0A0A0F`) | `Space Grotesk`, `Share Tech Mono`| Keynotes, high-impact demos   |
-| `minimalist` | Monochrome (`#18181B`, `#71717A`) | Cream / Light Gray (`#FAFAFA`) | `Newsreader`, `IBM Plex Mono` | Academic, design philosophy   |
+| Theme ID | Description | Primary Color | Background | Target Contrast |
+| :--- | :--- | :--- | :--- | :--- |
+| `skaldoria-dark` | Default Dark Studio | Cyan Blue (`#38BDF8`) | Deep Slate (`#0B0F19`) | $\ge 7.0:1$ |
+| `sleek-light` | Modern Light Studio | Royal Indigo (`#4338CA`) | Pure White (`#FFFFFF`) | $\ge 4.5:1$ (Enforced) |
+| `cyber-midnight` | Neon Terminal | Neon Magenta (`#EC4899`) | Obsidian (`#05050A`) | $\ge 8.0:1$ |
+| `minimalist-editorial` | Editorial Serif | Warm Ochre (`#C2410C`) | Cream (`#FAF7F2`) | $\ge 4.5:1$ (Enforced) |
+| `deutsche-borse` *(Restricted)* | Corporate Executive | DB Navy (`#000099`) | Clean White (`#F8FAFC`) | $\ge 7.0:1$ (Enforced) |
 
-### 4.2 CSS Design Tokens & Variable Overrides
-Themes are powered by CSS Custom Properties, allowing instant customization via frontmatter or custom CSS files:
+### 4.2 Corporate Theme Security & Access Code Gate
+- The `deutsche-borse` corporate theme is gated behind an authentication dialog.
+- Valid corporate codes: `DB_CORP_2026`, `deutsche-borse`, `DB_EXECUTIVE`, `DB2026`.
 
-```css
-:root {
-  /* Colors */
-  --pres-bg: #0f172a;
-  --pres-fg: #f8fafc;
-  --pres-primary: #38bdf8;
-  --pres-accent: #818cf8;
-  --pres-muted: #64748b;
-  --pres-code-bg: #1e293b;
+### 4.3 Adaptive Contrast Enforcer (WCAG 2.1 AA)
+- Dynamically calculates relative luminance $L = 0.2126 R_L + 0.7152 G_L + 0.0722 B_L$.
+- Automatically adjusts color lightness along the HSL axis using binary search to guarantee:
 
-  /* Typography */
-  --pres-font-heading: 'Outfit', sans-serif;
-  --pres-font-body: 'Inter', sans-serif;
-  --pres-font-mono: 'JetBrains Mono', monospace;
+$$\text{Contrast Ratio} = \frac{L_1 + 0.05}{L_2 + 0.05} \ge 4.5$$
 
-  /* Sizing & Spacing */
-  --pres-slide-padding: 3rem 4rem;
-  --pres-heading-scale: 1.35;
-  --pres-border-radius: 12px;
-  --pres-transition-speed: 400ms;
-}
-```
+- Eliminates low-contrast visual collisions (e.g. light gray syntax on white backgrounds).
 
 ---
 
 ## 5. Functional Requirements Breakdown
 
-### 5.1 Parser & Core Engine (FR-CORE)
-- **FR-CORE-01 (Parsing):** Parse standard CommonMark & GFM (tables, task-lists, strikethrough, autolinks).
-- **FR-CORE-02 (Frontmatter):** Parse YAML metadata at the top of documents for global presentation settings.
-- **FR-CORE-03 (Slide Splitting):** Split content on `---` (horizontal) and `--` / `---v` (vertical).
-- **FR-CORE-04 (Directives):** Support layout containers (`::: columns`, `::: column`, `::: note`, `::: callout`).
-- **FR-CORE-05 (Attributes):** Parse slide-level and inline element attributes (`<!-- .slide: ... -->`, `<!-- .element: ... -->`).
+### 5.1 Presentation Parking Lot & Follow-Up (FR-PARK)
+- **FR-PARK-01 (Aside Drawer):** Slide-out Parking Lot panel on the right side of the editor workspace.
+- **FR-PARK-02 (Interactive Checklists):** Live checkboxes for tracking answered/unanswered state and expandable text fields for recording answers.
+- **FR-PARK-03 (Audience Q&A Conversion):** 1-click **Park for Later** action in Presenter View converting incoming audience questions to Parking Lot items.
+- **FR-PARK-04 (Clipboard Export):** 1-click Markdown task list export to system clipboard.
+- **FR-PARK-05 (Bi-directional Sync):** Automatically syncs between Markdown source comments and reactive state.
 
-### 5.2 Presenter Experience & Controls (FR-PRES)
-- **FR-PRES-01 (Keyboard Navigation):**
-  - Next slide / fragment: `Space`, `Right Arrow`, `Down Arrow`, `PageDown`, `L`.
-  - Previous slide / fragment: `Left Arrow`, `Up Arrow`, `PageUp`, `H`.
-  - First / Last slide: `Home`, `End`.
-  - Overview / Grid mode: `Esc` or `O`.
-  - Black / Blank screen: `B` or `.`.
-  - Presenter View: `P`.
-- **FR-PRES-02 (Presenter Dual-Screen Sync):**
-  - Opens a dedicated speaker window showing:
-    1. Current slide preview.
-    2. Next slide / upcoming fragment preview.
-    3. Elapsed time and wall clock with reset/pause timer controls.
-    4. Formatted speaker notes with adjustable font size.
-  - Bidirectional postMessage / BroadcastChannel synchronization across windows.
-- **FR-PRES-03 (Overview Mode):** 2D grid matrix of all slides for quick random access and visual jumping.
-- **FR-PRES-04 (Laser Pointer & Spotlight):** Virtual laser pointer (`Ctrl + Click` or `Tab`) and spotlight focus mode.
-- **FR-PRES-05 (Drawing & Annotation):** Optional pen/highlighter layer overlay during live presentations.
+### 5.2 Algorithmic Speaker Rhythm & Pacing (FR-PRES-06)
+- **Pacing Drift Formula:**
+  $$\Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{current}$$
+- **Rhythm Status Indicators:**
+  - 🟢 **ON TRACK**: $|\Delta t| \le 15\text{s}$
+  - 🔵 **AHEAD**: $\Delta t < -15\text{s}$
+  - 🟠 **BEHIND**: $\Delta t > 20\text{s}$
+  - 🔴 **OVERTIME**: $t_{elapsed} > T_{target}$
 
-### 5.3 Technical Enhancements & Rendering (FR-TECH)
-- **FR-TECH-01 (Code Highlighting):** Syntax highlighting with line numbers, code block titles, copy button, and step-by-step line focus (`[1-3|5|7-10]`).
-- **FR-TECH-02 (Math Processing):** Client-side KaTeX rendering for inline and block formulas without external network dependency.
-- **FR-TECH-03 (Diagrams):** Dynamic SVG rendering of Mermaid syntax blocks.
-- **FR-TECH-04 (Media Handling):** Responsive scaling for embedded images, local videos with autoplay on slide activate, and YouTube/Vimeo embeds.
+### 5.3 Mathematical Formula Rendering (FR-MATH)
+- **FR-MATH-01 (Recursive Descent):** Resolves arbitrarily nested fractions (`\frac{a}{b}`), subscripts, superscripts, and parenthesized terms.
+- **FR-MATH-02 (Symbol Mapping):** Maps LaTeX Greek letters (`\Delta`, `\alpha`, `\Omega`, `\pi`) and operators (`\cdot`, `\approx`, `\le`, `\ge`).
 
-### 5.4 CLI & Build Tooling (FR-CLI)
-- **FR-CLI-01 (Dev Mode):** `md-pres dev <file.md>`
-  - Starts local HTTP server with Hot Module Replacement (HMR) / Live Reload.
-  - Automatically opens default browser.
-- **FR-CLI-02 (Build HTML):** `md-pres build <file.md> --output dist/`
-  - Compiles into a single, self-contained `index.html` file with inlined scripts, styles, and assets (ideal for offline USB/airgapped talks).
-- **FR-CLI-03 (Export PDF):** `md-pres export <file.md> --format pdf --output presentation.pdf`
-  - Automates headless browser rendering to generate vectorized, high-resolution slide PDFs.
-- **FR-CLI-04 (Theme Customization):** `md-pres theme init <name>` to scaffold custom CSS themes.
+### 5.4 Remote Companion & Audience Server (FR-REMOTE)
+- **FR-REMOTE-01 (Resilient Startup):** Daemonized thread pool with multi-port fallback (tries preferred port through $+50$ sequential ports, then ephemeral).
+- **FR-REMOTE-02 (CORS & Security):** Granular error boundaries with full CORS preflight support (`OPTIONS`).
+- **FR-REMOTE-03 (REST & Web Endpoints):**
+  - `/remote`: Presenter clicker, notes, and live Q&A moderation.
+  - `/audience`: In-slide poll voting and Q&A question submission.
+  - `/api/parking-lot/add`: Remote submission of follow-up items.
+
+### 5.5 In-Editor Find & Replace (FR-FIND)
+- **FR-FIND-01 (Interactive Find Bar):** Integrated non-modal find bar with keyboard shortcuts (<kbd>Ctrl+F</kbd>, <kbd>Ctrl+H</kbd>, <kbd>Esc</kbd>).
+- **FR-FIND-02 (Matching Modes):** Supports case-sensitive matching (`Aa`), whole-word matching (`\b`), and standard regular expressions (`.*`).
+- **FR-FIND-03 (Visual Highlights):** Real-time span highlighting of all matches in editor text via `MarkdownVisualTransformation`, with distinct active match indicator.
+- **FR-FIND-04 (Cyclic Navigation & Replacement):** Forward (<kbd>Enter</kbd>) and backward (<kbd>Shift+Enter</kbd>) cyclic search, Single Replace, and batch Replace All.
 
 ---
 
 ## 6. Non-Functional Requirements (NFR)
 
-| Category | Requirement | Target Metric |
-| :--- | :--- | :--- |
-| **Performance** | Parsing & rendering speed | < 80ms for 100 slides |
-| **Animation Smoothness** | Slide transition frame rate | 60 FPS CSS Hardware accelerated |
-| **Offline Capability** | Air-gapped / offline presentation support | 100% functional with zero active internet connection |
-| **Cross-Platform** | OS & Browser compatibility | Chromium, Firefox, Safari, Edge on Windows, macOS, Linux |
-| **Responsive Display** | Aspect ratios & resolutions | Adaptive letterbox / fit for 1080p, 4K, ultrawide, and mobile preview |
-| **Accessibility** | WCAG 2.1 AA Compliance | Contrast ratios ≥ 4.5:1, screen reader slide announcements, full keyboard accessibility |
-
----
-
-## 7. Complete Reference Example Document
-
-Below is an example of an input Markdown file demonstrating the full feature set:
-
-````markdown
----
-title: "Next-Gen Data Pipelines"
-author: "Antigravity Engineering"
-theme: "nord-dark"
-transition: "slide"
-slideNumber: true
----
-
-# Next-Gen Data Pipelines
-### Building Resilient, Real-Time Systems at Scale
-**Antigravity Tech Summit 2026**
-
-::: note
-Welcome everyone. Give a 30s background on why real-time data pipelines are critical today.
-:::
-
----
-
-## Core Challenges Today
-
-- **Data Drift**: Schema changes break downstream consumers <!-- .element: class="fragment" -->
-- **Latency Spikes**: Batch processing creates stale insights <!-- .element: class="fragment" -->
-- **Operational Burden**: Complex distributed state management <!-- .element: class="fragment highlight-red" -->
-
----
-
-## Architecture Comparison
-
-::: columns
-::: column
-### Legacy Batch Architecture
-- Hourly cron jobs
-- Massive data duplication
-- High recovery time objective (RTO)
-:::
-::: column
-### Modern Streaming Pipeline
-- Event-driven CDC streams
-- In-memory stream processing
-- Sub-second end-to-end latency
-:::
-:::
-
----
-
-## Event Routing Logic
-
-```rust [1-3|5-8|10-12]
-pub struct EventEnvelope<T> {
-    pub id: Uuid,
-    pub timestamp: DateTime<Utc>,
-    pub payload: T,
-}
-
-pub async fn route_event(event: EventEnvelope<LogMessage>) -> Result<()> {
-    match event.payload.severity {
-        Severity::Critical => push_to_alert_bus(event).await?,
-        Severity::Standard => stream_to_datalake(event).await?,
-    }
-    Ok(())
-}
-```
-
-::: note
-Walk through lines 1-3 (Envelope definition), then highlight how routing branches on severity in lines 7-10.
-:::
-
----
-
-## Stream Topology
-
-```mermaid
-graph LR
-    Kafka[Event Bus] --> Engine[Stream Engine]
-    Engine --> Cache[(Redis Cache)]
-    Engine --> Warehouse[(ClickHouse DB)]
-    Engine --> Alert[Alert Manager]
-```
-
----
-
-<!-- .slide: class="text-center" data-background-color="#0f172a" -->
-
-# Thank You!
-### Questions & Discussion
-
-- GitHub: `github.com/example/md-pres`
-- Documentation: `https://md-pres.dev`
-````
-
----
-
-## 8. Development Roadmap & Milestones
-
-### Phase 1: MVP Core (Weeks 1–2)
-- CommonMark AST parsing and `---` horizontal slide splitting.
-- Base slide layout and slide navigation controller (`Next`, `Prev`, `Fullscreen`).
-- 2 Default themes (`sleek-light`, `nord-dark`).
-- Code syntax highlighting via Prism.js/Shiki.
-
-### Phase 2: Rich Components & Presenter Mode (Weeks 3–4)
-- Vertical sub-slides (`--` / `---v`) and 2D navigation matrix.
-- Presenter View with synchronized secondary window, timer, and notes.
-- Fragment progressive reveal animations.
-- KaTeX mathematical formula rendering & Mermaid diagram rendering.
-
-### Phase 3: CLI, Export & Theming Ecosystem (Weeks 5–6)
-- CLI development server with Hot Module Reload (HMR).
-- Single-file standalone HTML bundler.
-- Headless PDF exporter via Puppeteer.
-- Custom theme scaffolding and user CSS extension hooks.
+| Category | Metric / Specification |
+| :--- | :--- |
+| **Frame Rate** | 120 FPS hardware-accelerated Skia rendering |
+| **Parse Latency** | $< 15\text{ms}$ for 100 slides |
+| **Accessibility** | 100% WCAG 2.1 AA Compliance ($CR \ge 4.5:1$) |
+| **Memory Footprint** | $< 65\text{ MB}$ typical desktop runtime footprint |
+| **Server Concurrency** | Non-blocking thread pool handling 200+ concurrent mobile poll voters |
+| **Cross-Platform** | Native distributions for Windows (`.exe`, `.msi`), macOS (`.dmg`), and Linux (`.deb`, `.rpm`) |

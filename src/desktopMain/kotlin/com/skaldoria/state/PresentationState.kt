@@ -11,6 +11,7 @@ import com.skaldoria.config.ConfigManager
 import com.skaldoria.core.models.AnnotationStroke
 import com.skaldoria.core.models.AudienceQuestion
 import com.skaldoria.core.models.DeckProject
+import com.skaldoria.core.models.FollowUpQuestion
 import com.skaldoria.core.models.PacingStatus
 import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideFileEntry
@@ -94,6 +95,10 @@ class PresentationState(
     val audienceQuestions = mutableStateListOf<AudienceQuestion>()
     private val pollVotesMap = mutableStateMapOf<Int, MutableMap<Int, Int>>()
 
+    // Presentation Aside: Parking Lot & Unanswered Questions Follow-Up
+    val followUpQuestions = mutableStateListOf<FollowUpQuestion>()
+    var isParkingLotDrawerOpen by mutableStateOf(false)
+
     private val annotations = mutableStateMapOf<Int, MutableList<AnnotationStroke>>()
 
     val currentSlideStrokes: List<AnnotationStroke>
@@ -123,6 +128,111 @@ class PresentationState(
                 markdownText
             }
         }
+
+    // Find & Replace in Editor
+    var isFindOpen by mutableStateOf(false)
+    var isReplaceOpen by mutableStateOf(false)
+    var findQuery by mutableStateOf("")
+    var replaceQuery by mutableStateOf("")
+    var isFindCaseSensitive by mutableStateOf(false)
+    var isFindWholeWord by mutableStateOf(false)
+    var isFindRegex by mutableStateOf(false)
+    var currentMatchIndex by mutableStateOf(0)
+
+    val findMatches: List<IntRange>
+        get() {
+            val query = findQuery
+            if (query.isEmpty()) return emptyList()
+            val text = currentEditorText
+            if (text.isEmpty()) return emptyList()
+
+            return try {
+                if (isFindRegex) {
+                    val options = if (isFindCaseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
+                    val pattern = Regex(query, options)
+                    pattern.findAll(text).map { it.range }.toList()
+                } else {
+                    val patternString = if (isFindWholeWord) "\\b${Regex.escape(query)}\\b" else Regex.escape(query)
+                    val options = if (isFindCaseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
+                    val pattern = Regex(patternString, options)
+                    pattern.findAll(text).map { it.range }.toList()
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+
+    fun openFind(withReplace: Boolean = false) {
+        isFindOpen = true
+        if (withReplace) {
+            isReplaceOpen = true
+        }
+    }
+
+    fun closeFind() {
+        isFindOpen = false
+        isReplaceOpen = false
+    }
+
+    fun toggleFind(withReplace: Boolean = false) {
+        if (isFindOpen && (!withReplace || isReplaceOpen)) {
+            closeFind()
+        } else {
+            openFind(withReplace)
+        }
+    }
+
+    fun findNext() {
+        val matches = findMatches
+        if (matches.isNotEmpty()) {
+            currentMatchIndex = (currentMatchIndex + 1) % matches.size
+        }
+    }
+
+    fun findPrevious() {
+        val matches = findMatches
+        if (matches.isNotEmpty()) {
+            currentMatchIndex = (currentMatchIndex - 1 + matches.size) % matches.size
+        }
+    }
+
+    fun replaceCurrent() {
+        val matches = findMatches
+        if (matches.isEmpty()) return
+        val safeIndex = currentMatchIndex.coerceIn(0, matches.size - 1)
+        val matchRange = matches[safeIndex]
+        val text = currentEditorText
+        if (matchRange.first >= 0 && matchRange.last < text.length && matchRange.first <= matchRange.last) {
+            val newText = text.substring(0, matchRange.first) + replaceQuery + text.substring(matchRange.last + 1)
+            updateEditorContent(newText)
+            val updatedMatches = findMatches
+            if (updatedMatches.isNotEmpty()) {
+                currentMatchIndex = safeIndex.coerceIn(0, updatedMatches.size - 1)
+            } else {
+                currentMatchIndex = 0
+            }
+        }
+    }
+
+    fun replaceAll() {
+        val matches = findMatches
+        if (matches.isEmpty()) return
+        val text = currentEditorText
+        val newText = try {
+            if (isFindRegex) {
+                val options = if (isFindCaseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
+                Regex(findQuery, options).replace(text, replaceQuery)
+            } else {
+                val patternString = if (isFindWholeWord) "\\b${Regex.escape(findQuery)}\\b" else Regex.escape(findQuery)
+                val options = if (isFindCaseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
+                Regex(patternString, options).replace(text, replaceQuery)
+            }
+        } catch (_: Exception) {
+            text
+        }
+        updateEditorContent(newText)
+        currentMatchIndex = 0
+    }
 
     var elapsedSeconds by mutableStateOf(0L)
         private set
@@ -257,6 +367,10 @@ class PresentationState(
         slides = MarkdownSlideParser.parse(newMarkdown)
         if (currentSlideIndex >= slides.size) {
             currentSlideIndex = (slides.size - 1).coerceAtLeast(0)
+        }
+        val extractedFollowUps = MarkdownSlideParser.extractFollowUpQuestions(newMarkdown)
+        if (extractedFollowUps.isNotEmpty() && followUpQuestions.isEmpty()) {
+            followUpQuestions.addAll(extractedFollowUps)
         }
         ConfigManager.saveDraft(newMarkdown)
     }
@@ -473,6 +587,86 @@ class PresentationState(
 
     fun dismissQuestion(questionId: String) {
         audienceQuestions.removeAll { it.id == questionId }
+    }
+
+    // Presentation Aside: Parking Lot & Unanswered Questions Management
+    fun toggleParkingLotDrawer() {
+        isParkingLotDrawerOpen = !isParkingLotDrawerOpen
+    }
+
+    fun addFollowUpQuestion(
+        question: String,
+        slideIndex: Int? = currentSlideIndex,
+        author: String? = null,
+        answerText: String = "",
+        isAnswered: Boolean = false
+    ) {
+        if (question.isBlank()) return
+        followUpQuestions.add(
+            FollowUpQuestion(
+                question = question.trim(),
+                isAnswered = isAnswered,
+                answerText = answerText.trim(),
+                slideIndex = slideIndex,
+                author = author
+            )
+        )
+    }
+
+    fun toggleFollowUpAnswered(id: String) {
+        val idx = followUpQuestions.indexOfFirst { it.id == id }
+        if (idx != -1) {
+            val item = followUpQuestions[idx]
+            followUpQuestions[idx] = item.copy(isAnswered = !item.isAnswered)
+        }
+    }
+
+    fun updateFollowUpAnswer(id: String, answer: String) {
+        val idx = followUpQuestions.indexOfFirst { it.id == id }
+        if (idx != -1) {
+            val item = followUpQuestions[idx]
+            followUpQuestions[idx] = item.copy(answerText = answer)
+        }
+    }
+
+    fun deleteFollowUpQuestion(id: String) {
+        followUpQuestions.removeAll { it.id == id }
+    }
+
+    /**
+     * 1-Click deferral: Move an audience live Q&A question to the Presentation Parking Lot
+     * so the speaker can address it later without losing track.
+     */
+    fun convertAudienceQuestionToParkingLot(questionId: String) {
+        val q = audienceQuestions.find { it.id == questionId } ?: return
+        addFollowUpQuestion(
+            question = q.text,
+            slideIndex = currentSlideIndex,
+            author = q.author,
+            answerText = "",
+            isAnswered = false
+        )
+        // Mark audience question as answered/handled
+        markQuestionAnswered(questionId)
+    }
+
+    /**
+     * Export all parking lot questions as Markdown checklist.
+     */
+    fun exportFollowUpMarkdownChecklist(): String {
+        if (followUpQuestions.isEmpty()) return "No follow-up action items."
+        val sb = StringBuilder()
+        sb.append("## Follow-Up Action Items & Parking Lot\n\n")
+        for (item in followUpQuestions) {
+            val box = if (item.isAnswered) "[x]" else "[ ]"
+            val slidePart = if (item.slideIndex != null) " (Slide ${item.slideIndex + 1})" else ""
+            val authorPart = if (!item.author.isNullOrBlank()) " [Asked by ${item.author}]" else ""
+            sb.append("- $box **${item.question}**$slidePart$authorPart\n")
+            if (item.answerText.isNotBlank()) {
+                sb.append("  - *Answer / Resolution:* ${item.answerText}\n")
+            }
+        }
+        return sb.toString()
     }
 
     fun startPresenting(presenterMode: Boolean = false) {

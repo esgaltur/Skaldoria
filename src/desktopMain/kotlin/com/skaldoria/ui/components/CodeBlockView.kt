@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.skaldoria.theme.AdaptiveContrastEnforcer
 import com.skaldoria.theme.PresentationTheme
 
 @Composable
@@ -110,13 +111,21 @@ private val KEYWORDS = setOf(
 )
 
 private fun highlightSyntax(line: String, theme: PresentationTheme): AnnotatedString {
+    val bg = theme.codeBackground
+    val codeTextCol = AdaptiveContrastEnforcer.ensureContrast(theme.codeText, bg, 4.5f)
+    val keywordCol = AdaptiveContrastEnforcer.ensureContrast(theme.codeKeyword, bg, 4.5f)
+    val stringCol = AdaptiveContrastEnforcer.ensureContrast(theme.codeString, bg, 4.5f)
+    val commentCol = AdaptiveContrastEnforcer.ensureContrast(theme.codeComment, bg, 4.5f)
+    val numberCol = AdaptiveContrastEnforcer.ensureContrast(theme.codeNumber, bg, 4.5f)
+    val primaryCol = AdaptiveContrastEnforcer.ensureContrast(theme.primary, bg, 4.5f)
+
     return buildAnnotatedString {
         val trimmed = line.trimStart()
 
         // Handle full line comments
         if (trimmed.startsWith("//") || trimmed.startsWith("#")) {
             append(line)
-            addStyle(SpanStyle(color = theme.codeComment), 0, line.length)
+            addStyle(SpanStyle(color = commentCol), 0, line.length)
             return@buildAnnotatedString
         }
 
@@ -137,7 +146,7 @@ private fun highlightSyntax(line: String, theme: PresentationTheme): AnnotatedSt
                 if (i < line.length) i++ // include closing quote
                 val str = line.substring(start, i)
                 append(str)
-                addStyle(SpanStyle(color = theme.codeString), length - str.length, length)
+                addStyle(SpanStyle(color = stringCol), length - str.length, length)
                 continue
             }
 
@@ -145,7 +154,7 @@ private fun highlightSyntax(line: String, theme: PresentationTheme): AnnotatedSt
             if (char == '/' && i + 1 < line.length && line[i + 1] == '/') {
                 val comment = line.substring(i)
                 append(comment)
-                addStyle(SpanStyle(color = theme.codeComment), length - comment.length, length)
+                addStyle(SpanStyle(color = commentCol), length - comment.length, length)
                 break
             }
 
@@ -159,11 +168,11 @@ private fun highlightSyntax(line: String, theme: PresentationTheme): AnnotatedSt
                 append(word)
 
                 if (word in KEYWORDS) {
-                    addStyle(SpanStyle(color = theme.codeKeyword, fontWeight = FontWeight.Bold), length - word.length, length)
+                    addStyle(SpanStyle(color = keywordCol, fontWeight = FontWeight.Bold), length - word.length, length)
                 } else if (word.first().isUpperCase()) {
-                    addStyle(SpanStyle(color = theme.primary), length - word.length, length)
+                    addStyle(SpanStyle(color = primaryCol), length - word.length, length)
                 } else {
-                    addStyle(SpanStyle(color = theme.codeText), length - word.length, length)
+                    addStyle(SpanStyle(color = codeTextCol), length - word.length, length)
                 }
                 continue
             }
@@ -176,7 +185,7 @@ private fun highlightSyntax(line: String, theme: PresentationTheme): AnnotatedSt
                 }
                 val num = line.substring(start, i)
                 append(num)
-                addStyle(SpanStyle(color = theme.codeNumber), length - num.length, length)
+                addStyle(SpanStyle(color = numberCol), length - num.length, length)
                 continue
             }
 

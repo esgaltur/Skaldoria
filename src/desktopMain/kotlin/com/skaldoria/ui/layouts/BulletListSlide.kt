@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.sp
 import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideElement
 import com.skaldoria.theme.PresentationTheme
+import com.skaldoria.ui.components.MathFormulaRenderer
 import com.skaldoria.ui.components.inlineMarkdown
 
 @Composable
@@ -107,6 +108,14 @@ fun BulletListSlide(
                             fontSize = 16.sp,
                             lineHeight = 24.sp,
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+                        )
+                    }
+
+                    is SlideElement.MathFormula -> {
+                        MathFormulaRenderer(
+                            formula = elem.formula,
+                            theme = theme,
+                            isBlock = elem.isBlock
                         )
                     }
 

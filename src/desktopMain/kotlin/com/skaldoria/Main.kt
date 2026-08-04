@@ -98,6 +98,18 @@ fun main() = application {
                         state.isCommandPaletteOpen = !state.isCommandPaletteOpen
                         true
                     }
+                    isCtrl && event.key == androidx.compose.ui.input.key.Key.F -> {
+                        state.toggleFind(withReplace = false)
+                        true
+                    }
+                    isCtrl && event.key == androidx.compose.ui.input.key.Key.H -> {
+                        state.toggleFind(withReplace = true)
+                        true
+                    }
+                    event.key == androidx.compose.ui.input.key.Key.Escape && state.isFindOpen -> {
+                        state.closeFind()
+                        true
+                    }
                     event.key == androidx.compose.ui.input.key.Key.F5 -> {
                         state.startPresenting(presenterMode = false)
                         true

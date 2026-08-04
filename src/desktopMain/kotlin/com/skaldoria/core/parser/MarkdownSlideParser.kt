@@ -1,6 +1,7 @@
 package com.skaldoria.core.parser
 
 import com.skaldoria.core.layout.SmartLayoutClassifier
+import com.skaldoria.core.models.FollowUpQuestion
 import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideElement
 import com.skaldoria.core.models.SlideLayoutType
@@ -102,8 +103,21 @@ object MarkdownSlideParser {
         var currentCodeLang = "kotlin"
         var currentHighlightedLines = emptySet<Int>()
         var currentCodeLines = mutableListOf<String>()
+        var inMathBlock = false
+        var currentMathLines = mutableListOf<String>()
         var currentQuoteLines = mutableListOf<String>()
         var currentTableLines = mutableListOf<String>()
+
+        fun flushMath() {
+            if (currentMathLines.isNotEmpty()) {
+                val fullFormula = currentMathLines.joinToString("\n").trim()
+                if (fullFormula.isNotEmpty()) {
+                    elements.add(SlideElement.MathFormula(formula = fullFormula, isBlock = true))
+                }
+                currentMathLines = mutableListOf()
+                inMathBlock = false
+            }
+        }
 
         fun flushList() {
             if (currentListItems.isNotEmpty()) {
@@ -249,6 +263,7 @@ object MarkdownSlideParser {
                     flushList()
                     flushQuote()
                     flushTable()
+                    flushMath()
                     inCodeBlock = true
                     val fenceMatch = CODE_FENCE_START.find(trimmed)
                     currentCodeLang = fenceMatch?.groupValues?.getOrNull(1) ?: ""
@@ -261,6 +276,40 @@ object MarkdownSlideParser {
 
             if (inCodeBlock) {
                 currentCodeLines.add(line)
+                continue
+            }
+
+            // 2b. Math Formula Block ($$)
+            if (inMathBlock) {
+                if (trimmed == "$$" || (trimmed.endsWith("$$") && !trimmed.startsWith("$$"))) {
+                    val content = trimmed.removeSuffix("$$").trim()
+                    if (content.isNotEmpty()) {
+                        currentMathLines.add(content)
+                    }
+                    flushMath()
+                } else {
+                    currentMathLines.add(line)
+                }
+                continue
+            }
+
+            if (trimmed.startsWith("$$")) {
+                flushList()
+                flushQuote()
+                flushTable()
+                if (trimmed.endsWith("$$") && trimmed.length > 2) {
+                    val formula = trimmed.removeSurrounding("$$").trim()
+                    if (formula.isNotEmpty()) {
+                        elements.add(SlideElement.MathFormula(formula = formula, isBlock = true))
+                    }
+                } else {
+                    inMathBlock = true
+                    currentMathLines = mutableListOf()
+                    val rest = trimmed.removePrefix("$$").trim()
+                    if (rest.isNotEmpty()) {
+                        currentMathLines.add(rest)
+                    }
+                }
                 continue
             }
 
@@ -340,14 +389,6 @@ object MarkdownSlideParser {
                 continue
             }
 
-            // 8b. Standalone Math Formula Block ($$...$$)
-            if (trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length > 4) {
-                flushTable()
-                val formula = trimmed.removeSurrounding("$$").trim()
-                elements.add(SlideElement.MathFormula(formula = formula, isBlock = true))
-                continue
-            }
-
             // 9. Regular text paragraphs
             if (trimmed.isNotBlank()) {
                 flushTable()
@@ -364,6 +405,7 @@ object MarkdownSlideParser {
         flushQuote()
         flushTable()
         flushCode()
+        flushMath()
 
         if (title.isEmpty()) {
             title = if (isFirst) "Presentation Title" else "Slide ${index + 1}"
@@ -435,5 +477,118 @@ object MarkdownSlideParser {
             }
         }
         return result
+    }
+
+    private val PARKING_LOT_COMMENT_REGEX = Regex("""<!--\s*(?:parking-lot|parking_lot|followup|follow-up):\s*(\[([ xX])\])?\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
+    private val CHECKBOX_LINE_REGEX = Regex("""^-\s*\[([ xX])\]\s*(.+)$""")
+
+    /**
+     * Extracts unanswered questions and parking lot items from presentation markdown.
+     * Supports both HTML comment directives (<!-- parking-lot: [ ] Question | Answer | slide:3 -->)
+     * and markdown task lists.
+     */
+    fun extractFollowUpQuestions(markdown: String): List<FollowUpQuestion> {
+        val result = mutableListOf<FollowUpQuestion>()
+        val lines = markdown.lines()
+
+        for (line in lines) {
+            val trimmed = line.trim()
+
+            // 1. Directive comments
+            val commentMatch = PARKING_LOT_COMMENT_REGEX.find(trimmed)
+            if (commentMatch != null) {
+                val checkChar = commentMatch.groupValues[2]
+                val isAnswered = checkChar.equals("x", ignoreCase = true)
+                val rawBody = commentMatch.groupValues[3]
+                val parts = rawBody.split("|").map { it.trim() }
+
+                val question = parts.getOrNull(0) ?: ""
+                var answer = ""
+                var slideIdx: Int? = null
+
+                if (parts.size >= 2) {
+                    val p1 = parts[1]
+                    if (p1.startsWith("slide:", ignoreCase = true)) {
+                        slideIdx = p1.substringAfter(":").trim().toIntOrNull()
+                    } else {
+                        answer = p1
+                    }
+                }
+                if (parts.size >= 3) {
+                    val p2 = parts[2]
+                    if (p2.startsWith("slide:", ignoreCase = true)) {
+                        slideIdx = p2.substringAfter(":").trim().toIntOrNull()
+                    } else if (answer.isEmpty()) {
+                        answer = p2
+                    }
+                }
+
+                if (question.isNotEmpty()) {
+                    result.add(
+                        FollowUpQuestion(
+                            question = question,
+                            isAnswered = isAnswered,
+                            answerText = answer,
+                            slideIndex = slideIdx
+                        )
+                    )
+                }
+                continue
+            }
+
+            // 2. Markdown task list lines in follow-up sections
+            val checkMatch = CHECKBOX_LINE_REGEX.find(trimmed)
+            if (checkMatch != null && (trimmed.contains("?", ignoreCase = true) || trimmed.contains("Answer:", ignoreCase = true) || trimmed.contains("—", ignoreCase = true))) {
+                val isAnswered = checkMatch.groupValues[1].equals("x", ignoreCase = true)
+                val body = checkMatch.groupValues[2]
+
+                var question = body
+                var answer = ""
+                var slideIdx: Int? = null
+
+                if (body.contains("—") || body.contains("--")) {
+                    val split = body.split(Regex("—|--"))
+                    question = split[0].trim()
+                    answer = split.getOrNull(1)?.replace(Regex("""^\*?Answer:\*?\s*"""), "")?.trim()?.removeSurrounding("*", "*") ?: ""
+                }
+
+                val slideMatch = Regex("""\(Slide\s+(\d+)\)""", RegexOption.IGNORE_CASE).find(question)
+                if (slideMatch != null) {
+                    slideIdx = slideMatch.groupValues[1].toIntOrNull()?.minus(1)
+                    question = question.replace(slideMatch.value, "").trim()
+                }
+
+                if (question.isNotEmpty()) {
+                    result.add(
+                        FollowUpQuestion(
+                            question = question,
+                            isAnswered = isAnswered,
+                            answerText = answer,
+                            slideIndex = slideIdx
+                        )
+                    )
+                }
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Serializes follow-up questions to standard markdown directive comments or checklist.
+     */
+    fun serializeFollowUpQuestions(questions: List<FollowUpQuestion>): String {
+        if (questions.isEmpty()) return ""
+        val sb = StringBuilder()
+        sb.append("\n\n<!-- ========================================= -->\n")
+        sb.append("<!-- PRESENTATION PARKING LOT & FOLLOW-UP ITEMS -->\n")
+        sb.append("<!-- ========================================= -->\n")
+        for (q in questions) {
+            val check = if (q.isAnswered) "[x]" else "[ ]"
+            val slidePart = if (q.slideIndex != null) " | slide:${q.slideIndex + 1}" else ""
+            val answerPart = if (q.answerText.isNotBlank()) " | ${q.answerText.replace("\n", " ")}" else ""
+            sb.append("<!-- parking-lot: $check ${q.question}$answerPart$slidePart -->\n")
+        }
+        return sb.toString()
     }
 }

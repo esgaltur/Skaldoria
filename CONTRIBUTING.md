@@ -10,18 +10,22 @@ All contributions to Skaldoria must strictly follow **SOLID principles**, **Clea
 
 ### 1. Single Responsibility Principle (SRP)
 - Keep components focused on a single responsibility:
-  - **Parsing**: Keep markdown parsing and AST transformations in `com.skaldoria.core.parser`.
-  - **State**: Keep reactive state mutations in `com.skaldoria.state.PresentationState`.
-  - **Persistence**: File and project I/O belongs in `com.skaldoria.project` and `com.skaldoria.export`.
+  - **Parsing & AST**: Markdown parsing, task lists, and comment directives belong in `com.skaldoria.core.parser`.
+  - **State Management**: Reactive UI and presentation state belongs in `com.skaldoria.state.PresentationState`.
+  - **Color Science & Contrast**: WCAG 2.1 luminance math and contrast enforcement belong in `com.skaldoria.theme`.
+  - **Persistence & Export**: File, project manifest, and HTML/PDF generation belong in `com.skaldoria.project` and `com.skaldoria.export`.
   - **UI Renderers**: Compose UI functions must be purely presentational.
 
 ### 2. Open / Closed Principle (OCP)
-- Extend functionality using sealed hierarchies and polymorphic strategies (e.g. `SlideElement`, `SlideLayoutType`, `PresentationTheme`) rather than modifying established core parsers.
+- Extend functionality using sealed hierarchies, interfaces, and polymorphic strategies (e.g. `SlideElement`, `SlideLayoutType`, `PresentationTheme`, `IContrastEnforcer`) rather than modifying established core parsers.
 
-### 3. Clean Code & Testing
-- Write descriptive function and variable names.
-- Keep composable functions short and modular.
-- Accompany parser or project logic changes with comprehensive unit tests under `src/desktopTest/kotlin`.
+### 3. Contrast Science & Accessibility (WCAG 2.1 AA)
+- Never hardcode unverified color combinations. All text, code tokens, and interactive boundaries rendered on light or dark surfaces must pass `AdaptiveContrastEnforcer.ensureContrast(..., minContrastRatio = 4.5f)` to prevent low-contrast visual collisions.
+
+### 4. Clean Code & Comprehensive Unit Testing
+- Write descriptive function and variable names without abbreviations.
+- Keep composable functions short, modular, and reusable.
+- Accompany every parser, theme, or state logic change with unit tests under `src/desktopTest/kotlin`.
 
 ---
 
@@ -33,10 +37,10 @@ All contributions to Skaldoria must strictly follow **SOLID principles**, **Clea
 
 ### Build and Test
 ```bash
-# Run test suite
+# Run full automated test suite
 ./gradlew desktopTest
 
-# Launch development instance
+# Launch development desktop instance
 ./gradlew run
 
 # Verify native packaging
@@ -47,6 +51,6 @@ All contributions to Skaldoria must strictly follow **SOLID principles**, **Clea
 
 ## 📋 Pull Request Process
 1. Create a feature branch: `git checkout -b feature/amazing-feature`
-2. Commit your changes: `git commit -m "feat: Add amazing feature"`
+2. Commit your changes with clear semantic commit messages: `git commit -m "feat: Add amazing feature"`
 3. Ensure all tests pass: `./gradlew desktopTest`
-4. Submit a Pull Request with a clear description of the problem solved.
+4. Submit a Pull Request with a clear description of the problem solved and relevant screenshots/video.

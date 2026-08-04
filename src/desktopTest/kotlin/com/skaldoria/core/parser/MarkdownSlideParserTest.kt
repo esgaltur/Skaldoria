@@ -260,4 +260,36 @@ class MarkdownSlideParserTest {
         assertEquals("Kotlin Multiplatform", pollElem.options[0])
         assertEquals("TypeScript", pollElem.options[3])
     }
+
+    @Test
+    fun testPacingFormulaSlideWithBulletsAndMultiLineMath() {
+        val markdown = """
+            ## Algorithmic Pacing Formula
+            ### Speaker Rhythm Optimization
+
+            $$
+            \Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{current}
+            $$
+
+            - **Pacing Delta**: Computes exact time offset relative to scheduled slide milestones
+            - **Target Allocation**: Automatically balances talk time across all slides in the deck
+            - **Live Visual Gauge**: Green (on track), Cyan (ahead), Amber (behind), Red (critical)
+        """.trimIndent()
+
+        val slides = MarkdownSlideParser.parse(markdown)
+        assertEquals(1, slides.size)
+        val slide = slides.first()
+        assertEquals(SlideLayoutType.MATH_FORMULA, slide.layoutType)
+        assertEquals("Algorithmic Pacing Formula", slide.title)
+        assertEquals("Speaker Rhythm Optimization", slide.subtitle)
+
+        val mathElem = slide.elements.filterIsInstance<SlideElement.MathFormula>().firstOrNull()
+        assertTrue(mathElem != null, "Should contain MathFormula element")
+        assertTrue(mathElem.formula.contains("\\Delta t"))
+        assertTrue(mathElem.formula.contains("\\frac{T_{target}}{N_{total}}"))
+
+        val bulletList = slide.elements.filterIsInstance<SlideElement.BulletList>().firstOrNull()
+        assertTrue(bulletList != null, "Should contain BulletList element")
+        assertEquals(3, bulletList.items.size)
+    }
 }
