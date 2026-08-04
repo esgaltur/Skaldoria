@@ -2,6 +2,7 @@ package com.skaldoria.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -16,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -36,11 +38,24 @@ fun RemotePairingDialog(
     onDismiss: () -> Unit
 ) {
     val theme = state.currentTheme
+
+    // Which network address the QR advertises. Detection ranks the routed adapter first,
+    // but a machine with hypervisor or VPN adapters can still need a manual choice, so the
+    // alternatives are offered rather than assumed.
+    var selectedAddress by remember { mutableStateOf(RemoteCompanionServer.preferredAddress) }
+    val addresses = remember(state.isRemoteServerRunning, selectedAddress) {
+        RemoteCompanionServer.availableAddresses()
+    }
+
     // SEC-2: the presenter URL embeds the per-session token, so it must come from the
     // server rather than being assembled here. It is a credential — do not log or share it.
     // The audience URL is deliberately token-free.
-    val presenterUrl = RemoteCompanionServer.presenterUrl()
-    val audienceUrl = RemoteCompanionServer.audienceUrl()
+    val presenterUrl = remember(selectedAddress, state.isRemoteServerRunning) {
+        RemoteCompanionServer.presenterUrl()
+    }
+    val audienceUrl = remember(selectedAddress, state.isRemoteServerRunning) {
+        RemoteCompanionServer.audienceUrl()
+    }
 
     var selectedQrTab by remember { mutableStateOf(0) } // 0: Speaker Clicker, 1: Audience Portal
     var copiedUrl by remember { mutableStateOf(false) }
@@ -162,6 +177,91 @@ fun RemotePairingDialog(
                 }
 
                 if (state.isRemoteServerRunning) {
+                    // Network address picker.
+                    //
+                    // Detection used to return the first site-local IPv4 it found, which on a
+                    // machine with VirtualBox / VMware / Hyper-V adapters was a host-only
+                    // address no phone could reach. Ranking fixes the common case; this row
+                    // exists because no ranking is right for every machine.
+                    if (addresses.size > 1) {
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            text = "NETWORK ADDRESS",
+                            color = theme.textMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            addresses.forEach { candidate ->
+                                val isActive = candidate.address == currentUrl
+                                    .substringAfter("://").substringBefore(":")
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isActive) theme.primary.copy(alpha = 0.14f) else theme.background
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isActive) theme.primary else theme.cardBorder,
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable {
+                                            RemoteCompanionServer.preferredAddress = candidate.address
+                                            selectedAddress = candidate.address
+                                            copiedUrl = false
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = candidate.address,
+                                        color = if (isActive) theme.primary else theme.textPrimary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        text = candidate.interfaceName,
+                                        color = theme.textMuted,
+                                        fontSize = 10.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (candidate.isRouted) {
+                                        Text(
+                                            text = "ACTIVE",
+                                            color = theme.success,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    } else if (candidate.isLikelyVirtual) {
+                                        Text(
+                                            text = "VIRTUAL",
+                                            color = Color(0xFFF59E0B),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Text(
+                            text = "Phones must be on the same network as this address.",
+                            color = theme.textMuted,
+                            fontSize = 10.sp,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
+
                     Spacer(Modifier.height(16.dp))
 
                     // QR Mode Selector Tabs
