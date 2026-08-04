@@ -1,7 +1,7 @@
 plugins {
-    kotlin("multiplatform") version "2.1.0"
+    kotlin("multiplatform") version "2.2.0"
     id("org.jetbrains.compose") version "1.7.3"
-    id("org.jetbrains.kotlin.plugin.compose") version "2.1.0"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.2.0"
 }
 
 group = "com.skaldoria"
@@ -22,7 +22,7 @@ version = appVersion
  * Declared with proper inputs/outputs so Gradle can skip it when unchanged; the file is
  * generated rather than committed to keep one authority for the number.
  */
-val generateBuildInfo by tasks.registering {
+val generateBuildInfo = tasks.register("generateBuildInfo") {
     val outputDir = layout.buildDirectory.dir("generated/source/buildinfo")
     inputs.property("appVersion", appVersion)
     outputs.dir(outputDir)
@@ -54,7 +54,7 @@ kotlin {
     jvm("desktop")
 
     sourceSets {
-        val desktopMain by getting {
+        val desktopMain = getByName("desktopMain") {
             // Passing the task provider (not a path) lets Gradle wire the dependency itself.
             kotlin.srcDir(generateBuildInfo)
 
@@ -72,7 +72,7 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.1.0")
             }
         }
-        val desktopTest by getting {
+        val desktopTest = getByName("desktopTest") {
             dependencies {
                 implementation(kotlin("test"))
             }
