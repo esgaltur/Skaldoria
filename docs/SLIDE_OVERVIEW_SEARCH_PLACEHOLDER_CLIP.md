@@ -1,6 +1,6 @@
 # Slide Overview — search placeholder is clipped · Root-cause analysis
 
-**Status:** 🔴 Confirmed defect (analysis only — no fix applied yet)
+**Status:** ✅ **FIXED** (2026-08-05) — see *Resolution* at the end. Analysis below retained as the record of the defect.
 **Area:** Slide Overview grid (`SlideGridOverviewDialog`) → search/filter field
 **Reported symptom:** Opening the slide-overview grid, the "Filter slides…" placeholder in
 the search box is vertically **cut off** ("cutted").
@@ -129,3 +129,24 @@ maintainable choice:
 Whatever the choice, the invariant to respect is: **do not pin a Material 3 text field below
 its content height (padding + line) without also reducing that padding**, or the content
 clips.
+
+
+---
+
+## Resolution — implemented 2026-08-05
+
+Fixed with **option 2**, the recommended one: the `OutlinedTextField` in
+`SlideGridOverviewDialog` is replaced by the `Row` + `Icon` + `BasicTextField` construction
+the app already uses in `EditorFindBar`.
+
+- Keeps the intended 46.dp height and 280.dp width.
+- `BasicTextField` has no decoration box, so there is no 56.dp minimum and no enforced
+  16.dp vertical padding to crop the text.
+- The placeholder is drawn as a sibling `Text` inside a `Box`, shown only while the query is
+  empty — the standard way to do it without a decoration box.
+- Cursor colour and text style are set explicitly, since `BasicTextField` inherits neither
+  from Material.
+
+The invariant from the analysis stands and is now recorded in a comment at the call site:
+**do not pin a Material 3 text field below its content height without also reducing that
+padding.**

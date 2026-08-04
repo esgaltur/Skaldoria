@@ -6,6 +6,7 @@ import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideElement
 import com.skaldoria.core.models.SlideLayoutType
 import com.skaldoria.core.models.SlideTransition
+import java.util.UUID
 
 /**
  * Pure Standard Markdown slide parser with support for directives and smart layout auto-classification.
@@ -433,6 +434,16 @@ object MarkdownSlideParser {
                 continue
             }
 
+            // 8b. Any remaining HTML comment is metadata, not content.
+            //
+            // Unrecognised comments used to fall through to the paragraph branch and render
+            // as literal `<!-- ... -->` text on the slide. That was already wrong for notes
+            // and parking-lot directives, and it becomes acute now that captured questions
+            // are written back into the deck — every one would show up on a slide.
+            if (trimmed.startsWith("<!--") && trimmed.endsWith("-->")) {
+                continue
+            }
+
             // 9. Regular text paragraphs
             if (trimmed.isNotBlank()) {
                 flushTable()
@@ -532,6 +543,51 @@ object MarkdownSlideParser {
      * Supports both HTML comment directives (<!-- parking-lot: [ ] Question | Answer | slide:3 -->)
      * and markdown task lists.
      */
+    /**
+     * Parses a single `<!-- parking-lot: … -->` line, or null when [trimmedLine] is not one.
+     *
+     * Shared by extraction and rewriting so both derive [FollowUpQuestion.directiveKey] the
+     * same way. Keeping two copies of this logic is exactly how a rewrite ended up unable to
+     * match the directives it had just read, silently deleting them.
+     *
+     * Fields after the question are matched by prefix, not position, so `slide:`, `id:` and
+     * the answer can appear in any order and a directive authored without an id still works.
+     */
+    fun parseFollowUpDirective(trimmedLine: String): FollowUpQuestion? {
+        val match = PARKING_LOT_COMMENT_REGEX.find(trimmedLine) ?: return null
+
+        val isAnswered = match.groupValues[2].equals("x", ignoreCase = true)
+        val parts = match.groupValues[3].split("|").map { it.trim() }
+        val question = parts.firstOrNull().orEmpty()
+        if (question.isEmpty()) return null
+
+        var answer = ""
+        var slideIdx: Int? = null
+        var persistedId: String? = null
+
+        for (part in parts.drop(1)) {
+            when {
+                part.startsWith("slide:", ignoreCase = true) ->
+                    slideIdx = part.substringAfter(":").trim().toIntOrNull()
+                part.startsWith("id:", ignoreCase = true) ->
+                    persistedId = part.substringAfter(":").trim().ifBlank { null }
+                answer.isEmpty() -> answer = part
+            }
+        }
+
+        return FollowUpQuestion(
+            // A persisted id makes identity survive a round trip through the file, so
+            // renaming a question is an edit rather than a delete plus a create.
+            id = persistedId ?: UUID.randomUUID().toString(),
+            question = question,
+            isAnswered = isAnswered,
+            answerText = answer,
+            slideIndex = slideIdx,
+            isFromMarkdown = true,
+            hasPersistedId = persistedId != null
+        )
+    }
+
     fun extractFollowUpQuestions(markdown: String): List<FollowUpQuestion> {
         val result = mutableListOf<FollowUpQuestion>()
         val lines = markdown.lines()
@@ -540,46 +596,12 @@ object MarkdownSlideParser {
             val trimmed = line.trim()
 
             // 1. Directive comments
-            val commentMatch = PARKING_LOT_COMMENT_REGEX.find(trimmed)
-            if (commentMatch != null) {
-                val checkChar = commentMatch.groupValues[2]
-                val isAnswered = checkChar.equals("x", ignoreCase = true)
-                val rawBody = commentMatch.groupValues[3]
-                val parts = rawBody.split("|").map { it.trim() }
-
-                val question = parts.getOrNull(0) ?: ""
-                var answer = ""
-                var slideIdx: Int? = null
-
-                if (parts.size >= 2) {
-                    val p1 = parts[1]
-                    if (p1.startsWith("slide:", ignoreCase = true)) {
-                        slideIdx = p1.substringAfter(":").trim().toIntOrNull()
-                    } else {
-                        answer = p1
-                    }
-                }
-                if (parts.size >= 3) {
-                    val p2 = parts[2]
-                    if (p2.startsWith("slide:", ignoreCase = true)) {
-                        slideIdx = p2.substringAfter(":").trim().toIntOrNull()
-                    } else if (answer.isEmpty()) {
-                        answer = p2
-                    }
-                }
-
-                if (question.isNotEmpty()) {
-                    result.add(
-                        FollowUpQuestion(
-                            question = question,
-                            isAnswered = isAnswered,
-                            answerText = answer,
-                            slideIndex = slideIdx
-                        )
-                    )
-                }
+            val directive = parseFollowUpDirective(trimmed)
+            if (directive != null) {
+                result.add(directive)
                 continue
             }
+            if (PARKING_LOT_COMMENT_REGEX.containsMatchIn(trimmed)) continue
 
             // 2. Markdown task list lines in follow-up sections
             val checkMatch = CHECKBOX_LINE_REGEX.find(trimmed)
@@ -609,7 +631,8 @@ object MarkdownSlideParser {
                             question = question,
                             isAnswered = isAnswered,
                             answerText = answer,
-                            slideIndex = slideIdx
+                            slideIndex = slideIdx,
+                            isFromMarkdown = true
                         )
                     )
                 }
@@ -617,6 +640,60 @@ object MarkdownSlideParser {
         }
 
         return result
+    }
+
+    /**
+     * Rewrites the `<!-- parking-lot: … -->` directives in [markdown] to match [items].
+     *
+     * This is the missing list → markdown direction. Extraction was one-way, so deleting a
+     * directive-sourced item only changed the in-memory list: the comment stayed in the file
+     * and the next re-parse brought the question back.
+     *
+     * Directives are edited **in place** rather than stripped and re-emitted as a block, so
+     * a `<!-- parking-lot: … -->` authored next to the slide it refers to stays there.
+     * Matching is by [FollowUpQuestion.directiveKey] — the question text — because the `id`
+     * is regenerated on every parse and cannot survive a round trip.
+     *
+     * A directive with no corresponding item is dropped (the user deleted it); one that is
+     * still present is re-emitted so answer text and the checkbox reflect the current state.
+     */
+    fun rewriteFollowUpDirectives(markdown: String, items: List<FollowUpQuestion>): String {
+        val byKey = items.associateBy { it.directiveKey }
+        var changed = false
+
+        val rewritten = markdown.lines().mapNotNull { line ->
+            // Parsed with the same helper the extractor uses, so the two can never disagree
+            // about how a directive maps to a key — they did briefly, and every rewrite
+            // silently dropped directives it failed to match.
+            val parsed = parseFollowUpDirective(line.trim()) ?: return@mapNotNull line
+
+            val item = byKey[parsed.directiveKey]
+            if (item == null) {
+                changed = true
+                return@mapNotNull null // deleted — drop the directive line entirely
+            }
+
+            val indent = line.takeWhile { it.isWhitespace() }
+            val updated = indent + directiveLineFor(item)
+            if (updated != line) changed = true
+            updated
+        }
+
+        return if (changed) rewritten.joinToString("\n") else markdown
+    }
+
+    /**
+     * Single directive comment for [item], matching the form [extractFollowUpQuestions] reads.
+     *
+     * The `id:` field is always written. Markdown is the only storage this app has, so an
+     * identity that lives only in memory cannot be referred to after a reload — persisting it
+     * is what lets a question be edited, answered, or deleted and still be the same question.
+     */
+    fun directiveLineFor(item: FollowUpQuestion): String {
+        val check = if (item.isAnswered) "[x]" else "[ ]"
+        val answerPart = if (item.answerText.isNotBlank()) " | ${item.answerText.replace("\n", " ")}" else ""
+        val slidePart = if (item.slideIndex != null) " | slide:${item.slideIndex + 1}" else ""
+        return "<!-- parking-lot: $check ${item.question}$answerPart$slidePart | id:${item.id} -->"
     }
 
     /**
