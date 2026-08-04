@@ -5,8 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -44,6 +46,9 @@ import kotlin.math.min
  * no time axis and no arrows between participants — which is why sequence diagrams "did
  * not work at all". Everything is drawn on one Canvas so lifelines, arrows, activation
  * bars and block frames share a coordinate system.
+ *
+ * R-1: the canvas now reports its intrinsic size (not fillMaxSize) so that it can be
+ * wrapped in [FitToCanvas] to shrink when it overflows the available height.
  */
 @Composable
 fun SequenceDiagramView(
@@ -53,10 +58,31 @@ fun SequenceDiagramView(
 ) {
     val measurer = rememberTextMeasurer()
 
-    Box(modifier = modifier.fillMaxSize()) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            if (diagram.participants.isEmpty()) return@Canvas
-            drawSequence(diagram, theme, measurer)
+    FitToCanvas(modifier = modifier) {
+        if (diagram.participants.isEmpty()) {
+            Box(modifier = Modifier.size(400.dp, 300.dp))
+        } else {
+            val rows = remember(diagram) { flatten(diagram.steps) }
+            val participants = diagram.participants
+            val columnWidthPx = 150f
+            val totalWidthPx = SIDE_PADDING * 2 + participants.size * columnWidthPx
+            val bodyTop = TOP_PADDING + HEADER_HEIGHT
+            val totalHeightPx = bodyTop + rows.size * ROW_HEIGHT + ROW_HEIGHT * 0.5f + HEADER_HEIGHT
+
+            val widthDp = (totalWidthPx / 1.0f).dp
+            val heightDp = (totalHeightPx / 1.0f).dp
+
+            Box(
+                modifier = Modifier
+                    .size(widthDp, heightDp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(1.dp, theme.cardBorder, RoundedCornerShape(12.dp))
+                    .background(theme.surface)
+            ) {
+                Canvas(modifier = Modifier.matchParentSize()) {
+                    drawSequence(diagram, theme, measurer)
+                }
+            }
         }
     }
 }
