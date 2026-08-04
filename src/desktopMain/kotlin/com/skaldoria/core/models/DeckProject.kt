@@ -1,7 +1,5 @@
 package com.skaldoria.core.models
 
-import java.io.File
-
 data class SlideFileEntry(
     val relativePath: String,
     val absolutePath: String,

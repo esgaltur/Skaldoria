@@ -25,7 +25,12 @@ data class SequenceDiagram(
             for (step in steps) {
                 when (step) {
                     is SequenceStep.Message -> out.add(step)
-                    is SequenceStep.Block -> walk(step.children)
+                    is SequenceStep.Block -> {
+                        walk(step.children)
+                        // `else`/`and` sections are siblings of children, not nested in
+                        // them — omitting these loses every message in an alt's else branch.
+                        step.sections.forEach { walk(it.children) }
+                    }
                     else -> Unit
                 }
             }
