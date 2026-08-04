@@ -1,4 +1,6 @@
-# Slide Overview — search placeholder is clipped · Root-cause analysis
+# Compact Material controls clipped · Root-cause analysis
+
+*(Originally filed for the slide-overview search box; the same root cause was then found in the parking lot. Both are fixed — see Resolution.)*
 
 **Status:** ✅ **FIXED** (2026-08-05) — see *Resolution* at the end. Analysis below retained as the record of the defect.
 **Area:** Slide Overview grid (`SlideGridOverviewDialog`) → search/filter field
@@ -150,3 +152,59 @@ the app already uses in `EditorFindBar`.
 The invariant from the analysis stands and is now recorded in a comment at the call site:
 **do not pin a Material 3 text field below its content height without also reducing that
 padding.**
+
+
+---
+
+## Same root cause, two more places (fixed 2026-08-05)
+
+Reported after the first fix: the parking lot's *"Capture question to answer later…"*
+placeholder was clipped, and the answer button was clipped too. Both are this defect again,
+in its two forms.
+
+### The text fields — same 56.dp minimum
+
+`ParkingLotView` used `OutlinedTextField` for the capture box and the answer editor. Same
+crop, same cause.
+
+### The buttons — the button equivalent of the same mistake
+
+Material 3 `Button`/`TextButton` enforce **`MinHeight = 40.dp`** and a **vertical
+`ContentPadding` of 8.dp**. Three buttons were pinned to `.height(28.dp)`:
+
+| Control | Was |
+|---|---|
+| "+ Record answer / resolution" | `Modifier.height(28.dp)` |
+| "Cancel" (answer editor) | `Modifier.height(28.dp)` |
+| "Save Answer" | `Modifier.height(28.dp)` |
+
+An 11.sp label is ~15.dp tall; plus 16.dp of enforced vertical padding that is ~31.dp of
+content squeezed into 28.dp, so the label crops. This is the *same invariant* as the text
+fields, just with `ContentPadding`/`MinHeight` instead of the decoration box.
+
+### Fix
+
+- **Extracted `CompactTextField`** (`ui/components/CompactTextField.kt`) — the `Row` +
+  optional leading `Icon` + `BasicTextField` + sibling-placeholder pattern, with border,
+  background, corner radius and colours as parameters. All three compact fields (overview
+  search, capture box, answer editor) now use it, instead of a third hand-rolled copy.
+  `minHeight` is a floor rather than a pin, so the multi-line answer editor grows instead of
+  cropping.
+- **Buttons keep their 28.dp height** but pass
+  `contentPadding = PaddingValues(horizontal = …, vertical = 0.dp)` and use `heightIn(min =)`
+  rather than a hard `height()`. Reducing the padding is what the invariant requires; simply
+  raising the height would have changed the intended layout.
+
+### Verification
+
+`ParkingLotView` rendered headlessly via `ImageComposeScene` to `build/render-ui/parking_lot.png`
+and inspected: the capture placeholder and the "Record answer / resolution" label are fully
+visible. The answer editor's *Cancel* / *Save Answer* buttons received the identical
+`contentPadding` fix but sit behind interaction state that cannot be triggered headlessly, so
+they are fixed by construction rather than confirmed visually.
+
+### The invariant, restated to cover both
+
+**Do not pin a Material 3 component below its content height without also reducing that
+content's padding** — `contentPadding` for buttons, the decoration box for text fields. The
+height modifier constrains and crops; it does not compress.
