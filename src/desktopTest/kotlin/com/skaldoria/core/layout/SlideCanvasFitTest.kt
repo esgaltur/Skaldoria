@@ -110,9 +110,10 @@ class SlideCanvasFitTest {
 
     @Test
     fun `scale never drops below the legibility floor`() {
-        // 10x too tall would compute 0.1; the floor stops it at 0.5.
-        val scale = SlideCanvasFit.contentScale(1280, 7200, 1280, 720, minScale = 0.5f)
-        assertEquals(0.5f, scale, 0.001f)
+        // 10x too tall would compute 0.1; an explicit floor stops it there.
+        assertEquals(0.5f, SlideCanvasFit.contentScale(1280, 7200, 1280, 720, minScale = 0.5f), 0.001f)
+        // The default floor is deliberately low so content stays on screen.
+        assertEquals(0.25f, SlideCanvasFit.contentScale(1280, 7200, 1280, 720), 0.001f)
     }
 
     @Test

@@ -53,8 +53,19 @@ fun FlowchartGraphView(
     }
     val measurer = rememberTextMeasurer()
 
-    val laneGap = with(androidx.compose.ui.platform.LocalDensity.current) { 68.dp.toPx() }
-    val siblingGap = with(androidx.compose.ui.platform.LocalDensity.current) { 26.dp.toPx() }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val siblingGap = with(density) { 26.dp.toPx() }
+
+    // The gap between layers has to be wide enough for the widest edge label. Edges are
+    // drawn behind the node cards, so a label that outgrows the gap is simply covered by
+    // the next node — it looked truncated with no indication anything was wrong.
+    val laneGap = remember(diagram, measurer, density) {
+        val widest = diagram.edges
+            .mapNotNull { it.label?.takeIf { label -> label.isNotBlank() } }
+            .maxOfOrNull { measurer.measure(it, EDGE_LABEL_STYLE).size.width }
+            ?: 0
+        maxOf(with(density) { 68.dp.toPx() }, widest + with(density) { 28.dp.toPx() })
+    }
 
     SubcomposeLayout(modifier) { constraints ->
         val nodes = diagram.nodes
@@ -120,6 +131,11 @@ fun FlowchartGraphView(
             }
         }.first().measure(Constraints.fixed(contentWidth, contentHeight))
 
+        // 5. Report the graph's intrinsic size and place everything unscaled.
+        //
+        // Fitting is the caller's job (MermaidDiagramCanvas wraps this in FitToCanvas).
+        // Scaling the edge canvas and the node cards as separate placeables desynced them —
+        // one transform over the whole subtree is the only way they stay aligned.
         layout(contentWidth, contentHeight) {
             edgePlaceable.place(0, 0)
             nodes.forEachIndexed { index, node ->
@@ -129,6 +145,13 @@ fun FlowchartGraphView(
         }
     }
 }
+
+/** Shared so the lane-gap measurement and the drawing can never disagree. */
+private val EDGE_LABEL_STYLE = TextStyle(
+    fontSize = 10.sp,
+    fontWeight = FontWeight.SemiBold,
+    fontFamily = FontFamily.Monospace
+)
 
 /**
  * Draws one edge between two node rectangles, entering and leaving on the faces that face
@@ -179,15 +202,20 @@ private fun DrawScope.drawEdge(
     if (!label.isNullOrBlank()) {
         val layoutResult = measurer.measure(
             text = label,
-            style = TextStyle(
-                color = theme.primary,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                fontFamily = FontFamily.Monospace
-            ),
+            style = EDGE_LABEL_STYLE.copy(color = theme.primary),
             maxLines = 1
         )
-        val mid = Offset((start.x + end.x) / 2f, (start.y + end.y) / 2f)
+        // Sit on the segment that runs into the target, inside the lane gap. The raw
+        // midpoint of start..end lands on the elbow — which for a fanned-out branch is
+        // right on top of the target node, and stacks every sibling label in one spot.
+        // Centred across the FULL lane gap (start..end spans it), at the *target's* row so
+        // sibling branches separate vertically instead of stacking on the elbow corner.
+        // The gap is sized to the widest label, so centring here is what keeps it uncovered.
+        val mid = if (horizontal) {
+            Offset((start.x + end.x) / 2f, end.y - layoutResult.size.height / 2f - 4f)
+        } else {
+            Offset(end.x + layoutResult.size.width / 2f + 6f, (start.y + end.y) / 2f)
+        }
         val boxWidth = layoutResult.size.width + 8f
         val boxHeight = layoutResult.size.height + 4f
         drawRect(

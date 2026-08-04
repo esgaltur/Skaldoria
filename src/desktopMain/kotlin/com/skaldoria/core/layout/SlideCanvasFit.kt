@@ -99,9 +99,13 @@ internal object SlideCanvasFit {
         if (value.isNaN() || value.isInfinite() || value <= 0f) fallback else value
 
     /**
-     * Below roughly half the authored size, body text on a projector stops being
-     * readable from the back of a room. Clipping and illegibility are equally bad
-     * outcomes, so we stop here and surface the problem instead.
+     * Floor on shrinking.
+     *
+     * Deliberately low. A higher floor (0.5 was tried) stops shrinking while the content
+     * still overflows, so the slide clips anyway and the author is never told — the worst
+     * of both outcomes. Shrinking far enough that everything stays on screen at least makes
+     * the problem visible, and [isOverflowing] reports when the floor was reached so the
+     * UI can warn rather than silently dropping content.
      */
-    const val DEFAULT_MIN_SCALE = 0.5f
+    const val DEFAULT_MIN_SCALE = 0.25f
 }

@@ -11,6 +11,17 @@ import kotlin.math.roundToInt
 /**
  * Shrinks its content uniformly until it fits, instead of letting it clip.
  *
+ * ## Only wrap intrinsically-sized content
+ *
+ * This measures with `maxHeight = Constraints.Infinity` to discover the content's natural
+ * height. Any child that sizes itself with `Modifier.weight(1f)` or `fillMaxHeight()` gets
+ * **zero** height under an unbounded main axis, and disappears.
+ *
+ * That is not hypothetical: wrapping this around the whole slide (OVF-1) blanked every
+ * slide in the app, because every layout sizes its content area with `weight(1f)`. Wrap
+ * content that measures to its own natural size — a diagram, a list of cards — never a
+ * layout designed to fill its parent. `SlideRenderingTest` guards against the regression.
+ *
  * Slides are authored against a fixed 1280x720 design canvas (see `SlideSurface`), so
  * available space does *not* grow with the display — a slide with too many bullets, or a
  * diagram with too many nodes, silently ran off the edge on every screen size. This wraps
@@ -35,18 +46,50 @@ fun FitToCanvas(
     content: @Composable () -> Unit
 ) {
     SubcomposeLayout(modifier) { constraints ->
-        // Width-bound, height-free: let text and flow layouts wrap at the real width.
-        val measureConstraints = constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity)
-        val placeables = subcompose(Unit, content).map { it.measure(measureConstraints) }
-
-        val contentWidth = placeables.maxOfOrNull { it.width } ?: 0
-        val contentHeight = placeables.maxOfOrNull { it.height } ?: 0
-
         // An unbounded parent gives nothing to fit against, and passing Infinity to
         // layout() throws. Fall back to wrapping the content at scale 1 — degrading to
         // "no fitting" is correct here, whereas crashing mid-presentation is not.
-        val availableWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else contentWidth
-        val availableHeight = if (constraints.hasBoundedHeight) constraints.maxHeight else contentHeight
+        val boundedWidth = constraints.hasBoundedWidth
+        val boundedHeight = constraints.hasBoundedHeight
+
+        // Width-bound, height-free: let text and flow layouts wrap at the real width.
+        fun measureAt(width: Int): List<androidx.compose.ui.layout.Placeable> =
+            subcompose(width) { content() }.map {
+                it.measure(
+                    Constraints(
+                        maxWidth = if (boundedWidth) width else Constraints.Infinity,
+                        minHeight = 0,
+                        maxHeight = Constraints.Infinity
+                    )
+                )
+            }
+
+        var placeables = measureAt(constraints.maxWidth)
+        var contentWidth = placeables.maxOfOrNull { it.width } ?: 0
+        var contentHeight = placeables.maxOfOrNull { it.height } ?: 0
+
+        var availableWidth = if (boundedWidth) constraints.maxWidth else contentWidth
+        var availableHeight = if (boundedHeight) constraints.maxHeight else contentHeight
+
+        // Uniform scaling shrinks width as well as height, so a full-width list ends up as
+        // a narrow strip with the sides unused. Re-measure at width/scale: laid out wider,
+        // the content is shorter, and once scaled back down it fills the available width.
+        val firstPass = SlideCanvasFit.contentScale(
+            contentWidth, contentHeight, availableWidth, availableHeight, minScale
+        )
+        if (firstPass < 1f && boundedWidth && contentWidth > 0) {
+            val widerWidth = (availableWidth / firstPass).roundToInt()
+            val refined = measureAt(widerWidth)
+            val refinedWidth = refined.maxOfOrNull { it.width } ?: 0
+            val refinedHeight = refined.maxOfOrNull { it.height } ?: 0
+            if (refinedWidth > 0 && refinedHeight > 0) {
+                placeables = refined
+                contentWidth = refinedWidth
+                contentHeight = refinedHeight
+                availableWidth = if (boundedWidth) constraints.maxWidth else contentWidth
+                availableHeight = if (boundedHeight) constraints.maxHeight else contentHeight
+            }
+        }
 
         val scale = SlideCanvasFit.contentScale(
             contentWidth = contentWidth,
@@ -66,15 +109,21 @@ fun FitToCanvas(
 
         layout(availableWidth, availableHeight) {
             placeables.forEach { placeable ->
-                // Centre the placeable, then scale about its own centre. For oversized
-                // content the offset goes negative, which keeps the visual centre pinned
-                // to the container centre so the shrink reads as symmetric.
-                val x = ((availableWidth - placeable.width) / 2f).roundToInt()
-                val y = ((availableHeight - placeable.height) / 2f).roundToInt()
+                // Scale about the TOP-LEFT and offset by the *scaled* size to centre.
+                //
+                // Centring the unscaled placeable and scaling about its centre is the
+                // obvious approach and it does not place correctly for oversized content —
+                // the pre-scale offset goes far negative and the result lands off-centre.
+                // Anchoring at the top-left keeps placement in scaled coordinates, where
+                // the arithmetic is exact.
+                val scaledWidth = placeable.width * scale
+                val scaledHeight = placeable.height * scale
+                val x = ((availableWidth - scaledWidth) / 2f).roundToInt()
+                val y = ((availableHeight - scaledHeight) / 2f).roundToInt()
                 placeable.placeWithLayer(x, y) {
                     scaleX = scale
                     scaleY = scale
-                    transformOrigin = TransformOrigin.Center
+                    transformOrigin = TransformOrigin(0f, 0f)
                 }
             }
         }

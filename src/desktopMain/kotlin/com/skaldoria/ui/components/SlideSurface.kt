@@ -110,17 +110,22 @@ fun SlideSurface(
                         transformOrigin = TransformOrigin.Center
                     }
             ) {
-                // Content that exceeds the design canvas is scaled down rather than
-                // clipped. Applied once here so all eleven layouts inherit the behaviour
-                // instead of each re-solving overflow.
-                FitToCanvas(modifier = Modifier.fillMaxSize()) {
-                    SlideLayoutContent(
-                        slide = slide,
-                        theme = theme,
-                        votes = votes,
-                        onVote = onVote
-                    )
-                }
+                // NOTE: do not wrap this in FitToCanvas.
+                //
+                // Every slide layout sizes its content area with `Modifier.weight(1f)`,
+                // which requires a BOUNDED main axis. FitToCanvas measures with
+                // maxHeight = Infinity to find natural content height, and Compose gives
+                // weighted children zero space when the main axis is unbounded — so every
+                // layout collapsed to an empty slide showing only its title.
+                //
+                // Fit-to-content has to be applied where content is *intrinsically* sized
+                // (see MermaidDiagramCanvas), not around layouts designed to fill.
+                SlideLayoutContent(
+                    slide = slide,
+                    theme = theme,
+                    votes = votes,
+                    onVote = onVote
+                )
 
                 // Slide Footer (Number & Progress)
                 if (showFooter) {
