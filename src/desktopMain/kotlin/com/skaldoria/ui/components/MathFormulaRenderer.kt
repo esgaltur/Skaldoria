@@ -12,17 +12,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skaldoria.theme.PresentationTheme
 
 /**
  * Visual mathematical formula and LaTeX equation renderer in Compose Desktop.
+ * Renders publishing-quality mathematical formulas with proper fractions, Greek symbols,
+ * superscripts, subscripts, and operators.
  */
 @Composable
 fun MathFormulaRenderer(
@@ -42,11 +48,11 @@ fun MathFormulaRenderer(
         color = theme.surface
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Formula Header
+            // Formula Header Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(44.dp)
+                    .height(42.dp)
                     .background(theme.surfaceVariant.copy(alpha = 0.5f))
                     .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -63,7 +69,7 @@ fun MathFormulaRenderer(
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
-                        text = "LATEX MATHEMATICAL FORMULA",
+                        text = "MATHEMATICAL SPECIFICATION",
                         color = theme.primary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -85,26 +91,27 @@ fun MathFormulaRenderer(
             }
 
             if (showRawLatex) {
+                // Theme-adaptive Raw LaTeX Code Box
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF0F131C))
-                        .padding(24.dp)
+                        .background(if (theme.isDark) theme.codeBackground else theme.surfaceVariant.copy(alpha = 0.6f))
+                        .padding(20.dp)
                 ) {
                     Text(
                         text = cleanedFormula,
-                        color = Color(0xFFE2E8F0),
+                        color = if (theme.isDark) theme.codeText else theme.textPrimary,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 15.sp,
-                        lineHeight = 24.sp
+                        lineHeight = 22.sp
                     )
                 }
             } else {
-                // Rendered Equation Box
+                // Rendered High-Fidelity Mathematical Formula Box
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 36.dp, horizontal = 24.dp),
+                        .padding(vertical = 32.dp, horizontal = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     RenderLatexExpression(cleanedFormula, theme)
@@ -134,31 +141,31 @@ private fun RenderLatexExpression(
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (before.isNotBlank()) {
-                LatexTextSegment(before, theme)
+                LatexTextSegment(before, theme, fontSize = 28)
             }
 
             // Fraction vertical stack
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(horizontal = 4.dp)
+                modifier = Modifier.padding(horizontal = 6.dp)
             ) {
-                LatexTextSegment(num, theme, fontSize = 24)
-                Spacer(Modifier.height(2.dp))
+                LatexTextSegment(num, theme, fontSize = 22)
+                Spacer(Modifier.height(3.dp))
                 Box(
                     modifier = Modifier
-                        .width(maxOf(num.length, den.length).times(16).coerceAtLeast(40).dp)
-                        .height(2.dp)
+                        .width(maxOf(num.length, den.length).times(14).coerceAtLeast(36).dp)
+                        .height(2.5.dp)
                         .background(theme.primary)
                 )
-                Spacer(Modifier.height(2.dp))
-                LatexTextSegment(den, theme, fontSize = 24)
+                Spacer(Modifier.height(3.dp))
+                LatexTextSegment(den, theme, fontSize = 22)
             }
 
             if (after.isNotBlank()) {
-                LatexTextSegment(after, theme)
+                LatexTextSegment(after, theme, fontSize = 28)
             }
         }
     } else {
@@ -171,26 +178,160 @@ private fun RenderLatexExpression(
 private fun LatexTextSegment(
     text: String,
     theme: PresentationTheme,
-    fontSize: Int = 30
+    fontSize: Int = 28
 ) {
-    val renderedText = LatexSymbolMapper.replaceSymbols(text)
+    val annotated = buildLatexAnnotatedString(text, theme, fontSize)
 
     Text(
-        text = renderedText,
-        color = theme.textPrimary,
-        fontSize = fontSize.sp,
-        fontWeight = FontWeight.SemiBold,
-        fontFamily = FontFamily.Serif,
-        fontStyle = FontStyle.Italic,
+        text = annotated,
         letterSpacing = 0.5.sp
     )
 }
 
 /**
- * Maps LaTeX symbol commands to Unicode mathematical characters.
+ * Builds an AnnotatedString from a LaTeX string, converting Greek letters,
+ * delimiters, subscripts (_x or _{sub}), and superscripts (^x or ^{sup}).
+ */
+fun buildLatexAnnotatedString(
+    raw: String,
+    theme: PresentationTheme,
+    baseFontSize: Int
+): AnnotatedString {
+    val cleaned = LatexSymbolMapper.preprocessDelimitersAndSymbols(raw)
+
+    return buildAnnotatedString {
+        var i = 0
+        while (i < cleaned.length) {
+            val c = cleaned[i]
+
+            // Subscript: _{...} or _char
+            if (c == '_') {
+                i++
+                if (i < cleaned.length && cleaned[i] == '{') {
+                    val endBrace = cleaned.indexOf('}', i + 1)
+                    if (endBrace != -1) {
+                        val subText = cleaned.substring(i + 1, endBrace)
+                        withStyle(
+                            SpanStyle(
+                                fontSize = (baseFontSize * 0.62).sp,
+                                baselineShift = BaselineShift.Subscript,
+                                fontStyle = FontStyle.Italic,
+                                fontFamily = FontFamily.Serif,
+                                color = theme.textSecondary
+                            )
+                        ) {
+                            append(subText)
+                        }
+                        i = endBrace + 1
+                        continue
+                    }
+                } else if (i < cleaned.length) {
+                    val subChar = cleaned[i].toString()
+                    withStyle(
+                        SpanStyle(
+                            fontSize = (baseFontSize * 0.62).sp,
+                            baselineShift = BaselineShift.Subscript,
+                            fontStyle = FontStyle.Italic,
+                            fontFamily = FontFamily.Serif,
+                            color = theme.textSecondary
+                        )
+                    ) {
+                        append(subChar)
+                    }
+                    i++
+                    continue
+                }
+            }
+
+            // Superscript: ^{...} or ^char
+            if (c == '^') {
+                i++
+                if (i < cleaned.length && cleaned[i] == '{') {
+                    val endBrace = cleaned.indexOf('}', i + 1)
+                    if (endBrace != -1) {
+                        val supText = cleaned.substring(i + 1, endBrace)
+                        withStyle(
+                            SpanStyle(
+                                fontSize = (baseFontSize * 0.62).sp,
+                                baselineShift = BaselineShift.Superscript,
+                                fontStyle = FontStyle.Italic,
+                                fontFamily = FontFamily.Serif,
+                                color = theme.textSecondary
+                            )
+                        ) {
+                            append(supText)
+                        }
+                        i = endBrace + 1
+                        continue
+                    }
+                } else if (i < cleaned.length) {
+                    val supChar = cleaned[i].toString()
+                    withStyle(
+                        SpanStyle(
+                            fontSize = (baseFontSize * 0.62).sp,
+                            baselineShift = BaselineShift.Superscript,
+                            fontStyle = FontStyle.Italic,
+                            fontFamily = FontFamily.Serif,
+                            color = theme.textSecondary
+                        )
+                    ) {
+                        append(supChar)
+                    }
+                    i++
+                    continue
+                }
+            }
+
+            // Mathematical Operators and Parentheses
+            if (c in setOf('=', '+', '-', '·', '×', '÷', '±', '∓', '≈', '≠', '≤', '≥', '(', ')', '[', ']', '{', '}', '|')) {
+                withStyle(
+                    SpanStyle(
+                        fontSize = baseFontSize.sp,
+                        fontWeight = FontWeight.Normal,
+                        fontFamily = FontFamily.Serif,
+                        color = theme.textPrimary
+                    )
+                ) {
+                    append(c)
+                }
+                i++
+                continue
+            }
+
+            // Variables and Greek Letters
+            withStyle(
+                SpanStyle(
+                    fontSize = baseFontSize.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontStyle = if (c.isLetter()) FontStyle.Italic else FontStyle.Normal,
+                    fontFamily = FontFamily.Serif,
+                    color = if (c.isLetter() || c in "αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩ") theme.primary else theme.textPrimary
+                )
+            ) {
+                append(c)
+            }
+            i++
+        }
+    }
+}
+
+/**
+ * Maps LaTeX symbol commands to Unicode mathematical characters and cleans delimiters.
  */
 object LatexSymbolMapper {
     private val SYMBOLS = mapOf(
+        // Delimiters & Groupings
+        "\\left(" to "(",
+        "\\right)" to ")",
+        "\\left[" to "[",
+        "\\right]" to "]",
+        "\\left\\{" to "{",
+        "\\right\\}" to "}",
+        "\\left|" to "|",
+        "\\right|" to "|",
+        "\\left." to "",
+        "\\right." to "",
+
         // Greek letters
         "\\alpha" to "α",
         "\\beta" to "β",
@@ -277,35 +418,15 @@ object LatexSymbolMapper {
         "\\sqrt" to "√"
     )
 
-    fun replaceSymbols(input: String): String {
+    fun preprocessDelimitersAndSymbols(input: String): String {
         var result = input
         for ((tex, unicode) in SYMBOLS) {
             result = result.replace(tex, unicode)
         }
-        // Replace common superscripts and subscripts
-        result = result
-            .replace("^2", "²")
-            .replace("^3", "³")
-            .replace("^0", "⁰")
-            .replace("^1", "¹")
-            .replace("^n", "ⁿ")
-            .replace("^x", "ˣ")
-            .replace("^y", "ʸ")
-            .replace("^+", "⁺")
-            .replace("^-", "⁻")
-            .replace("_0", "₀")
-            .replace("_1", "₁")
-            .replace("_2", "₂")
-            .replace("_3", "₃")
-            .replace("_i", "ᵢ")
-            .replace("_j", "ⱼ")
-            .replace("_k", "ₖ")
-            .replace("_n", "ₙ")
-            .replace("_x", "ₓ")
-            .replace("{", "")
-            .replace("}", "")
-            .replace("\\", "")
-
         return result
+    }
+
+    fun replaceSymbols(input: String): String {
+        return preprocessDelimitersAndSymbols(input)
     }
 }

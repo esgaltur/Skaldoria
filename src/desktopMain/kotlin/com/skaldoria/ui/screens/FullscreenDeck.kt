@@ -133,7 +133,9 @@ fun FullscreenDeck(
                         slide = slide,
                         theme = state.currentTheme,
                         totalSlides = state.slides.size,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        votes = state.getVotesForSlide(slide.index),
+                        onVote = { state.recordVote(slide.index, it) }
                     )
                 }
 

@@ -18,8 +18,8 @@ object MarkdownSlideParser {
     private val IMAGE_REGEX = Regex("""!\[(.*?)\]\((.*?)\)""")
     private val NOTE_COMMENT_REGEX = Regex("""<!--\s*(?:note|speaker):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
     private val NOTE_QUOTE_REGEX = Regex("""^>\s*note:\s*(.+)$""", RegexOption.IGNORE_CASE)
-    private val DIRECTIVE_COMMENT_REGEX = Regex("""<!--\s*(layout|bg|background|transition):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
-    private val DIRECTIVE_LINE_REGEX = Regex("""^(layout|bg|background|transition):\s*(.+)$""", RegexOption.IGNORE_CASE)
+    private val DIRECTIVE_COMMENT_REGEX = Regex("""<!--\s*(layout|bg|background|transition|poll|vote):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
+    private val DIRECTIVE_LINE_REGEX = Regex("""^(layout|bg|background|transition|poll|vote):\s*(.+)$""", RegexOption.IGNORE_CASE)
 
     fun parse(markdown: String): List<Slide> {
         val lines = markdown.lines()
@@ -192,12 +192,21 @@ object MarkdownSlideParser {
         for (line in lines) {
             val trimmed = line.trim()
 
-            // 1. Directives in HTML comment: <!-- layout: hero --> or <!-- bg: #12141f -->
+            // 1. Directives in HTML comment: <!-- layout: hero -->, <!-- poll: A | B --> or <!-- bg: #12141f -->
             val directiveCommentMatch = DIRECTIVE_COMMENT_REGEX.find(trimmed)
             if (directiveCommentMatch != null) {
                 val key = directiveCommentMatch.groupValues[1].lowercase()
                 val value = directiveCommentMatch.groupValues[2].trim()
-                applyDirective(key, value, { explicitLayout = it }, { customBackground = it }, { customTransition = it })
+                if (key == "poll" || key == "vote") {
+                    val rawOptions = value.split("|").map { it.trim() }.filter { it.isNotEmpty() }
+                    if (rawOptions.isNotEmpty()) {
+                        val question = if (title.isNotEmpty()) title else "Audience Poll"
+                        elements.add(SlideElement.Poll(question = question, options = rawOptions))
+                        explicitLayout = SlideLayoutType.POLL
+                    }
+                } else {
+                    applyDirective(key, value, { explicitLayout = it }, { customBackground = it }, { customTransition = it })
+                }
                 continue
             }
 
@@ -206,7 +215,16 @@ object MarkdownSlideParser {
             if (directiveLineMatch != null && title.isEmpty()) {
                 val key = directiveLineMatch.groupValues[1].lowercase()
                 val value = directiveLineMatch.groupValues[2].trim()
-                applyDirective(key, value, { explicitLayout = it }, { customBackground = it }, { customTransition = it })
+                if (key == "poll" || key == "vote") {
+                    val rawOptions = value.split("|").map { it.trim() }.filter { it.isNotEmpty() }
+                    if (rawOptions.isNotEmpty()) {
+                        val question = if (title.isNotEmpty()) title else "Audience Poll"
+                        elements.add(SlideElement.Poll(question = question, options = rawOptions))
+                        explicitLayout = SlideLayoutType.POLL
+                    }
+                } else {
+                    applyDirective(key, value, { explicitLayout = it }, { customBackground = it }, { customTransition = it })
+                }
                 continue
             }
 
@@ -386,6 +404,7 @@ object MarkdownSlideParser {
                     "code", "full_code", "terminal" -> setLayout(SlideLayoutType.FULL_CODE)
                     "diagram", "flowchart", "architecture", "mermaid" -> setLayout(SlideLayoutType.DIAGRAM)
                     "math", "latex", "formula", "equation" -> setLayout(SlideLayoutType.MATH_FORMULA)
+                    "poll", "vote", "survey" -> setLayout(SlideLayoutType.POLL)
                 }
             }
             "bg", "background" -> {

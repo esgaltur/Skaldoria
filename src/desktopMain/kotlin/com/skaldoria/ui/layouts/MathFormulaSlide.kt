@@ -1,9 +1,13 @@
 package com.skaldoria.ui.layouts
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -12,6 +16,7 @@ import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideElement
 import com.skaldoria.theme.PresentationTheme
 import com.skaldoria.ui.components.MathFormulaRenderer
+import com.skaldoria.ui.components.inlineMarkdown
 
 @Composable
 fun MathFormulaSlide(
@@ -46,7 +51,7 @@ fun MathFormulaSlide(
                         fontSize = 16.sp
                     )
                 }
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(20.dp))
             }
 
             if (mathElem != null) {
@@ -61,11 +66,11 @@ fun MathFormulaSlide(
         if (otherText.isNotEmpty() || bulletList != null) {
             Column(
                 modifier = Modifier.padding(top = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 for (t in otherText) {
                     Text(
-                        text = t.content,
+                        text = inlineMarkdown(t.content, theme),
                         color = theme.textSecondary,
                         fontSize = 16.sp,
                         lineHeight = 22.sp
@@ -73,11 +78,24 @@ fun MathFormulaSlide(
                 }
                 if (bulletList != null) {
                     for (item in bulletList.items) {
-                        Text(
-                            text = "•  $item",
-                            color = theme.textPrimary,
-                            fontSize = 15.sp
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(theme.primary)
+                            )
+                            Text(
+                                text = inlineMarkdown(item, theme),
+                                color = theme.textPrimary,
+                                fontSize = 15.sp,
+                                lineHeight = 22.sp
+                            )
+                        }
                     }
                 }
             }

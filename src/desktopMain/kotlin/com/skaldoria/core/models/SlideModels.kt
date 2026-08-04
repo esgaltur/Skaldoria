@@ -18,7 +18,8 @@ enum class SlideLayoutType(val displayName: String) {
     BIG_METRIC("Hero Metric"),
     FULL_CODE("Full-Bleed Code"),
     DIAGRAM("Architecture / Flow Diagram"),
-    MATH_FORMULA("Math Formula / Equation")
+    MATH_FORMULA("Math Formula / Equation"),
+    POLL("Live Audience Poll")
 }
 
 /**
@@ -41,6 +42,18 @@ enum class PacingStatus(val displayName: String) {
     BEHIND("Behind Pace"),
     OVERTIME("Over Target Time")
 }
+
+/**
+ * Audience question submitted via the companion portal.
+ */
+data class AudienceQuestion(
+    val id: String,
+    val author: String = "Anonymous",
+    val text: String,
+    val upvotes: Int = 0,
+    val isAnswered: Boolean = false,
+    val timestamp: Long = System.currentTimeMillis()
+)
 
 /**
  * Drawing stroke for presentation annotations.
@@ -100,6 +113,11 @@ sealed interface SlideElement {
     data class MathFormula(
         val formula: String,
         val isBlock: Boolean = true
+    ) : SlideElement
+
+    data class Poll(
+        val question: String,
+        val options: List<String>
     ) : SlideElement
 }
 

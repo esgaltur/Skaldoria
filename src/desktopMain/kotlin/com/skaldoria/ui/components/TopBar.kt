@@ -35,6 +35,10 @@ fun TopBar(
         RemotePairingDialog(state = state, onDismiss = { showRemoteDialog = false })
     }
 
+    if (state.isUnlockThemeDialogOpen) {
+        UnlockCorporateThemeDialog(state = state, onDismiss = { state.isUnlockThemeDialogOpen = false })
+    }
+
     if (state.isGridOverviewOpen) {
         SlideGridOverviewDialog(state = state, onDismiss = { state.isGridOverviewOpen = false })
     }
@@ -331,9 +335,17 @@ fun TopBar(
                         expanded = themeMenuExpanded,
                         onDismissRequest = { themeMenuExpanded = false }
                     ) {
-                        BuiltinThemes.all.forEach { theme ->
+                        state.availableThemes.forEach { theme ->
                             DropdownMenuItem(
-                                text = { Text(theme.name) },
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(theme.name)
+                                        if (theme.id == "deutsche-borse") {
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("CORP", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = theme.primary)
+                                        }
+                                    }
+                                },
                                 leadingIcon = {
                                     Box(
                                         Modifier
@@ -345,6 +357,54 @@ fun TopBar(
                                 onClick = {
                                     state.currentTheme = theme
                                     themeMenuExpanded = false
+                                }
+                            )
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = state.currentTheme.cardBorder)
+
+                        if (!state.isCorporateThemeUnlocked) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "Unlock Enterprise Theme...",
+                                        color = state.currentTheme.accent,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Lock,
+                                        contentDescription = null,
+                                        tint = state.currentTheme.accent,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                onClick = {
+                                    themeMenuExpanded = false
+                                    state.isUnlockThemeDialogOpen = true
+                                }
+                            )
+                        } else {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "Lock Enterprise Themes",
+                                        color = state.currentTheme.textMuted,
+                                        fontSize = 13.sp
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.LockOpen,
+                                        contentDescription = null,
+                                        tint = state.currentTheme.textMuted,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                onClick = {
+                                    themeMenuExpanded = false
+                                    state.lockCorporateTheme()
                                 }
                             )
                         }

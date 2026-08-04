@@ -1,6 +1,6 @@
 ---
 name: markdown-presentation
-description: Expert guide, syntax patterns, and best practices for creating engaging, high-impact presentations using standard Markdown with Skaldoria Presentation Studio. Use this skill whenever authoring slides, converting documents or notes to slide decks, structuring presentation outlines, adding syntax highlights, Mermaid diagrams, LaTeX math equations, benchmark tables, quotes, hero metrics, pacing targets, or speaker notes.
+description: Expert guide, syntax patterns, and best practices for creating engaging, high-impact presentations using standard Markdown with Skaldoria Presentation Studio. Use this skill whenever authoring slides, converting documents or notes to slide decks, structuring presentation outlines, adding syntax highlights, Mermaid diagrams, LaTeX math equations, live audience polls, moderated Q&A, benchmark tables, quotes, hero metrics, pacing targets, or speaker notes.
 ---
 
 # Markdown Presentation Authoring Guide (Skaldoria Studio)
@@ -13,7 +13,7 @@ This skill provides comprehensive guidelines, syntax patterns, and best practice
 
 When composing slides in Markdown, follow the **One Idea Per Slide** principle:
 - **Scannability**: Audiences should grasp the core takeaway in under 3 seconds.
-- **Visual Rhythm**: Alternate between text/bullets, side-by-side code splits, Mermaid architecture diagrams, LaTeX formulas, hero quotes, data tables, and big metrics.
+- **Visual Rhythm**: Alternate between text/bullets, side-by-side code splits, Mermaid architecture diagrams, LaTeX formulas, live audience polls, hero quotes, data tables, and big metrics.
 - **Zero Proprietary Syntax**: Slides remain 100% valid, readable Markdown anywhere (GitHub, Obsidian, IDEs).
 
 ---
@@ -61,7 +61,23 @@ Used for feature rundowns, key takeaways, and progressive points.
 
 ---
 
-### C. Split: Text & Code Slide (`SlideLayoutType.SPLIT_TEXT_CODE`)
+### C. Live Audience Poll Slide (`SlideLayoutType.POLL`)
+Interactive polling slide that renders real-time animated percentage bars as the audience votes from their mobile phones.
+```markdown
+## Primary Production Database
+
+What is your team's primary transactional database?
+
+<!-- poll: PostgreSQL | MongoDB | CockroachDB | MySQL | Redis -->
+
+<!-- note: Invite the audience to scan the QR code and vote live. -->
+```
+- **Trigger**: `<!-- poll: Opt1 | Opt2 | Opt3 -->` comment directive or `poll: Opt1 | Opt2` line.
+- **Audience Voting**: Audience connects via `http://<ip>:<port>/audience` on local network to cast votes.
+
+---
+
+### D. Split: Text & Code Slide (`SlideLayoutType.SPLIT_TEXT_CODE`)
 Side-by-side split view with descriptive text on the left and an interactive syntax-highlighted code block on the right.
 ```markdown
 ## Reactive Stream Pipeline
@@ -87,7 +103,7 @@ fun render(slide: Slide) {
 
 ---
 
-### D. Mermaid Architecture & Flowchart Slide (`SlideLayoutType.DIAGRAM`)
+### E. Mermaid Architecture & Flowchart Slide (`SlideLayoutType.DIAGRAM`)
 Renders interactive, styled node-and-arrow diagrams, sequence flows, and component pipelines natively.
 ```markdown
 ## Distributed Presentation Pipeline
@@ -110,7 +126,7 @@ flowchart LR
 
 ---
 
-### E. LaTeX Mathematical Formula Slide (`SlideLayoutType.MATH_FORMULA`)
+### F. LaTeX Mathematical Formula Slide (`SlideLayoutType.MATH_FORMULA`)
 Renders mathematical equations with typography, stacked fractions, root symbols, Greek glyphs, and superscripts/subscripts.
 ```markdown
 ## Algorithmic Pacing Formula
@@ -133,7 +149,7 @@ $$ \Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_
 
 ---
 
-### F. Data Table / Matrix Slide (`SlideLayoutType.DATA_TABLE`)
+### G. Data Table / Matrix Slide (`SlideLayoutType.DATA_TABLE`)
 Renders comparison matrices, benchmark results, and feature grids with styled headers and zebra striping.
 ```markdown
 ## Framework Benchmark Matrix
@@ -151,7 +167,7 @@ Renders comparison matrices, benchmark results, and feature grids with styled he
 
 ---
 
-### G. Big Quote Slide (`SlideLayoutType.BIG_QUOTE`)
+### H. Big Quote Slide (`SlideLayoutType.BIG_QUOTE`)
 High-impact editorial slide for thought leadership, philosophy, or keynote reflections.
 ```markdown
 ## Guiding Philosophy
@@ -165,7 +181,7 @@ High-impact editorial slide for thought leadership, philosophy, or keynote refle
 
 ---
 
-### H. Hero Metric Slide (`SlideLayoutType.BIG_METRIC`)
+### I. Hero Metric Slide (`SlideLayoutType.BIG_METRIC`)
 Stat callout displaying massive numbers, percentages, or growth metrics.
 ```markdown
 ## Performance SLA
@@ -178,7 +194,7 @@ Stat callout displaying massive numbers, percentages, or growth metrics.
 
 ---
 
-### I. Split: Text & Media Slide (`SlideLayoutType.SPLIT_TEXT_MEDIA`)
+### J. Split: Text & Media Slide (`SlideLayoutType.SPLIT_TEXT_MEDIA`)
 Side-by-side layout displaying text alongside an architecture diagram or screenshot.
 ```markdown
 ## Global Edge Network
@@ -222,15 +238,18 @@ Skaldoria includes an intelligent Pacing HUD to prevent running overtime:
 
 ---
 
-## 6. Mobile Companion Remote Control
+## 6. Mobile Remote & Live Audience Portal
 
-Control presentations wirelessly from any smartphone or tablet:
-1. Open Presenter View (<kbd>F1</kbd> or <kbd>Ctrl+M</kbd>).
-2. Click **Mobile Remote** or scan the on-screen QR Code.
-3. Your mobile browser instantly pairs via local WebSocket to trigger:
+Control presentations wirelessly and interact with your audience from any device:
+1. Open Presenter View (<kbd>P</kbd>) and click **Mobile Remote / Audience**.
+2. **Speaker Clicker (`/remote`)**:
    - Next / Previous slide navigation
+   - Live Speaker Notes reader
    - Stage Blackout (<kbd>B</kbd>) and Whiteout (<kbd>W</kbd>)
-   - Real-time slide number and presentation status display
+   - Live Audience Questions stream & moderation
+3. **Audience Portal (`/audience`)**:
+   - Live in-slide polling with instant vote recording
+   - Audience Q&A question submission and community upvoting
 
 ---
 
@@ -241,7 +260,7 @@ Control presentations wirelessly from any smartphone or tablet:
 | **Next Slide / Reveal Fragment** | <kbd>Space</kbd>, <kbd>→</kbd>, <kbd>↓</kbd>, <kbd>PageDown</kbd> |
 | **Previous Slide** | <kbd>←</kbd>, <kbd>↑</kbd>, <kbd>PageUp</kbd> |
 | **Toggle Laser Pointer** | <kbd>L</kbd> |
-| **Toggle Pen Drawing Mode** | <kbd>P</kbd> |
+| **Toggle Pen Drawing Mode** | <kbd>P</kbd> (in presentation mode) |
 | **Undo Last Stroke** | <kbd>Ctrl+Z</kbd> |
 | **Clear Slide Annotations** | <kbd>C</kbd> |
 | **Blackout Screen (Stage Focus)** | <kbd>B</kbd> |
@@ -249,9 +268,9 @@ Control presentations wirelessly from any smartphone or tablet:
 | **Grid Slide Overview / Sorter** | <kbd>G</kbd> |
 | **Spotlight Quick Jump** | <kbd>Ctrl+K</kbd> / <kbd>Ctrl+P</kbd> |
 | **Export to PDF / HTML / Images** | <kbd>Ctrl+E</kbd> |
-| **Theme Studio & Custom Themes** | <kbd>Ctrl+Shift+T</kbd> |
-| **Presenter Console (Dual Monitor)**| <kbd>F1</kbd> / <kbd>Ctrl+M</kbd> |
-| **Fullscreen Presentation Deck** | <kbd>F5</kbd> / <kbd>Ctrl+Enter</kbd> |
+| **Theme Studio & Custom Themes** | <kbd>T</kbd> |
+| **Presenter Console (Dual Monitor)**| <kbd>P</kbd> |
+| **Fullscreen Presentation Deck** | <kbd>F5</kbd> |
 | **Exit Fullscreen / Close Modal** | <kbd>Esc</kbd> |
 
 ---
@@ -267,32 +286,28 @@ my_presentation/
 └── slides/
     ├── 01_hero_title.md
     ├── 02_architecture_diagram.md
-    ├── 03_math_pacing.md
-    ├── 04_code_deep_dive.md
-    └── 05_conclusion.md
+    ├── 03_live_poll.md
+    ├── 04_math_pacing.md
+    ├── 05_code_deep_dive.md
+    └── 06_conclusion.md
 ```
 
 ### Project Manifest (`deck.skaldoria` or `deck.mdpres`):
 ```json
 {
   "name": "Cloud Native Keynote 2026",
-  "theme": "Nord Dark",
+  "theme": "skaldoria-dark",
   "transition": "FADE",
   "slides": [
     "slides/01_hero_title.md",
     "slides/02_architecture_diagram.md",
-    "slides/03_math_pacing.md",
-    "slides/04_code_deep_dive.md",
-    "slides/05_conclusion.md"
+    "slides/03_live_poll.md",
+    "slides/04_math_pacing.md",
+    "slides/05_code_deep_dive.md",
+    "slides/06_conclusion.md"
   ]
 }
 ```
-
-### Benefits:
-- **Zero Git Merge Conflicts**: Team members edit separate slide files concurrently.
-- **Instant Focused Editing**: The editor loads and saves only the active slide file.
-- **Section Reusability**: Share common slides across multiple presentations.
-- **One-Click New Slide**: Click `+ Slide File` in the filmstrip to auto-create and attach numbered slide files.
 
 ---
 

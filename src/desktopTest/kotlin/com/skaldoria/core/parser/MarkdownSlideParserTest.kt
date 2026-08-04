@@ -239,4 +239,25 @@ class MarkdownSlideParserTest {
         assertTrue(mathElem != null)
         assertEquals("E = mc^2", mathElem.formula)
     }
+
+    @Test
+    fun testPollSlideParsing() {
+        val markdown = """
+            ## Technology Choice
+            Which backend stack does your team use?
+            
+            <!-- poll: Kotlin Multiplatform | Rust | Go | TypeScript -->
+        """.trimIndent()
+
+        val slides = MarkdownSlideParser.parse(markdown)
+        assertEquals(1, slides.size)
+        val slide = slides.first()
+        assertEquals(SlideLayoutType.POLL, slide.layoutType)
+
+        val pollElem = slide.elements.filterIsInstance<SlideElement.Poll>().firstOrNull()
+        assertTrue(pollElem != null)
+        assertEquals(4, pollElem.options.size)
+        assertEquals("Kotlin Multiplatform", pollElem.options[0])
+        assertEquals("TypeScript", pollElem.options[3])
+    }
 }

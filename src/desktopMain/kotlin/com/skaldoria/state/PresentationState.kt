@@ -1,6 +1,7 @@
 package com.skaldoria.state
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -8,6 +9,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import com.skaldoria.config.ConfigManager
 import com.skaldoria.core.models.AnnotationStroke
+import com.skaldoria.core.models.AudienceQuestion
 import com.skaldoria.core.models.DeckProject
 import com.skaldoria.core.models.PacingStatus
 import com.skaldoria.core.models.Slide
@@ -37,7 +39,7 @@ class PresentationState(
     var currentSlideIndex by mutableStateOf(0)
         private set
 
-    var currentTheme by mutableStateOf<PresentationTheme>(BuiltinThemes.NordDark)
+    var currentTheme by mutableStateOf<PresentationTheme>(BuiltinThemes.SkaldoriaDark)
 
     var isFullscreen by mutableStateOf(false)
 
@@ -63,8 +65,34 @@ class PresentationState(
     var isGridOverviewOpen by mutableStateOf(false)
     var isRemoteServerRunning by mutableStateOf(false)
     var remoteServerUrl by mutableStateOf<String?>(null)
+    var remoteServerError by mutableStateOf<String?>(null)
     var isCustomThemeDialogOpen by mutableStateOf(false)
     var isExportBundleDialogOpen by mutableStateOf(false)
+    var isUnlockThemeDialogOpen by mutableStateOf(false)
+    var isCorporateThemeUnlocked by mutableStateOf(false)
+
+    val availableThemes: List<PresentationTheme>
+        get() = if (isCorporateThemeUnlocked) BuiltinThemes.allWithCorporate else BuiltinThemes.publicThemes
+
+    fun unlockCorporateTheme(code: String): Boolean {
+        if (BuiltinThemes.isCorporateCode(code)) {
+            isCorporateThemeUnlocked = true
+            currentTheme = BuiltinThemes.DeutscheBorseExecutive
+            return true
+        }
+        return false
+    }
+
+    fun lockCorporateTheme() {
+        isCorporateThemeUnlocked = false
+        if (currentTheme.id == "deutsche-borse") {
+            currentTheme = BuiltinThemes.SkaldoriaDark
+        }
+    }
+
+    // Live Audience Interaction: Polls & Q&A
+    val audienceQuestions = mutableStateListOf<AudienceQuestion>()
+    private val pollVotesMap = mutableStateMapOf<Int, MutableMap<Int, Int>>()
 
     private val annotations = mutableStateMapOf<Int, MutableList<AnnotationStroke>>()
 
@@ -384,11 +412,67 @@ class PresentationState(
             RemoteCompanionServer.stop()
             isRemoteServerRunning = false
             remoteServerUrl = null
+            remoteServerError = null
         } else {
-            val url = RemoteCompanionServer.start(this, port)
-            isRemoteServerRunning = true
-            remoteServerUrl = url
+            try {
+                remoteServerError = null
+                val url = RemoteCompanionServer.start(this, port)
+                isRemoteServerRunning = true
+                remoteServerUrl = url
+            } catch (e: Exception) {
+                isRemoteServerRunning = false
+                remoteServerUrl = null
+                remoteServerError = e.message ?: "Failed to start HTTP server"
+            }
         }
+    }
+
+    // Live Poll Votes
+    fun recordVote(slideIndex: Int, optionIndex: Int) {
+        val currentVotes = pollVotesMap.getOrPut(slideIndex) { mutableMapOf() }
+        val prevCount = currentVotes[optionIndex] ?: 0
+        val updated = currentVotes.toMutableMap()
+        updated[optionIndex] = prevCount + 1
+        pollVotesMap[slideIndex] = updated
+    }
+
+    fun getVotesForSlide(slideIndex: Int): Map<Int, Int> {
+        return pollVotesMap[slideIndex] ?: emptyMap()
+    }
+
+    fun resetVotesForSlide(slideIndex: Int) {
+        pollVotesMap.remove(slideIndex)
+    }
+
+    // Audience Q&A Stream
+    fun submitQuestion(author: String, text: String): AudienceQuestion {
+        val q = AudienceQuestion(
+            id = "q_${System.currentTimeMillis()}_${(1000..9999).random()}",
+            author = author.ifBlank { "Anonymous" },
+            text = text.trim()
+        )
+        audienceQuestions.add(0, q)
+        return q
+    }
+
+    fun upvoteQuestion(questionId: String) {
+        val idx = audienceQuestions.indexOfFirst { it.id == questionId }
+        if (idx != -1) {
+            val prev = audienceQuestions[idx]
+            audienceQuestions[idx] = prev.copy(upvotes = prev.upvotes + 1)
+        }
+    }
+
+    fun markQuestionAnswered(questionId: String) {
+        val idx = audienceQuestions.indexOfFirst { it.id == questionId }
+        if (idx != -1) {
+            val prev = audienceQuestions[idx]
+            audienceQuestions[idx] = prev.copy(isAnswered = true)
+        }
+    }
+
+    fun dismissQuestion(questionId: String) {
+        audienceQuestions.removeAll { it.id == questionId }
     }
 
     fun startPresenting(presenterMode: Boolean = false) {
@@ -475,6 +559,7 @@ class PresentationState(
             SlideLayoutType.FULL_CODE -> "```kotlin\nfun main() {\n    println(\"Native performance unlocked.\")\n}\n```\n"
             SlideLayoutType.DIAGRAM -> "## System Flow\n\n```mermaid\nflowchart LR\n    A[Start] --> B(Process) --> C{Decision}\n    C -->|Yes| D[Success]\n    C -->|No| E[Retry]\n```\n"
             SlideLayoutType.MATH_FORMULA -> "## Core Equation\n\n$$ E = mc^2 $$\n\n- Fundamental equivalence of mass and energy\n"
+            SlideLayoutType.POLL -> "## Audience Live Poll\n\n<!-- poll: Option A | Option B | Option C | Option D -->\n\n- Cast your vote in real-time from your phone!\n"
         }
 
         val chunks = getSlideChunks().toMutableList()
