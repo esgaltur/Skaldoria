@@ -1,0 +1,24 @@
+{
+  "name": "Companion Test Deck",
+  "theme": "Skaldoria Dark",
+  "transition": "FADE",
+  "slides": [
+    "slides/01_hero.md",
+    "slides/02_how_to_test.md",
+    "slides/03_section.md",
+    "slides/04_bullets.md",
+    "slides/05_split_code.md",
+    "slides/06_full_code.md",
+    "slides/07_flowchart.md",
+    "slides/08_sequence.md",
+    "slides/09_table.md",
+    "slides/10_quote.md",
+    "slides/11_metric.md",
+    "slides/12_math.md",
+    "slides/13_poll_warmup.md",
+    "slides/14_poll_main.md",
+    "slides/15_qa.md",
+    "slides/16_media.md",
+    "slides/17_closing.md"
+  ]
+}
