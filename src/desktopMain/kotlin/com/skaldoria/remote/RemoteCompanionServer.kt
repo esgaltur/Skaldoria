@@ -212,29 +212,100 @@ object RemoteCompanionServer {
         executor = null
     }
 
-    fun getLocalIpAddress(): String {
-        return try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()
-            var candidate: String? = null
-            if (interfaces != null) {
-                while (interfaces.hasMoreElements()) {
-                    val iface = interfaces.nextElement()
-                    if (iface.isLoopback || !iface.isUp) continue
-                    val addresses = iface.inetAddresses
-                    while (addresses.hasMoreElements()) {
-                        val addr = addresses.nextElement()
-                        if (!addr.isLoopbackAddress && addr.isSiteLocalAddress && addr.hostAddress.contains('.')) {
-                            return addr.hostAddress
-                        } else if (!addr.isLoopbackAddress && addr.hostAddress.contains('.')) {
-                            candidate = addr.hostAddress
-                        }
-                    }
-                }
-            }
-            candidate ?: InetAddress.getLocalHost()?.hostAddress ?: "127.0.0.1"
-        } catch (_: Exception) {
-            "127.0.0.1"
+    /** One reachable address the companion could advertise. */
+    data class NetworkCandidate(
+        val address: String,
+        val interfaceName: String,
+        /** A host-only / NAT adapter from a hypervisor — routable for the host, not for a phone. */
+        val isLikelyVirtual: Boolean,
+        /** The address the OS would actually use for outbound traffic. */
+        val isRouted: Boolean
+    ) {
+        val label: String get() = if (isRouted) "$interfaceName (active)" else interfaceName
+    }
+
+    /**
+     * Overrides automatic detection. Set when the speaker picks an address in the pairing
+     * dialog — no heuristic can be right on a multi-homed machine, so the choice has to be
+     * available.
+     */
+    @Volatile
+    var preferredAddress: String? = null
+
+    /**
+     * Display names that mark a hypervisor or tunnelling adapter.
+     *
+     * `NetworkInterface.isVirtual` cannot be used for this: it reports whether the interface
+     * is a *sub-interface* (an alias), and is `false` for VirtualBox, VMware and Hyper-V
+     * adapters — which is exactly why they were being picked.
+     */
+    private val VIRTUAL_ADAPTER_HINTS = listOf(
+        "virtualbox", "vmware", "vmnet", "hyper-v", "vethernet", "docker",
+        "wsl", "loopback", "tunnel", "tap-", "tun", "npcap", "bluetooth", "vpn"
+    )
+
+    /**
+     * The address the OS would use to reach the outside world.
+     *
+     * A connected UDP socket sends nothing — it only performs a route lookup — so this is
+     * cheap, needs no reachable internet, and reports the interface holding the default
+     * route. That is almost always the adapter a phone on the same wifi can reach.
+     */
+    private fun routedAddress(): String? = runCatching {
+        java.net.DatagramSocket().use { socket ->
+            socket.connect(InetAddress.getByName("8.8.8.8"), 10002)
+            (socket.localAddress as? java.net.Inet4Address)
+                ?.hostAddress
+                ?.takeUnless { it == "0.0.0.0" }
         }
+    }.getOrNull()
+
+    /**
+     * Every usable IPv4 address, best first.
+     *
+     * Ranked rather than "first match wins", which is what made the companion advertise a
+     * VirtualBox host-only address that no phone could ever reach.
+     */
+    fun availableAddresses(): List<NetworkCandidate> {
+        val routed = routedAddress()
+
+        val candidates = runCatching {
+            NetworkInterface.getNetworkInterfaces().asSequence()
+                .filter { it.isUp && !it.isLoopback }
+                .flatMap { nif ->
+                    val virtual = VIRTUAL_ADAPTER_HINTS.any { hint ->
+                        nif.displayName?.contains(hint, ignoreCase = true) == true ||
+                            nif.name.contains(hint, ignoreCase = true)
+                    }
+                    nif.inetAddresses.asSequence()
+                        .filterIsInstance<java.net.Inet4Address>()
+                        .filter { !it.isLoopbackAddress && !it.isLinkLocalAddress }
+                        .map { addr ->
+                            NetworkCandidate(
+                                address = addr.hostAddress,
+                                interfaceName = nif.displayName ?: nif.name,
+                                isLikelyVirtual = virtual,
+                                isRouted = addr.hostAddress == routed
+                            )
+                        }
+                }
+                .toList()
+        }.getOrDefault(emptyList())
+
+        // Routed first (it is the one that actually works), then real adapters, then the
+        // hypervisor ones, which are kept only as a last resort rather than hidden.
+        return candidates.sortedWith(
+            compareByDescending<NetworkCandidate> { it.isRouted }
+                .thenBy { it.isLikelyVirtual }
+                .thenBy { it.address }
+        )
+    }
+
+    fun getLocalIpAddress(): String {
+        preferredAddress?.takeIf { it.isNotBlank() }?.let { return it }
+        return availableAddresses().firstOrNull()?.address
+            ?: runCatching { InetAddress.getLocalHost()?.hostAddress }.getOrNull()
+            ?: "127.0.0.1"
     }
 
     // ==========================================
