@@ -1,8 +1,8 @@
 # Functional Specification: Skaldoria Presentation Studio
 
-**Document Version:** 1.1.0  
-**Status:** Approved / Fully Implemented  
-**Target Audience:** Engineering, Product, UI/UX, Presenters  
+**Document Version:** 1.1.0
+**Status:** Approved / Fully Implemented
+**Target Audience:** Engineering, Product, UI/UX, Presenters
 
 ---
 
@@ -117,7 +117,6 @@ state.addFollowUpQuestion("Throughput per shard?", slideIndex = 3)
 
 ### 4.2 Corporate Theme Security & Access Code Gate
 - The `deutsche-borse` corporate theme is gated behind an authentication dialog.
-- Valid corporate codes: `DB_CORP_2026`, `deutsche-borse`, `DB_EXECUTIVE`, `DB2026`.
 
 ### 4.3 Adaptive Contrast Enforcer (WCAG 2.1 AA)
 - Dynamically calculates relative luminance $L = 0.2126 R_L + 0.7152 G_L + 0.0722 B_L$.

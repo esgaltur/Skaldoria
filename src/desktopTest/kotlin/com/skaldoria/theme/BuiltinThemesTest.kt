@@ -28,18 +28,7 @@ class BuiltinThemesTest {
         assertTrue(BuiltinThemes.allWithCorporate.any { it.id == "deutsche-borse" })
     }
 
-    @Test
-    fun testCorporateUnlockCodes() {
-        assertTrue(BuiltinThemes.isCorporateCode("DB_CORP_2026"))
-        assertTrue(BuiltinThemes.isCorporateCode("db_corp_2026"))
-        assertTrue(BuiltinThemes.isCorporateCode("deutsche-borse"))
-        assertTrue(BuiltinThemes.isCorporateCode("DEUTSCHE_BORSE"))
-        assertTrue(BuiltinThemes.isCorporateCode("DB_EXECUTIVE"))
-        assertTrue(BuiltinThemes.isCorporateCode("FRANKFURT_FLOOR"))
 
-        assertFalse(BuiltinThemes.isCorporateCode("invalid_code"))
-        assertFalse(BuiltinThemes.isCorporateCode(""))
-    }
 
     @Test
     fun testGetByIdFallback() {

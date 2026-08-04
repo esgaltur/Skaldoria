@@ -57,7 +57,6 @@ $$\Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{
 - Full support for fractions (`\frac{a}{b}`), roots (`\sqrt{x}`), Greek symbols (`\alpha`, `\beta`, `\Delta`, `\Omega`), calculus operators (`\sum`, `\int`, `\prod`), and subscripts/superscripts (`t_{elapsed}`, `e^{-i\pi}`).
 
 ### 4. 🔒 Enterprise Corporate Themes & Adaptive Contrast Science
-- **Corporate Access Code Gate**: Institutional themes (such as "Deutsche Börse Executive") are protected behind secure access codes (`DB_CORP_2026`).
 - **WCAG 2.1 AA Adaptive Contrast Enforcer**: Mathematical color contrast enforcer calculating relative luminance and adjusting HSL lightness to guarantee a contrast ratio $CR \ge 4.5:1$ across all light surfaces and editor syntax tokens.
 
 ### 5. 📊 Live Audience Interaction (In-Slide Polls & Real-Time Q&A)
