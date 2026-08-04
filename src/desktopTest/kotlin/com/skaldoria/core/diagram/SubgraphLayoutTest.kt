@@ -202,4 +202,92 @@ class SubgraphLayoutTest {
         val centres = scene.nodes.values.map { it.rect.center.y }.distinct()
         assertEquals(1, centres.size, "ungrouped nodes should stay on a single row: $centres")
     }
+
+    // -----------------------------------------------------------------
+    // Cases not covered by the first round — checked rather than assumed
+    // -----------------------------------------------------------------
+
+    /** Many groups stack into many bands; none of them may collide. */
+    @Test
+    fun `five groups all stay separate`() {
+        val src = buildString {
+            appendLine("flowchart LR")
+            appendLine("    Root[Root]")
+            repeat(5) { i ->
+                appendLine("    Root --> N${i}a[Node ${i}a]")
+                appendLine("    N${i}a --> N${i}b[Node ${i}b]")
+                appendLine("    subgraph G$i [Group $i]")
+                appendLine("        N${i}a")
+                appendLine("        N${i}b")
+                appendLine("    end")
+            }
+        }
+        val scene = sceneFor(src)
+
+        assertEquals(5, scene.groups.size)
+        assertFramesDoNotOverlap(scene)
+        assertFramesContainOnlyTheirMembers(
+            scene,
+            (0 until 5).associate { "G$it" to listOf("N${it}a", "N${it}b") }
+        )
+    }
+
+    /** A member with no edges still has to sit inside its frame and exclude others. */
+    @Test
+    fun `an isolated member is framed correctly`() {
+        val scene = sceneFor(
+            """
+            flowchart LR
+                A[Alpha] --> B[Beta]
+                subgraph Side [Side Notes]
+                    Lonely[Standalone]
+                end
+            """.trimIndent()
+        )
+
+        assertEquals(1, scene.groups.size)
+        assertFramesContainOnlyTheirMembers(scene, mapOf("Side" to listOf("Lonely")))
+    }
+
+    /** A cycle inside a group must not hang the layout or break the frame. */
+    @Test
+    fun `a cyclic group still lays out`() {
+        val scene = sceneFor(
+            """
+            flowchart LR
+                In[In] --> A[A]
+                subgraph Loop [Retry Loop]
+                    A --> B[B]
+                    B --> C[C]
+                    C --> A
+                end
+            """.trimIndent()
+        )
+
+        assertEquals(1, scene.groups.size)
+        assertFramesContainOnlyTheirMembers(scene, mapOf("Loop" to listOf("A", "B", "C")))
+    }
+
+    /** An edge crossing into a group must not drag its label onto the frame border. */
+    @Test
+    fun `a labelled edge entering a group keeps its label outside the frame`() {
+        val scene = sceneFor(
+            """
+            flowchart LR
+                Client[Client] -->|authenticate| API[Gateway]
+                subgraph Backend [Backend]
+                    API --> Svc[Service]
+                end
+            """.trimIndent()
+        )
+
+        val frame = scene.groups.single()
+        val entering = scene.edges.first { it.fromId == "Client" && it.toId == "API" }
+        val box = entering.labelBox
+        if (box != null) {
+            val onBorder = kotlin.math.abs(box.center.x - frame.rect.left) < box.width / 2f &&
+                box.center.y in frame.rect.top..frame.rect.bottom
+            assertTrue(!onBorder, "edge label sits on the frame border at ${box.center}")
+        }
+    }
 }
