@@ -69,8 +69,11 @@ data class FlowchartScene(
             val bounds = positionNodes(layout, nodeSize, horizontal, labelWidths, nodeIds, groupOf)
             val (shifted, contentWidth, contentHeight) = normalizeToOrigin(bounds)
             val nodePlacements = shifted.mapValues { (id, rect) -> NodePlacement(id, rect) }
-            val edgePlacements = arrangeEdgesWithLabels(edges, shifted, horizontal, labelWidths)
+            // Groups first: an edge label must be able to avoid a frame border, which means
+            // the frames have to exist before labels are placed.
             val groupPlacements = arrangeGroups(groups, shifted)
+            val edgePlacements =
+                arrangeEdgesWithLabels(edges, shifted, horizontal, labelWidths, groupPlacements)
 
             return FlowchartScene(
                 nodePlacements, edgePlacements, contentWidth, contentHeight, groupPlacements
@@ -240,9 +243,21 @@ data class FlowchartScene(
             edges: List<DiagramEdge>,
             bounds: Map<String, Rect>,
             horizontal: Boolean,
-            labelWidths: Map<String, Float>
+            labelWidths: Map<String, Float>,
+            groups: List<GroupPlacement> = emptyList()
         ): List<EdgePlacement> {
-            val placedLabels = mutableListOf<Rect>()
+            // Frame borders are obstacles too. An edge crossing into a subgraph would otherwise
+            // drop its label straight onto the dashed border, where it is hard to read.
+            val borderObstacles = groups.flatMap { group ->
+                val r = group.rect
+                listOf(
+                    Rect(r.left - 6f, r.top, r.left + 6f, r.bottom),
+                    Rect(r.right - 6f, r.top, r.right + 6f, r.bottom),
+                    Rect(r.left, r.top - 6f, r.right, r.top + 6f),
+                    Rect(r.left, r.bottom - 6f, r.right, r.bottom + 6f)
+                )
+            }
+            val placedLabels = mutableListOf<Rect>().apply { addAll(borderObstacles) }
             return edges.mapNotNull { edge ->
                 val from = bounds[edge.fromId] ?: return@mapNotNull null
                 val to = bounds[edge.toId] ?: return@mapNotNull null
