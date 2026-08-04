@@ -49,7 +49,21 @@ cannot catch *"drawn wrong"*. Only your eyes can.
 
 ### 6. No Deprecated APIs, No Blanket Suppressions
 
-This is a greenfield codebase and it compiles with **zero deprecation warnings**. Keep it that way.
+This is a greenfield codebase and it compiles with **zero Kotlin deprecation warnings**. Keep it
+that way.
+
+**Known exception, in the build itself.** `./gradlew --warning-mode all` reports one Gradle
+deprecation:
+
+> The archives configuration has been deprecated for artifact declaration.
+
+It is **not** ours. The stack resolves to
+`KotlinTargetArtifactKt.createPublishArtifact` → `BasePlugin.configureConfigurations`: the Kotlin
+Multiplatform plugin registers its jar in the deprecated `archives` configuration when
+`jvm("desktop")` runs. The `build.gradle.kts:54` shown in the trace is only the outermost
+user-code frame, not the cause. Verified still present on Kotlin 2.3.10, so it needs an upstream
+fix. Do not spend time on it, and do not silence it with `warning.mode=none` — that would hide
+real warnings too.
 
 - Do not add `@Suppress("DEPRECATION")`. Suppressing a deprecation hides the migration signal and
   converts a compiler warning into silent technical debt. Migrate, or wrap the call in a small

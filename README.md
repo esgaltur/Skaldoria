@@ -6,7 +6,7 @@
 
 *A 120 FPS native presentation studio powered by Kotlin Multiplatform & Compose Desktop.*
 
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-7F52FF.svg?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.2.0-7F52FF.svg?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Compose Multiplatform](https://img.shields.io/badge/Compose_Desktop-1.7.3-4285F4.svg?style=flat-square&logo=jetpackcompose&logoColor=white)](https://www.jetbrains.com/lp/compose-multiplatform/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen.svg?style=flat-square)]()
@@ -309,7 +309,7 @@ unrelated `.json` opens as a plain file rather than being mistaken for a deck.
 * 📐 **[ADR-002: Diagram Geometry Architecture](./docs/ADR_DIAGRAM_GEOMETRY_ARCHITECTURE.md)**: How diagram layout is separated from drawing.
 * 🔍 **[Ktor vs. hand-rolled sockets](./docs/KTOR_MIGRATION_TRADEOFFS.md)**: Measured evaluation of replacing the companion server, and why it stayed.
 * 🖼️ **[Rendering status](./docs/RENDERING_STATUS.md)**: What has been visually verified, with the headless render harness that proves it.
-* 🧭 **[Remediation plan](./docs/REMEDIATION_PLAN.md)**: The full defect register — every item, its root cause, and how it was fixed.
+* 🧭 **[Quality Baseline](./docs/QUALITY_BASELINE.md)**: The invariants this codebase holds, the reasoning behind the non-obvious ones, and the test guarding each.
 
 ---
 
