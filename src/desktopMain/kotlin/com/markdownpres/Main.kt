@@ -1,7 +1,10 @@
 package com.markdownpres
 
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
@@ -12,12 +15,20 @@ import com.markdownpres.ui.screens.EditorWorkspace
 import com.markdownpres.ui.screens.FullscreenDeck
 import com.markdownpres.ui.screens.PresenterView
 
+/** Loads the app window icon from classpath resources; null if unavailable. */
+private fun loadAppIcon(): Painter? = runCatching {
+    val stream = object {}.javaClass.getResourceAsStream("/icons/app.png") ?: return null
+    stream.use { BitmapPainter(loadImageBitmap(it)) }
+}.getOrNull()
+
 fun main() = application {
     val state = remember { PresentationState() }
+    val appIcon = remember { loadAppIcon() }
 
     // Main Studio & Presentation Deck Window
     Window(
         onCloseRequest = ::exitApplication,
+        icon = appIcon,
         title = if (state.isFullscreen) "Skaldoria — Presentation Deck" else "Skaldoria Studio",
         state = WindowState(
             width = 1240.dp,
@@ -72,6 +83,7 @@ fun main() = application {
     if (state.isPresenterModeActive) {
         Window(
             onCloseRequest = { state.isPresenterModeActive = false },
+            icon = appIcon,
             title = "Skaldoria — Speaker Console & Notes",
             state = WindowState(
                 width = 1080.dp,
