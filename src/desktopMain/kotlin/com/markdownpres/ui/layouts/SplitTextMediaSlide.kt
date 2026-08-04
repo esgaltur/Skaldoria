@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.markdownpres.core.models.Slide
 import com.markdownpres.core.models.SlideElement
 import com.markdownpres.theme.PresentationTheme
+import com.markdownpres.ui.components.inlineMarkdown
 
 @Composable
 fun SplitTextMediaSlide(
@@ -57,19 +58,21 @@ fun SplitTextMediaSlide(
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // Left: Text / Bullets
+            // Left: Text / Bullets (fills height, vertically centered)
             Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically)
             ) {
                 slide.elements.filter { it !is SlideElement.Image }.forEach { elem ->
                     when (elem) {
                         is SlideElement.Text -> {
                             Text(
-                                text = elem.content,
+                                text = inlineMarkdown(elem.content, theme),
                                 color = theme.textSecondary,
-                                fontSize = 15.sp,
-                                lineHeight = 22.sp
+                                fontSize = 17.sp,
+                                lineHeight = 25.sp
                             )
                         }
 
@@ -80,14 +83,14 @@ fun SplitTextMediaSlide(
                                         text = "•",
                                         color = theme.primary,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp
+                                        fontSize = 18.sp
                                     )
                                     Spacer(Modifier.width(10.dp))
                                     Text(
-                                        text = item,
+                                        text = inlineMarkdown(item, theme),
                                         color = theme.textPrimary,
-                                        fontSize = 14.sp,
-                                        lineHeight = 20.sp
+                                        fontSize = 16.sp,
+                                        lineHeight = 23.sp
                                     )
                                 }
                             }

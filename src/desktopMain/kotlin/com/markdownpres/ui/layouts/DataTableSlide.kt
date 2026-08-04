@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.markdownpres.core.models.Slide
 import com.markdownpres.core.models.SlideElement
 import com.markdownpres.theme.PresentationTheme
+import com.markdownpres.ui.components.inlineMarkdown
 
 @Composable
 fun DataTableSlide(
@@ -117,7 +118,7 @@ fun DataTableSlide(
                                     contentAlignment = Alignment.CenterStart
                                 ) {
                                     Text(
-                                        text = cellText,
+                                        text = inlineMarkdown(cellText, theme),
                                         color = theme.textPrimary,
                                         fontSize = 14.sp,
                                         fontFamily = FontFamily.SansSerif

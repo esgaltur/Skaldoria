@@ -15,10 +15,15 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import com.markdownpres.core.models.AnnotationStroke
 import com.markdownpres.state.PresentationState
+import java.awt.Point
+import java.awt.Toolkit
+import java.awt.image.BufferedImage
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -29,9 +34,22 @@ fun SlideAnnotationOverlay(
     var currentLaserPos by remember { mutableStateOf(Offset.Unspecified) }
     var activeStrokePoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
 
+    // A fully transparent cursor so only the rendered laser dot is visible.
+    val blankCursor = remember {
+        val image = BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB)
+        val cursor = Toolkit.getDefaultToolkit()
+            .createCustomCursor(image, Point(0, 0), "blankLaserCursor")
+        PointerIcon(cursor)
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
+            .then(
+                if (state.isLaserPointerActive) {
+                    Modifier.pointerHoverIcon(blankCursor, overrideDescendants = true)
+                } else Modifier
+            )
             .onPointerEvent(PointerEventType.Move) { event ->
                 val change = event.changes.firstOrNull()
                 if (change != null && state.isLaserPointerActive) {

@@ -34,6 +34,8 @@ class PresentationState(
 
     var isCommandPaletteOpen by mutableStateOf(false)
 
+    var showWelcome by mutableStateOf(true)
+
     var isLaserPointerActive by mutableStateOf(false)
 
     var isPenDrawingActive by mutableStateOf(false)
@@ -188,6 +190,7 @@ class PresentationState(
 
     fun openFile() {
         com.markdownpres.export.FileManager.openFileOrProject { file ->
+            showWelcome = false
             val ext = file.extension.lowercase()
             if (ext == "mdpres" || ext == "json") {
                 val proj = com.markdownpres.project.DeckProjectManager.loadProjectFromManifest(file)
@@ -284,7 +287,48 @@ class PresentationState(
         resetTimer()
     }
 
+    /** Start a fresh, minimal deck from the welcome screen. */
+    fun startBlankPresentation() {
+        activeProject = null
+        currentFilePath = null
+        updateMarkdown(BLANK_STARTER_MARKDOWN)
+        currentSlideIndex = 0
+        resetTimer()
+        showWelcome = false
+    }
+
+    /** Load the built-in demo deck from the welcome screen. */
+    fun openSampleDeck() {
+        activeProject = null
+        currentFilePath = null
+        resetToSample()
+        showWelcome = false
+    }
+
     companion object {
+        val BLANK_STARTER_MARKDOWN = """
+# Your Presentation Title
+### A short, punchy subtitle
+
+<!-- note: Speaker notes for this slide go here. They only show in Presenter View. -->
+
+---
+
+## First Topic
+
+- Your first key point
+- Your second key point
+- Add a code block, quote, table, or image on the next slides
+
+---
+
+## Add Anything
+
+> Big quotes, `inline code`, **bold**, and images all work.
+
+![Optional caption](path/to/image.png)
+""".trimIndent()
+
         val DEFAULT_SAMPLE_MARKDOWN = """
 # Next-Gen Multiplatform Systems
 ### Building Resilient Native Apps with Kotlin & Compose
