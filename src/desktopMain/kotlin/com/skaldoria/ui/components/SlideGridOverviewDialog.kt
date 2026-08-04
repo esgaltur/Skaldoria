@@ -1,5 +1,6 @@
 package com.skaldoria.ui.components
 
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -109,21 +111,51 @@ fun SlideGridOverviewDialog(
                         }
 
                         // Search Filter Field
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            placeholder = { Text("Filter slides...", color = theme.textMuted, fontSize = 13.sp) },
-                            leadingIcon = { Icon(Icons.Default.Search, null, tint = theme.primary, modifier = Modifier.size(18.dp)) },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = theme.primary,
-                                unfocusedBorderColor = theme.cardBorder,
-                                focusedTextColor = theme.textPrimary,
-                                unfocusedTextColor = theme.textPrimary
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.width(280.dp).height(46.dp)
-                        )
+                        //
+                        // Built from Row + BasicTextField rather than OutlinedTextField.
+                        // A Material 3 text field enforces MinHeight = 56.dp and reserves
+                        // 16.dp of content padding above and below the text line, so pinning
+                        // it to 46.dp cropped the placeholder and the input. BasicTextField
+                        // has no decoration box, so it fits whatever height it is given —
+                        // the same pattern EditorFindBar already uses for its search box.
+                        Row(
+                            modifier = Modifier
+                                .width(280.dp)
+                                .height(46.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(theme.surfaceVariant.copy(alpha = 0.5f))
+                                .border(1.dp, theme.cardBorder, RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Filter slides",
+                                tint = theme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                                if (searchQuery.isEmpty()) {
+                                    Text(
+                                        text = "Filter slides...",
+                                        color = theme.textMuted,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                BasicTextField(
+                                    value = searchQuery,
+                                    onValueChange = { searchQuery = it },
+                                    singleLine = true,
+                                    textStyle = LocalTextStyle.current.copy(
+                                        color = theme.textPrimary,
+                                        fontSize = 13.sp
+                                    ),
+                                    cursorBrush = SolidColor(theme.primary),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
 
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.Default.Close, contentDescription = "Close", tint = theme.textMuted)

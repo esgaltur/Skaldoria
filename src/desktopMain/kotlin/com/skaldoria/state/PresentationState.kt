@@ -484,11 +484,65 @@ class PresentationState(
         if (currentSlideIndex >= slides.size) {
             currentSlideIndex = (slides.size - 1).coerceAtLeast(0)
         }
-        val extractedFollowUps = MarkdownSlideParser.extractFollowUpQuestions(newMarkdown)
-        if (extractedFollowUps.isNotEmpty() && followUpQuestions.isEmpty()) {
-            followUpQuestions.addAll(extractedFollowUps)
-        }
+        reconcileFollowUpQuestions(newMarkdown)
         scheduleDraftSave(newMarkdown)
+    }
+
+    /**
+     * Syncs directive-sourced parking-lot items with the markdown, without resurrecting
+     * deleted ones.
+     *
+     * The previous rule was "if the list is empty, add everything the markdown declares".
+     * `updateMarkdown` runs on every keystroke, so deleting the last item emptied the list
+     * and the next character typed brought the whole set back — which is why delete looked
+     * like it did nothing. Matching is by [FollowUpQuestion.directiveKey] rather than `id`,
+     * since `id` is a fresh UUID on each parse.
+     *
+     * Manual items are never touched: they have no backing directive, so nothing here can
+     * add or remove them.
+     */
+    private fun reconcileFollowUpQuestions(markdown: String) {
+        val fromMarkdown = MarkdownSlideParser.extractFollowUpQuestions(markdown)
+
+        // The markdown is authoritative. That is safe *because* every mutation
+        // (add / answer / toggle / delete) writes through to the source first, so there is
+        // no in-memory state that the file does not already have. Adopting the file wholesale
+        // is what makes an edit to a question's wording show up as an edit rather than
+        // leaving the old text stranded in the list.
+        //
+        // Ids are preserved across the swap by the `id:` field, so list keys stay stable and
+        // the UI does not lose scroll position or selection.
+        val unchanged = followUpQuestions.size == fromMarkdown.size &&
+            followUpQuestions.zip(fromMarkdown).all { (a, b) -> a == b }
+        if (unchanged) return
+
+        followUpQuestions.clear()
+        followUpQuestions.addAll(fromMarkdown)
+    }
+
+    /**
+     * Writes the current parking-lot list back into the deck markdown.
+     *
+     * Without this the markdown stayed authoritative and one-way: a deleted question was
+     * still sitting in the file as a `<!-- parking-lot: … -->` comment, so it returned on
+     * the next load — the "not removed from the file itself" symptom.
+     */
+    private fun persistFollowUpQuestions() {
+        val source = if (isProjectMode && isPerSlideEditorMode) currentEditorText else markdownText
+        val rewritten = MarkdownSlideParser.rewriteFollowUpDirectives(source, followUpQuestions.toList())
+        if (rewritten == source) return
+
+        if (isProjectMode && isPerSlideEditorMode) {
+            updateEditorContent(rewritten)
+        } else {
+            markdownText = rewritten
+            slides = MarkdownSlideParser.parse(rewritten)
+            // Re-read so the list picks up the `id:` fields just written. Without this the
+            // in-memory items still look id-less, and the *next* rewrite cannot match the
+            // directives it has already stamped — which silently deleted them.
+            reconcileFollowUpQuestions(rewritten)
+            scheduleDraftSave(rewritten)
+        }
     }
 
     val hasNext: Boolean
@@ -756,15 +810,43 @@ class PresentationState(
         isAnswered: Boolean = false
     ) {
         if (question.isBlank()) return
-        followUpQuestions.add(
-            FollowUpQuestion(
-                question = question.trim(),
-                isAnswered = isAnswered,
-                answerText = answerText.trim(),
-                slideIndex = slideIndex,
-                author = author
-            )
+        val item = FollowUpQuestion(
+            question = question.trim(),
+            isAnswered = isAnswered,
+            answerText = answerText.trim(),
+            slideIndex = slideIndex,
+            author = author,
+            // The deck markdown is this app's only storage, so a question captured during a
+            // talk has to be written there or it is lost when the app closes. It is created
+            // markdown-backed with a persisted id, which also makes every later edit,
+            // answer, and delete take exactly the same path as an authored directive.
+            isFromMarkdown = true,
+            hasPersistedId = true
         )
+        followUpQuestions.add(item)
+        appendFollowUpDirective(item)
+    }
+
+    /**
+     * Appends a new `<!-- parking-lot: … -->` directive for [item] to the deck source.
+     *
+     * Appended at the end of the document rather than inside a slide section: a comment is
+     * invisible in the rendered deck, and appending avoids disturbing slide boundaries. The
+     * slide it refers to is carried by the `slide:N` field, not by position.
+     */
+    private fun appendFollowUpDirective(item: FollowUpQuestion) {
+        val directive = MarkdownSlideParser.directiveLineFor(item)
+
+        if (isProjectMode && isPerSlideEditorMode) {
+            val current = currentEditorText
+            updateEditorContent(current.trimEnd() + "\n\n" + directive + "\n")
+            return
+        }
+
+        val updated = markdownText.trimEnd() + "\n\n" + directive + "\n"
+        markdownText = updated
+        slides = MarkdownSlideParser.parse(updated)
+        scheduleDraftSave(updated)
     }
 
     fun toggleFollowUpAnswered(id: String) {
@@ -772,6 +854,7 @@ class PresentationState(
         if (idx != -1) {
             val item = followUpQuestions[idx]
             followUpQuestions[idx] = item.copy(isAnswered = !item.isAnswered)
+            persistFollowUpQuestions()
         }
     }
 
@@ -780,11 +863,23 @@ class PresentationState(
         if (idx != -1) {
             val item = followUpQuestions[idx]
             followUpQuestions[idx] = item.copy(answerText = answer)
+            persistFollowUpQuestions()
         }
     }
 
+    /**
+     * Removes a parking-lot item, and — for directive-sourced items — the
+     * `<!-- parking-lot: … -->` comment that produced it.
+     *
+     * Dropping only the in-memory entry was the original defect: the directive survived, so
+     * the item came back on the next keystroke and on the next file load.
+     */
     fun deleteFollowUpQuestion(id: String) {
+        val removed = followUpQuestions.firstOrNull { it.id == id } ?: return
         followUpQuestions.removeAll { it.id == id }
+        if (removed.isFromMarkdown) {
+            persistFollowUpQuestions()
+        }
     }
 
     /**

@@ -1,6 +1,6 @@
 # Parking Lot — "questions can't be removed" · Root-cause analysis
 
-**Status:** 🔴 Confirmed defect (analysis only — no fix applied yet)
+**Status:** ✅ **FIXED** (2026-08-05) — see *Resolution* at the end. Analysis below retained as the record of the defect.
 **Area:** Presentation Parking Lot & Follow-Up questions
 **Reported symptom:** Clicking the trash/delete icon on a parking-lot question does not
 remove it — the question comes back, and it is *"not removed from the file itself."*
@@ -152,3 +152,63 @@ The maintainable fix makes the markdown source authoritative in **both** directi
 
 Both changes are needed. (1) alone still lets Defect B resurrect items until the file is
 re-read; (2) alone still leaves the stale comment in the saved file.
+
+
+---
+
+## Resolution — implemented 2026-08-05
+
+Both defects are fixed, plus two further problems found while fixing them. The shape of the
+fix changed during review: the original plan treated manually captured questions as
+session-only, which is wrong — **the deck markdown is this app's only storage**, so anything
+not written there is lost on close.
+
+### What changed
+
+**1. Markdown is the single store, for every item.**
+`addFollowUpQuestion` now appends a `<!-- parking-lot: … -->` directive to the deck. A
+question captured during a talk survives a restart, and — more importantly — add / answer /
+toggle / delete all follow one code path instead of manual and directive items behaving
+differently.
+
+**2. The id is persisted in the directive.**
+Directives now carry `| id:<uuid>`:
+
+```
+<!-- parking-lot: [ ] Why did latency spike at 14:00? | slide:3 | id:6f1c…-->
+```
+
+The original plan matched on a hash of the question text. That works until someone edits the
+wording, at which point the item looks like a delete plus a create. With the id in the file,
+identity survives the round trip and re-wording is an edit. Fields are parsed by prefix
+rather than position, so `slide:`, `id:` and the answer may appear in any order and
+hand-authored directives without an id keep working (they fall back to the text key).
+
+**3. Deletes and edits write through to the source.**
+`MarkdownSlideParser.rewriteFollowUpDirectives` edits directives **in place** — a directive
+authored next to the slide it refers to stays there — dropping lines whose item is gone and
+re-emitting the rest with current checkbox/answer state. `deleteFollowUpQuestion`,
+`toggleFollowUpAnswered` and `updateFollowUpAnswer` all call it.
+
+**4. Re-hydration replaced with an authoritative read.**
+The `&& followUpQuestions.isEmpty()` guard is gone. `reconcileFollowUpQuestions` adopts the
+markdown wholesale, which is safe *because* every mutation writes through first, so there is
+no in-memory state the file lacks. It no-ops when nothing changed, so typing does not churn
+the list.
+
+### Two extra defects found while fixing
+
+- **Directive comments rendered as slide text.** `<!-- parking-lot: … -->` fell through to the
+  paragraph branch and was drawn on the slide as literal `<!-- … -->`. Pre-existing, but it
+  would have become glaring once captured questions are written into the deck. Any
+  unrecognised HTML comment is now treated as metadata and skipped.
+- **Extraction read only two fields.** The old parser inspected `parts[1]` and `parts[2]` by
+  position, so a third field could never be read — this is what blocked storing an id
+  alongside an answer.
+
+### Regression tests
+
+`ParkingLotDeleteTest` — 11 cases covering both original defects (delete reaches the file;
+delete survives the next keystroke; deleting everything stays empty), plus id persistence and
+round-trip, identity stability across a re-wording, in-place directive position, and that
+comments never render as slide content.
