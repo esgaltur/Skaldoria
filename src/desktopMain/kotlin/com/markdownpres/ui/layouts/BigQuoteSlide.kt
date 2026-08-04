@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.sp
 import com.markdownpres.core.models.Slide
 import com.markdownpres.core.models.SlideElement
 import com.markdownpres.theme.PresentationTheme
+import com.markdownpres.ui.components.inlineMarkdown
 
 @Composable
 fun BigQuoteSlide(
@@ -59,7 +60,7 @@ fun BigQuoteSlide(
 
             // Main Quote Text
             Text(
-                text = quoteText,
+                text = inlineMarkdown(quoteText, theme),
                 color = theme.textPrimary,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Medium,

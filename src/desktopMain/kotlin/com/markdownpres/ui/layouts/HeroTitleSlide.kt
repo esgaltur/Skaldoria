@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.sp
 import com.markdownpres.core.models.Slide
 import com.markdownpres.core.models.SlideElement
 import com.markdownpres.theme.PresentationTheme
+import com.markdownpres.ui.components.inlineMarkdown
 
 @Composable
 fun HeroTitleSlide(
@@ -81,7 +82,7 @@ fun HeroTitleSlide(
             slide.elements.filterIsInstance<SlideElement.Text>().forEach { textElem ->
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = textElem.content,
+                    text = inlineMarkdown(textElem.content, theme),
                     color = theme.textSecondary,
                     fontSize = 16.sp,
                     textAlign = TextAlign.Center

@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.markdownpres.core.models.Slide
 import com.markdownpres.core.models.SlideElement
 import com.markdownpres.theme.PresentationTheme
+import com.markdownpres.ui.components.inlineMarkdown
 
 @Composable
 fun SplitTextMediaSlide(
@@ -66,7 +67,7 @@ fun SplitTextMediaSlide(
                     when (elem) {
                         is SlideElement.Text -> {
                             Text(
-                                text = elem.content,
+                                text = inlineMarkdown(elem.content, theme),
                                 color = theme.textSecondary,
                                 fontSize = 15.sp,
                                 lineHeight = 22.sp
@@ -84,7 +85,7 @@ fun SplitTextMediaSlide(
                                     )
                                     Spacer(Modifier.width(10.dp))
                                     Text(
-                                        text = item,
+                                        text = inlineMarkdown(item, theme),
                                         color = theme.textPrimary,
                                         fontSize = 14.sp,
                                         lineHeight = 20.sp

@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.sp
 import com.markdownpres.core.models.Slide
 import com.markdownpres.core.models.SlideElement
 import com.markdownpres.theme.PresentationTheme
+import com.markdownpres.ui.components.inlineMarkdown
 
 @Composable
 fun BulletListSlide(
@@ -86,7 +87,7 @@ fun BulletListSlide(
                                 Spacer(Modifier.width(16.dp))
 
                                 Text(
-                                    text = item,
+                                    text = inlineMarkdown(item, theme),
                                     color = theme.textPrimary,
                                     fontSize = 16.sp,
                                     lineHeight = 22.sp,
@@ -98,7 +99,7 @@ fun BulletListSlide(
 
                     is SlideElement.Text -> {
                         Text(
-                            text = elem.content,
+                            text = inlineMarkdown(elem.content, theme),
                             color = theme.textSecondary,
                             fontSize = 16.sp,
                             lineHeight = 24.sp,
