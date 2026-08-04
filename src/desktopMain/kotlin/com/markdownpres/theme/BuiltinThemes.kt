@@ -109,8 +109,8 @@ object BuiltinThemes {
     )
 
     val DeutscheBorseExecutive = PresentationTheme(
-        id = "deutsche-borse-executive",
-        name = "Deutsche Börse Executive",
+        id = "deutsche-borse",
+        name = "Deutsche Börse",
         isDark = false,
         background = Color(0xFFFFFFFF),
         surface = Color(0xFFFFFFFF),
