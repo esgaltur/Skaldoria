@@ -4,6 +4,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowColumn
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -67,6 +70,78 @@ data class ParsedDiagram(
  */
 object MermaidParser {
 
+    /** First non-blank capture among [groups], or null. Keeps label extraction readable. */
+    private fun firstNonBlank(match: MatchResult, vararg groups: Int): String? =
+        groups.asSequence()
+            .map { match.groupValues.getOrElse(it) { "" } }
+            .firstOrNull { it.isNotBlank() }
+
+    /** Node shape implied by which bracket form matched. */
+    private fun shapeOf(match: MatchResult, circleGroup: Int, roundGroup: Int, diamondGroup: Int): NodeShape = when {
+        match.groupValues.getOrElse(diamondGroup) { "" }.isNotBlank() -> NodeShape.DIAMOND
+        match.groupValues.getOrElse(circleGroup) { "" }.isNotBlank() -> NodeShape.CIRCLE
+        match.groupValues.getOrElse(roundGroup) { "" }.isNotBlank() -> NodeShape.ROUNDED_RECT
+        else -> NodeShape.ROUNDED_RECT
+    }
+
+    /**
+     * A node reference: an id plus an optional bracketed label.
+     *
+     * MMD-6: `((circle))` is tried BEFORE `(round)`. Regex alternation is ordered, so with
+     * the single-paren branch first, `A((Round))` matched it and captured `(Round` — which
+     * made [NodeShape.CIRCLE] unreachable and left a stray paren in every circle label.
+     */
+    private val NODE_TOKEN = Regex("""\s*([A-Za-z0-9_]+)\s*(?:\[(.*?)\]|\(\((.*?)\)\)|\((.*?)\)|\{(.*?)\})?""")
+
+    /** An arrow, with an optional `|label|`. Dashed and thick variants included. */
+    private val ARROW_TOKEN = Regex("""\s*(-\.->|===>|==>|-{2,}>|-{3,}|-->)(?:\|(.*?)\|)?""")
+
+    /**
+     * Walks one flowchart line as `node (arrow node)*`, registering every node and edge.
+     * Returns false when the line does not begin with a node reference.
+     */
+    private fun parseEdgeChain(
+        line: String,
+        nodesMap: MutableMap<String, DiagramNode>,
+        edges: MutableList<DiagramEdge>
+    ): Boolean {
+        var position = 0
+
+        fun readNode(): String? {
+            val match = NODE_TOKEN.matchAt(line, position) ?: return null
+            val id = match.groupValues[1]
+            if (id.isBlank()) return null
+            val label = firstNonBlank(match, 2, 3, 4, 5) ?: id
+            val shape = shapeOf(match, circleGroup = 3, roundGroup = 4, diamondGroup = 5)
+            // First declaration wins, so a later bare reference cannot erase a label.
+            nodesMap.getOrPut(id) { DiagramNode(id, label, shape) }
+            position = match.range.last + 1
+            return id
+        }
+
+        var previousId = readNode() ?: return false
+        var linked = false
+
+        while (position < line.length) {
+            val arrow = ARROW_TOKEN.matchAt(line, position) ?: break
+            position = arrow.range.last + 1
+
+            val nextId = readNode() ?: break
+            edges.add(
+                DiagramEdge(
+                    fromId = previousId,
+                    toId = nextId,
+                    label = arrow.groupValues[2].ifBlank { null },
+                    isDashed = arrow.groupValues[1].contains(".")
+                )
+            )
+            previousId = nextId
+            linked = true
+        }
+
+        return linked
+    }
+
     fun parse(code: String): ParsedDiagram {
         val lines = code.lines().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("%%") }
         if (lines.isEmpty()) {
@@ -86,59 +161,18 @@ object MermaidParser {
 
         // Flowchart parsing
         for (line in lines.drop(1)) {
-            // Check for edge patterns: A --> B, A -->|Label| B, A -.-> B, A ==> B, A --- B
-            val edgeRegex = Regex("""([A-Za-z0-9_]+)\s*(?:\[(.*?)\]|\((.*?)\)|\{(.*?)\}|\(\((.*?)\)\))?\s*(-+>|==>|-\.->|---|-->)(?:\|(.*?)\|)?\s*([A-Za-z0-9_]+)\s*(?:\[(.*?)\]|\((.*?)\)|\{(.*?)\}|\(\((.*?)\)\))?""")
-            val match = edgeRegex.find(line)
-
-            if (match != null) {
-                val fromId = match.groupValues[1]
-                val fromLabel = (match.groupValues[2].ifBlank { match.groupValues[3] }.ifBlank { match.groupValues[4] }.ifBlank { match.groupValues[5] }).ifBlank { fromId }
-                val arrow = match.groupValues[6]
-                val edgeLabel = match.groupValues[7].ifBlank { null }
-                val toId = match.groupValues[8]
-                val toLabel = (match.groupValues[9].ifBlank { match.groupValues[10] }.ifBlank { match.groupValues[11] }.ifBlank { match.groupValues[12] }).ifBlank { toId }
-
-                val fromShape = when {
-                    match.groupValues[4].isNotBlank() -> NodeShape.DIAMOND
-                    match.groupValues[5].isNotBlank() -> NodeShape.CIRCLE
-                    match.groupValues[3].isNotBlank() -> NodeShape.ROUNDED_RECT
-                    else -> NodeShape.ROUNDED_RECT
-                }
-                val toShape = when {
-                    match.groupValues[11].isNotBlank() -> NodeShape.DIAMOND
-                    match.groupValues[12].isNotBlank() -> NodeShape.CIRCLE
-                    match.groupValues[10].isNotBlank() -> NodeShape.ROUNDED_RECT
-                    else -> NodeShape.ROUNDED_RECT
-                }
-
-                if (!nodesMap.containsKey(fromId)) {
-                    nodesMap[fromId] = DiagramNode(fromId, fromLabel, fromShape)
-                }
-                if (!nodesMap.containsKey(toId)) {
-                    nodesMap[toId] = DiagramNode(toId, toLabel, toShape)
-                }
-
-                edges.add(
-                    DiagramEdge(
-                        fromId = fromId,
-                        toId = toId,
-                        label = edgeLabel,
-                        isDashed = arrow.contains(".")
-                    )
-                )
-            } else {
-                // Standalone node: A[Label] or B(Text)
-                val nodeRegex = Regex("""([A-Za-z0-9_]+)\s*(?:\[(.*?)\]|\((.*?)\)|\{(.*?)\}|\(\((.*?)\)\))""")
+            // MMD-5: a line is an alternating chain of nodes and arrows, so it is scanned
+            // left to right rather than matched pairwise. `findAll` with a two-node pattern
+            // cannot work here — matches do not overlap, so the first match consumes `B` in
+            // `A --> B --> C` and the second edge is silently lost.
+            if (!parseEdgeChain(line, nodesMap, edges)) {
+                // Standalone node: A[Label] or B(Text) — same alternation order as above.
+                val nodeRegex = Regex("""([A-Za-z0-9_]+)\s*(?:\[(.*?)\]|\(\((.*?)\)\)|\((.*?)\)|\{(.*?)\})""")
                 val nodeMatch = nodeRegex.find(line)
                 if (nodeMatch != null) {
                     val id = nodeMatch.groupValues[1]
-                    val label = (nodeMatch.groupValues[2].ifBlank { nodeMatch.groupValues[3] }.ifBlank { nodeMatch.groupValues[4] }.ifBlank { nodeMatch.groupValues[5] }).ifBlank { id }
-                    val shape = when {
-                        nodeMatch.groupValues[4].isNotBlank() -> NodeShape.DIAMOND
-                        nodeMatch.groupValues[5].isNotBlank() -> NodeShape.CIRCLE
-                        nodeMatch.groupValues[3].isNotBlank() -> NodeShape.ROUNDED_RECT
-                        else -> NodeShape.ROUNDED_RECT
-                    }
+                    val label = firstNonBlank(nodeMatch, 2, 3, 4, 5) ?: id
+                    val shape = shapeOf(nodeMatch, circleGroup = 3, roundGroup = 4, diamondGroup = 5)
                     nodesMap[id] = DiagramNode(id, label, shape)
                 }
             }
@@ -301,57 +335,78 @@ fun MermaidDiagramCanvas(
     }
 }
 
+/**
+ * Finds the edge that actually joins [from] to [to].
+ *
+ * The previous predicate used `||`, which matched any edge merely *starting* at [from]
+ * or *ending* at [to], so labels attached to the wrong connector (MMD-4).
+ */
+private fun ParsedDiagram.edgeBetween(from: DiagramNode, to: DiagramNode): DiagramEdge? =
+    edges.find { it.fromId == from.id && it.toId == to.id }
+
+/**
+ * Renders the node chain, wrapping onto additional lines instead of running off the canvas.
+ *
+ * `FlowRow`/`FlowColumn` replace the plain `Row`/`Column`, which measured each child
+ * against the *remaining* main-axis space — past roughly six nodes later children were
+ * handed a maxWidth near zero, collapsed to a sliver, and were then clipped by the
+ * surface's rounded-corner clip (OVF-2). Combined with `FitToCanvas` upstream, content
+ * now wraps first and shrinks second.
+ *
+ * This is a containment fix, not the real thing: nodes are still emitted in parse order as
+ * a linear chain, so branches and merges are drawn wrong, and a connector at the end of a
+ * wrapped line points into empty space. MMD-1 replaces this with a layered graph layout —
+ * expect to delete this function rather than extend it.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FlowchartDiagramRenderer(
     diagram: ParsedDiagram,
     theme: PresentationTheme
 ) {
     val nodes = diagram.nodes
-    val isHorizontal = diagram.isHorizontal
-
-    if (isHorizontal) {
-        Row(
+    if (diagram.isHorizontal) {
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.Center
         ) {
-            nodes.forEachIndexed { index, node ->
-                NodeCard(node = node, theme = theme)
-
-                if (index < nodes.size - 1) {
-                    val matchingEdge = diagram.edges.find {
-                        it.fromId == node.id || it.toId == nodes[index + 1].id
-                    }
-                    ArrowConnector(
-                        label = matchingEdge?.label,
-                        isHorizontal = true,
-                        isDashed = matchingEdge?.isDashed ?: false,
-                        theme = theme
-                    )
-                }
-            }
+            FlowchartChain(diagram, nodes, isHorizontal = true, theme = theme)
         }
     } else {
-        Column(
+        FlowColumn(
             modifier = Modifier.fillMaxHeight(),
             verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalArrangement = Arrangement.Center
         ) {
-            nodes.forEachIndexed { index, node ->
-                NodeCard(node = node, theme = theme)
+            FlowchartChain(diagram, nodes, isHorizontal = false, theme = theme)
+        }
+    }
+}
 
-                if (index < nodes.size - 1) {
-                    val matchingEdge = diagram.edges.find {
-                        it.fromId == node.id || it.toId == nodes[index + 1].id
-                    }
-                    ArrowConnector(
-                        label = matchingEdge?.label,
-                        isHorizontal = false,
-                        isDashed = matchingEdge?.isDashed ?: false,
-                        theme = theme
-                    )
-                }
-            }
+/**
+ * The node/connector emission shared by both orientations, which previously existed as
+ * two near-identical copies differing only in the `isHorizontal` flag.
+ */
+@Composable
+private fun FlowchartChain(
+    diagram: ParsedDiagram,
+    nodes: List<DiagramNode>,
+    isHorizontal: Boolean,
+    theme: PresentationTheme
+) {
+    nodes.forEachIndexed { index, node ->
+        NodeCard(node = node, theme = theme)
+
+        val next = nodes.getOrNull(index + 1)
+        if (next != null) {
+            val edge = diagram.edgeBetween(node, next)
+            ArrowConnector(
+                label = edge?.label,
+                isHorizontal = isHorizontal,
+                isDashed = edge?.isDashed ?: false,
+                theme = theme
+            )
         }
     }
 }

@@ -60,9 +60,35 @@ object ConfigManager {
     @Synchronized
     fun saveConfig(config: AppConfig) {
         try {
-            val json = serializeConfigJson(config)
-            configFile.writeText(json, Charsets.UTF_8)
+            writeAtomically(configFile, serializeConfigJson(config))
         } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * COR-8: writes to a sibling temp file then moves it into place, so a crash or a full
+     * disk mid-write cannot leave a truncated config behind. `writeText` overwrote in
+     * place, which meant an interrupted save lost every recent project.
+     *
+     * Falls back to a direct write when the filesystem refuses an atomic move (some
+     * network shares), since a best-effort save still beats no save.
+     */
+    private fun writeAtomically(target: File, content: String) {
+        val temp = File(target.parentFile, "${target.name}.tmp")
+        temp.writeText(content, Charsets.UTF_8)
+        try {
+            java.nio.file.Files.move(
+                temp.toPath(),
+                target.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE
+            )
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            java.nio.file.Files.move(
+                temp.toPath(),
+                target.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            )
         }
     }
 
@@ -86,9 +112,19 @@ object ConfigManager {
     @Synchronized
     fun saveDraft(content: String) {
         try {
-            draftFile.writeText(content, Charsets.UTF_8)
+            writeAtomically(draftFile, content)
         } catch (_: Exception) {
         }
+    }
+
+    /**
+     * DED-2: persists the settings that were already modelled, serialized and parsed but
+     * never actually saved — so theme and editor font size reset on every launch.
+     */
+    @Synchronized
+    fun saveUiPreferences(themeId: String, editorFontSize: Int) {
+        val current = loadConfig()
+        saveConfig(current.copy(lastThemeId = themeId, editorFontSize = editorFontSize))
     }
 
     @Synchronized

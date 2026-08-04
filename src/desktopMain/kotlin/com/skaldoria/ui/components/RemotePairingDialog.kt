@@ -37,13 +37,11 @@ fun RemotePairingDialog(
     onDismiss: () -> Unit
 ) {
     val theme = state.currentTheme
-    val baseUrl = if (state.isRemoteServerRunning) {
-        state.remoteServerUrl ?: "http://${RemoteCompanionServer.getLocalIpAddress()}:${RemoteCompanionServer.currentPort}"
-    } else {
-        "http://${RemoteCompanionServer.getLocalIpAddress()}:${RemoteCompanionServer.currentPort}"
-    }
-    val presenterUrl = "$baseUrl/remote"
-    val audienceUrl = "$baseUrl/audience"
+    // SEC-2: the presenter URL embeds the per-session token, so it must come from the
+    // server rather than being assembled here. It is a credential — do not log or share it.
+    // The audience URL is deliberately token-free.
+    val presenterUrl = RemoteCompanionServer.presenterUrl()
+    val audienceUrl = RemoteCompanionServer.audienceUrl()
 
     var selectedQrTab by remember { mutableStateOf(0) } // 0: Speaker Clicker, 1: Audience Portal
     var copiedUrl by remember { mutableStateOf(false) }

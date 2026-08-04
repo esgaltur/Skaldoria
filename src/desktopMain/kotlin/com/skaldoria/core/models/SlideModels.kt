@@ -132,5 +132,17 @@ data class Slide(
     val elements: List<SlideElement>,
     val notes: List<String> = emptyList(),
     val customBackground: String? = null,
-    val customTransition: SlideTransition? = null
+    val customTransition: SlideTransition? = null,
+    /**
+     * Inclusive line range in the source markdown that produced this slide.
+     *
+     * COR-1: slide editing used to re-derive boundaries with its own splitter, which
+     * disagreed with the parser (it missed `##` heading splits and `----` rules), so
+     * `deleteSlide` silently edited the wrong slide or did nothing. The parser is now
+     * the single source of truth for where a slide begins and ends; `SlideDocument`
+     * drives every structural edit off this range.
+     *
+     * Empty for slides not produced by the parser (synthetic placeholders, tests).
+     */
+    val sourceLineRange: IntRange = IntRange.EMPTY
 )

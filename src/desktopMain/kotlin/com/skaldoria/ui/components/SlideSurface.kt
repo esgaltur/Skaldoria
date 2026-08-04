@@ -15,11 +15,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.skaldoria.core.layout.SlideCanvasFit
 import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideLayoutType
 import com.skaldoria.theme.PresentationTheme
 import com.skaldoria.ui.layouts.*
-import kotlin.math.min
 
 /**
  * Reference design canvas (16:9, 720p). Every slide layout is authored against
@@ -29,6 +29,42 @@ import kotlin.math.min
  */
 private val DESIGN_WIDTH = 1280.dp
 private val DESIGN_HEIGHT = 720.dp
+
+/**
+ * Maps a slide's classified layout onto the composable that draws it.
+ *
+ * Extracted from [SlideSurface] so that composable owns one job — sizing the projection
+ * surface — while this owns layout selection.
+ *
+ * Deliberately an exhaustive `when` rather than a strategy registry, despite the
+ * open/closed pull. [SlideLayoutType] is a closed enum, and exhaustiveness means adding a
+ * layout is a **compile error here** until it is wired up. A `Map<SlideLayoutType, …>`
+ * would trade that guarantee for a blank slide at runtime — the wrong trade for a tool
+ * whose failure mode is discovered live in front of an audience. Open/closed earns its
+ * keep against *unbounded* extension; this set is bounded and deliberately curated.
+ */
+@Composable
+private fun SlideLayoutContent(
+    slide: Slide,
+    theme: PresentationTheme,
+    votes: Map<Int, Int>,
+    onVote: ((Int) -> Unit)?
+) {
+    when (slide.layoutType) {
+        SlideLayoutType.HERO_TITLE,
+        SlideLayoutType.SECTION_HEADER -> HeroTitleSlide(slide, theme)
+        SlideLayoutType.BULLET_LIST -> BulletListSlide(slide, theme)
+        SlideLayoutType.SPLIT_TEXT_CODE -> SplitTextCodeSlide(slide, theme)
+        SlideLayoutType.SPLIT_TEXT_MEDIA -> SplitTextMediaSlide(slide, theme)
+        SlideLayoutType.BIG_QUOTE -> BigQuoteSlide(slide, theme)
+        SlideLayoutType.BIG_METRIC -> BigMetricSlide(slide, theme)
+        SlideLayoutType.FULL_CODE -> FullCodeSlide(slide, theme)
+        SlideLayoutType.DATA_TABLE -> DataTableSlide(slide, theme)
+        SlideLayoutType.DIAGRAM -> DiagramSlide(slide, theme)
+        SlideLayoutType.MATH_FORMULA -> MathFormulaSlide(slide, theme)
+        SlideLayoutType.POLL -> PollSlide(slide, theme, votes = votes, onVote = onVote)
+    }
+}
 
 @Composable
 fun SlideSurface(
@@ -44,21 +80,17 @@ fun SlideSurface(
         modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
-        // Defensively guard against unmeasured, zero, or infinite bounds
-        val maxW = if (maxWidth.value.isFinite() && maxWidth > 0.dp) maxWidth else DESIGN_WIDTH
-        val maxH = if (maxHeight.value.isFinite() && maxHeight > 0.dp) maxHeight else DESIGN_HEIGHT
-
-        val availableRatio = (maxW.value / maxH.value).let {
-            if (it.isNaN() || it <= 0f) 16f / 9f else it
-        }
-        val targetRatio = 16f / 9f
-
-        val surfaceWidth = if (availableRatio >= targetRatio) maxH * targetRatio else maxW
-        val surfaceHeight = if (availableRatio >= targetRatio) maxH else maxW * (9f / 16f)
-
-        // Uniform scale of the fixed design canvas to the fitted surface size.
-        val rawScale = min(surfaceWidth.value / DESIGN_WIDTH.value, surfaceHeight.value / DESIGN_HEIGHT.value)
-        val scale = if (rawScale.isNaN() || rawScale.isInfinite() || rawScale <= 0f) 1f else rawScale
+        // Geometry lives in SlideCanvasFit so its edge cases (unmeasured, zero, NaN,
+        // infinite bounds) are unit testable — this project has no Compose UI test harness.
+        val fit = SlideCanvasFit.fitDesignCanvas(
+            availableWidth = maxWidth.value,
+            availableHeight = maxHeight.value,
+            designWidth = DESIGN_WIDTH.value,
+            designHeight = DESIGN_HEIGHT.value
+        )
+        val surfaceWidth = fit.width.dp
+        val surfaceHeight = fit.height.dp
+        val scale = fit.scale
 
         Box(
             modifier = Modifier
@@ -78,20 +110,16 @@ fun SlideSurface(
                         transformOrigin = TransformOrigin.Center
                     }
             ) {
-                // Render Slide Content by Auto-Detected Layout
-                when (slide.layoutType) {
-                    SlideLayoutType.HERO_TITLE,
-                    SlideLayoutType.SECTION_HEADER -> HeroTitleSlide(slide, theme)
-                    SlideLayoutType.BULLET_LIST -> BulletListSlide(slide, theme)
-                    SlideLayoutType.SPLIT_TEXT_CODE -> SplitTextCodeSlide(slide, theme)
-                    SlideLayoutType.SPLIT_TEXT_MEDIA -> SplitTextMediaSlide(slide, theme)
-                    SlideLayoutType.BIG_QUOTE -> BigQuoteSlide(slide, theme)
-                    SlideLayoutType.BIG_METRIC -> BigMetricSlide(slide, theme)
-                    SlideLayoutType.FULL_CODE -> FullCodeSlide(slide, theme)
-                    SlideLayoutType.DATA_TABLE -> DataTableSlide(slide, theme)
-                    SlideLayoutType.DIAGRAM -> DiagramSlide(slide, theme)
-                    SlideLayoutType.MATH_FORMULA -> MathFormulaSlide(slide, theme)
-                    SlideLayoutType.POLL -> PollSlide(slide, theme, votes = votes, onVote = onVote)
+                // Content that exceeds the design canvas is scaled down rather than
+                // clipped. Applied once here so all eleven layouts inherit the behaviour
+                // instead of each re-solving overflow.
+                FitToCanvas(modifier = Modifier.fillMaxSize()) {
+                    SlideLayoutContent(
+                        slide = slide,
+                        theme = theme,
+                        votes = votes,
+                        onVote = onVote
+                    )
                 }
 
                 // Slide Footer (Number & Progress)

@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import javax.imageio.ImageIO
+import kotlin.math.roundToInt
 
 /**
  * High-resolution multi-format deck exporter.
@@ -48,6 +49,10 @@ object DeckExporter {
             val browserBinary = findHeadlessBrowser()
             if (browserBinary != null) {
                 try {
+                    // EXP-5: the child writes progress to stderr. Left undrained, the pipe
+                    // buffer fills, the browser blocks forever, waitFor() times out, and
+                    // the code silently degrades to the HTML path — the cause of PDF
+                    // export "randomly" producing HTML instead.
                     val process = ProcessBuilder(
                         browserBinary.absolutePath,
                         "--headless=new",
@@ -56,7 +61,10 @@ object DeckExporter {
                         "--no-pdf-header-footer",
                         "--print-to-pdf=${targetPdf.absolutePath}",
                         tempHtml.toURI().toString()
-                    ).start()
+                    )
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                        .redirectError(ProcessBuilder.Redirect.DISCARD)
+                        .start()
 
                     val finished = process.waitFor(15, TimeUnit.SECONDS)
                     if (finished && targetPdf.exists() && targetPdf.length() > 0) {
@@ -93,21 +101,22 @@ object DeckExporter {
         val filename = dialog.file
         if (dir != null && filename != null) {
             val targetFile = File(dir, if (filename.endsWith(".zip", ignoreCase = true)) filename else "$filename.zip")
-            val zipOut = ZipOutputStream(FileOutputStream(targetFile))
 
-            val theme = state.currentTheme
-            state.slides.forEachIndexed { index, slide ->
-                val image = renderSlideToBufferedImage(slide, theme, state.slides.size)
-                val byteStream = ByteArrayOutputStream()
-                ImageIO.write(image, "PNG", byteStream)
+            // EXP-6: `use` guarantees the stream closes. Previously a failing ImageIO.write
+            // left an open handle and a truncated archive on disk.
+            ZipOutputStream(FileOutputStream(targetFile)).use { zipOut ->
+                val theme = state.currentTheme
+                state.slides.forEachIndexed { index, slide ->
+                    val image = renderSlideToBufferedImage(slide, theme, state.slides.size)
+                    val byteStream = ByteArrayOutputStream()
+                    ImageIO.write(image, "PNG", byteStream)
 
-                val entry = ZipEntry(String.format("slide_%02d.png", index + 1))
-                zipOut.putNextEntry(entry)
-                zipOut.write(byteStream.toByteArray())
-                zipOut.closeEntry()
+                    val entry = ZipEntry(String.format("slide_%02d.png", index + 1))
+                    zipOut.putNextEntry(entry)
+                    zipOut.write(byteStream.toByteArray())
+                    zipOut.closeEntry()
+                }
             }
-
-            zipOut.close()
             onSaved(targetFile)
         }
     }
@@ -135,6 +144,25 @@ object DeckExporter {
         return candidates.firstOrNull { it.exists() && it.canExecute() }
     }
 
+    /**
+     * Clips [text] to [maxWidth] pixels, appending an ellipsis. The AWT exporter has no
+     * layout engine, so long strings previously ran straight off the 1920px canvas.
+     */
+    private fun truncateToWidth(g: Graphics2D, text: String, maxWidth: Int): String {
+        val metrics = g.fontMetrics
+        if (metrics.stringWidth(text) <= maxWidth) return text
+
+        val ellipsis = "…"
+        val budget = maxWidth - metrics.stringWidth(ellipsis)
+        if (budget <= 0) return ellipsis
+
+        var end = 0
+        while (end < text.length && metrics.stringWidth(text.substring(0, end + 1)) <= budget) {
+            end++
+        }
+        return text.substring(0, end) + ellipsis
+    }
+
     private fun renderSlideToBufferedImage(
         slide: Slide,
         theme: com.skaldoria.theme.PresentationTheme,
@@ -155,16 +183,16 @@ object DeckExporter {
         g.color = bgColor
         g.fillRect(0, 0, EXPORT_WIDTH, EXPORT_HEIGHT)
 
-        // Title
+        // Title — clipped so long titles cannot run off the canvas (EXP-3).
         g.color = primaryColor
         g.font = Font("SansSerif", Font.BOLD, 54)
-        g.drawString(slide.title, 100, 160)
+        g.drawString(truncateToWidth(g, slide.title, 1720), 100, 160)
 
         // Subtitle
         if (slide.subtitle != null) {
             g.color = textMutedColor
             g.font = Font("SansSerif", Font.PLAIN, 28)
-            g.drawString(slide.subtitle, 100, 215)
+            g.drawString(truncateToWidth(g, slide.subtitle, 1720), 100, 215)
         }
 
         // Slide Elements
@@ -251,7 +279,63 @@ object DeckExporter {
                     currentY += 230
                     g.font = Font("SansSerif", Font.PLAIN, 32)
                 }
-                else -> {}
+                // EXP-3: these three used to fall into a bare `else -> {}`, so tables,
+                // images and polls silently vanished from the PNG bundle.
+                is SlideElement.Table -> {
+                    val columnWidth = (1720 / el.headers.size.coerceAtLeast(1))
+                    g.font = Font("SansSerif", Font.BOLD, 26)
+                    g.color = primaryColor
+                    el.headers.forEachIndexed { column, header ->
+                        g.drawString(truncateToWidth(g, header, columnWidth - 20), 100 + column * columnWidth, currentY)
+                    }
+                    currentY += 12
+                    g.color = textMutedColor
+                    g.drawLine(100, currentY, 1820, currentY)
+                    currentY += 34
+
+                    g.font = Font("SansSerif", Font.PLAIN, 24)
+                    g.color = textPrimaryColor
+                    for (row in el.rows.take(12)) {
+                        row.forEachIndexed { column, cell ->
+                            g.drawString(truncateToWidth(g, cell, columnWidth - 20), 100 + column * columnWidth, currentY)
+                        }
+                        currentY += 36
+                    }
+                    currentY += 20
+                    g.font = Font("SansSerif", Font.PLAIN, 32)
+                }
+                is SlideElement.Image -> {
+                    // Rendering the pixels themselves is COR-10; until then the export
+                    // states plainly what is here rather than dropping it silently.
+                    g.color = java.awt.Color(20, 24, 34)
+                    g.fillRoundRect(100, currentY, 1720, 180, 16, 16)
+                    g.color = primaryColor
+                    g.font = Font("SansSerif", Font.BOLD, 26)
+                    g.drawString("🖼  ${el.altText.ifBlank { "Image" }}", 130, currentY + 70)
+                    g.color = textMutedColor
+                    g.font = Font("Monospaced", Font.PLAIN, 20)
+                    g.drawString(truncateToWidth(g, el.url, 1660), 130, currentY + 115)
+                    currentY += 210
+                    g.font = Font("SansSerif", Font.PLAIN, 32)
+                }
+                is SlideElement.Poll -> {
+                    g.color = primaryColor
+                    g.font = Font("SansSerif", Font.BOLD, 34)
+                    g.drawString("📊  ${el.question.ifBlank { "Live Poll" }}", 100, currentY)
+                    currentY += 50
+
+                    g.font = Font("SansSerif", Font.PLAIN, 28)
+                    el.options.forEachIndexed { optionIndex, option ->
+                        g.color = java.awt.Color(20, 24, 34)
+                        g.fillRoundRect(100, currentY - 28, 1720, 48, 10, 10)
+                        g.color = primaryColor
+                        g.drawString("${('A' + optionIndex)}.", 130, currentY)
+                        g.color = textPrimaryColor
+                        g.drawString(truncateToWidth(g, option, 1560), 190, currentY)
+                        currentY += 60
+                    }
+                    g.font = Font("SansSerif", Font.PLAIN, 32)
+                }
             }
         }
 
@@ -269,11 +353,11 @@ object DeckExporter {
 
     fun generatePrintableHtml(state: PresentationState, autoTriggerPrint: Boolean = true): String {
         val theme = state.currentTheme
-        val bgHex = String.format("#%06X", (0xFFFFFF and theme.background.value.toInt()))
-        val surfaceHex = String.format("#%06X", (0xFFFFFF and theme.surface.value.toInt()))
-        val textHex = String.format("#%06X", (0xFFFFFF and theme.textPrimary.value.toInt()))
-        val primaryHex = String.format("#%06X", (0xFFFFFF and theme.primary.value.toInt()))
-        val mutedHex = String.format("#%06X", (0xFFFFFF and theme.textMuted.value.toInt()))
+        val bgHex = theme.background.toCssHex()
+        val surfaceHex = theme.surface.toCssHex()
+        val textHex = theme.textPrimary.toCssHex()
+        val primaryHex = theme.primary.toCssHex()
+        val mutedHex = theme.textMuted.toCssHex()
 
         val slidesHtml = state.slides.joinToString("\n") { slide ->
             val elementsHtml = slide.elements.joinToString("\n") { el ->
@@ -284,7 +368,7 @@ object DeckExporter {
                     is SlideElement.Metric -> "<div class='metric'><span class='metric-val'>${escapeHtml(el.value)}</span><span class='metric-lbl'>${escapeHtml(el.label)}</span></div>"
                     is SlideElement.CodeBlock -> "<pre><code>${escapeHtml(el.code)}</code></pre>"
                     is SlideElement.Table -> "<table><thead><tr>" + el.headers.joinToString("") { "<th>${escapeHtml(it)}</th>" } + "</tr></thead><tbody>" + el.rows.joinToString("") { r -> "<tr>" + r.joinToString("") { "<td>${escapeHtml(it)}</td>" } + "</tr>" } + "</tbody></table>"
-                    is SlideElement.Image -> "<img src='${el.url}' alt='${escapeHtml(el.altText)}' />"
+                    is SlideElement.Image -> "<img src='${sanitizeUrl(el.url)}' alt='${escapeHtml(el.altText)}' />"
                     is SlideElement.MermaidDiagram -> "<div class='mermaid'>${escapeHtml(el.code)}</div>"
                     is SlideElement.MathFormula -> "<div class='math-block'>$$${escapeHtml(el.formula)}$$</div>"
                     is SlideElement.Poll -> "<div class='poll-container'><h4>📊 ${escapeHtml(el.question.ifBlank { "Live Poll" })}</h4><div class='poll-options'>" + el.options.mapIndexed { idx, opt -> "<div class='poll-opt'><span class='opt-badge'>${('A' + idx)}</span><span>${escapeHtml(opt)}</span></div>" }.joinToString("") + "</div></div>"
@@ -369,6 +453,41 @@ object DeckExporter {
         """.trimIndent()
     }
 
+    /**
+     * EXP-1: `Color.value` packs R/G/B into the *high* bits of a ULong, so the previous
+     * `0xFFFFFF and value.toInt()` kept the low 32 bits — mostly blue, alpha and the
+     * colour-space id — and every colour in the exported deck was wrong. The component
+     * accessors are the supported way to read a channel.
+     */
+    private fun androidx.compose.ui.graphics.Color.toCssHex(): String {
+        val r = (red * 255f).roundToInt().coerceIn(0, 255)
+        val g = (green * 255f).roundToInt().coerceIn(0, 255)
+        val b = (blue * 255f).roundToInt().coerceIn(0, 255)
+        return String.format("#%02X%02X%02X", r, g, b)
+    }
+
+    /**
+     * EXP-2: `'` must be escaped because every attribute in the generated markup is
+     * single-quoted — without it an apostrophe in alt text or a crafted URL breaks out of
+     * the attribute and injects markup into a deck that may be shared onward.
+     */
     private fun escapeHtml(str: String): String =
-        str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+        str.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&#39;")
+
+    /**
+     * EXP-2: blocks `javascript:` and `data:` URLs, which would otherwise execute when the
+     * exported deck is opened. Anything not recognisably a safe URL is dropped rather than
+     * emitted, since a broken image beats script execution.
+     */
+    private fun sanitizeUrl(rawUrl: String): String {
+        val trimmed = rawUrl.trim()
+        val scheme = trimmed.substringBefore(':', missingDelimiterValue = "").lowercase()
+        val hasScheme = trimmed.contains(':') && scheme.isNotEmpty()
+        val safe = !hasScheme || scheme in setOf("http", "https", "file")
+        return if (safe) escapeHtml(trimmed) else ""
+    }
 }
