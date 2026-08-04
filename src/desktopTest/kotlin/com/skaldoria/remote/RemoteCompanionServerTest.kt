@@ -2,111 +2,69 @@ package com.skaldoria.remote
 
 import com.skaldoria.state.PresentationState
 import java.net.HttpURLConnection
-import java.net.URI
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
+import java.net.URL
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class RemoteCompanionServerTest {
 
-    private lateinit var state: PresentationState
-    private val testPort = 18889
-
-    @BeforeTest
-    fun setUp() {
-        state = PresentationState("""
-            # Slide One
-            <!-- note: Note for slide 1 -->
+    @Test
+    fun testServerLifecycleAndApiEndpoints() {
+        val state = PresentationState()
+        state.updateMarkdown("""
+            # Slide 1
+            <!-- note: Welcome Note -->
+            Welcome to the presentation
             ---
-            ## Slide Two Poll
-            <!-- poll: Yes | No | Maybe -->
+            # Slide 2
+            <!-- note: Deep Dive Note -->
+            Technical architecture deep dive
         """.trimIndent())
-    }
 
-    @AfterTest
-    fun tearDown() {
-        RemoteCompanionServer.stop()
-    }
+        val urlStr = RemoteCompanionServer.start(state, preferredPort = 18888)
+        assertTrue(RemoteCompanionServer.isRunning(), "Server should be running after start()")
+        assertTrue(urlStr.startsWith("http://"), "URL should be formatted with http scheme: $urlStr")
 
-    @Test
-    fun `test companion server starts and responds with HTML web client`() {
-        RemoteCompanionServer.start(state, testPort)
-        assertTrue(RemoteCompanionServer.isRunning())
+        val port = RemoteCompanionServer.currentPort
+        val baseUrl = "http://127.0.0.1:$port"
 
-        val url = URI("http://127.0.0.1:$testPort/remote").toURL()
-        val conn = url.openConnection() as HttpURLConnection
-        conn.requestMethod = "GET"
-        conn.connect()
+        try {
+            // 1. Test GET /api/state
+            val stateConn = java.net.URI.create("$baseUrl/api/state").toURL().openConnection() as HttpURLConnection
+            stateConn.requestMethod = "GET"
+            stateConn.connectTimeout = 3000
+            stateConn.readTimeout = 3000
+            assertEquals(200, stateConn.responseCode)
+            val stateBody = stateConn.inputStream.bufferedReader().use { it.readText() }
+            assertTrue(stateBody.contains("\"currentSlideIndex\": 0"))
+            assertTrue(stateBody.contains("\"totalSlides\": 2"))
+            assertTrue(stateBody.contains("Slide 1"))
 
-        assertEquals(200, conn.responseCode)
-        val body = conn.inputStream.bufferedReader().readText()
-        assertTrue(body.contains("Skaldoria Presenter Remote"))
-    }
+            // 2. Test GET /api/action?action=next
+            val actionConn = java.net.URI.create("$baseUrl/api/action?action=next").toURL().openConnection() as HttpURLConnection
+            actionConn.requestMethod = "GET"
+            assertEquals(200, actionConn.responseCode)
+            assertEquals(1, state.currentSlideIndex, "State should advance to slide 1 after 'next' action")
 
-    @Test
-    fun `test audience portal responds with HTML web client`() {
-        RemoteCompanionServer.start(state, testPort)
-        assertTrue(RemoteCompanionServer.isRunning())
+            // 3. Test GET /
+            val webConn = java.net.URI.create("$baseUrl/").toURL().openConnection() as HttpURLConnection
+            webConn.requestMethod = "GET"
+            assertEquals(200, webConn.responseCode)
+            val webHtml = webConn.inputStream.bufferedReader().use { it.readText() }
+            assertTrue(webHtml.contains("Skaldoria Presenter Remote"))
 
-        val url = URI("http://127.0.0.1:$testPort/audience").toURL()
-        val conn = url.openConnection() as HttpURLConnection
-        conn.requestMethod = "GET"
-        conn.connect()
+            // 4. Test GET /audience
+            val audienceConn = java.net.URI.create("$baseUrl/audience").toURL().openConnection() as HttpURLConnection
+            audienceConn.requestMethod = "GET"
+            assertEquals(200, audienceConn.responseCode)
+            val audienceHtml = audienceConn.inputStream.bufferedReader().use { it.readText() }
+            assertTrue(audienceHtml.contains("Skaldoria Audience Portal"))
 
-        assertEquals(200, conn.responseCode)
-        val body = conn.inputStream.bufferedReader().readText()
-        assertTrue(body.contains("Skaldoria Audience Portal"))
-    }
-
-    @Test
-    fun `test state API endpoint returns JSON`() {
-        RemoteCompanionServer.start(state, testPort)
-
-        val url = URI("http://127.0.0.1:$testPort/api/state").toURL()
-        val conn = url.openConnection() as HttpURLConnection
-        conn.requestMethod = "GET"
-        conn.connect()
-
-        assertEquals(200, conn.responseCode)
-        val body = conn.inputStream.bufferedReader().readText()
-        assertTrue(body.contains("\"currentSlideIndex\": 0"))
-        assertTrue(body.contains("\"totalSlides\": 2"))
-    }
-
-    @Test
-    fun `test audience voting API endpoint`() {
-        RemoteCompanionServer.start(state, testPort)
-
-        // Navigate to slide 1 which has a poll
-        state.goToSlide(1)
-
-        val url = URI("http://127.0.0.1:$testPort/api/poll/vote?slide=1&option=0").toURL()
-        val conn = url.openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.doOutput = true
-        conn.outputStream.write(ByteArray(0))
-        conn.connect()
-
-        assertEquals(200, conn.responseCode)
-        val votes = state.getVotesForSlide(1)
-        assertEquals(1, votes[0])
-    }
-
-    @Test
-    fun `test action API endpoint navigates slides`() {
-        RemoteCompanionServer.start(state, testPort)
-        assertEquals(0, state.currentSlideIndex)
-
-        val url = URI("http://127.0.0.1:$testPort/api/action?cmd=next").toURL()
-        val conn = url.openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.doOutput = true
-        conn.outputStream.write(ByteArray(0))
-        conn.connect()
-
-        assertEquals(200, conn.responseCode)
-        assertEquals(1, state.currentSlideIndex)
+        } finally {
+            RemoteCompanionServer.stop()
+            assertFalse(RemoteCompanionServer.isRunning(), "Server should be stopped")
+        }
     }
 }

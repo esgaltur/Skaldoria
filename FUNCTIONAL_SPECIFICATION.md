@@ -152,9 +152,10 @@ $$\text{Contrast Ratio} = \frac{L_1 + 0.05}{L_2 + 0.05} \ge 4.5$$
 - **FR-MATH-02 (Symbol Mapping):** Maps LaTeX Greek letters (`\Delta`, `\alpha`, `\Omega`, `\pi`) and operators (`\cdot`, `\approx`, `\le`, `\ge`).
 
 ### 5.4 Remote Companion & Audience Server (FR-REMOTE)
-- **FR-REMOTE-01 (Resilient Startup):** Daemonized thread pool with multi-port fallback (tries preferred port through $+50$ sequential ports, then ephemeral).
-- **FR-REMOTE-02 (CORS & Security):** Granular error boundaries with full CORS preflight support (`OPTIONS`).
-- **FR-REMOTE-03 (REST & Web Endpoints):**
+- **FR-REMOTE-01 (Zero-Dependency Socket Engine):** Built natively on `java.net.ServerSocket` in `java.base` with instant startup (<1ms) and 0 KB external footprint ([ADR-001](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/docs/ADR_COMPANION_SERVER_ARCHITECTURE.md)).
+- **FR-REMOTE-02 (Resilient Startup & Fallback):** Daemonized thread pool with multi-port fallback (tries preferred port through $+50$ sequential ports, then ephemeral).
+- **FR-REMOTE-03 (CORS & Security):** Granular error boundaries with full CORS preflight support (`OPTIONS`).
+- **FR-REMOTE-04 (REST & Web Endpoints):**
   - `/remote`: Presenter clicker, notes, and live Q&A moderation.
   - `/audience`: In-slide poll voting and Q&A question submission.
   - `/api/parking-lot/add`: Remote submission of follow-up items.
