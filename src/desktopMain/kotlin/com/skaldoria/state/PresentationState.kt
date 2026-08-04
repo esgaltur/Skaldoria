@@ -533,10 +533,10 @@ class PresentationState(
                 val url = RemoteCompanionServer.start(this, port)
                 isRemoteServerRunning = true
                 remoteServerUrl = url
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 isRemoteServerRunning = false
                 remoteServerUrl = null
-                remoteServerError = e.message ?: "Failed to start HTTP server"
+                remoteServerError = e.message ?: "Failed to start HTTP server (${e.javaClass.simpleName})"
             }
         }
     }

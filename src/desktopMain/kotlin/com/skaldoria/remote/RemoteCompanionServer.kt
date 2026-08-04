@@ -2,30 +2,39 @@ package com.skaldoria.remote
 
 import com.skaldoria.core.models.SlideElement
 import com.skaldoria.state.PresentationState
-import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpHandler
-import com.sun.net.httpserver.HttpServer
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.SocketException
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Embedded zero-dependency HTTP server for wireless speaker remote controls
- * and real-time live audience interaction (in-slide polling and moderated Q&A).
+ * Pure Kotlin/Java standard socket HTTP/1.1 micro-server for wireless speaker remote controls
+ * and real-time live audience interaction (in-slide polling, Q&A, and follow-up parking lot).
+ *
+ * Guaranteed 100% dependency-free using java.base standard sockets (no com.sun.net.httpserver or external jars).
  */
 object RemoteCompanionServer {
 
-    private var server: HttpServer? = null
+    private var serverSocket: ServerSocket? = null
     private var executor: ExecutorService? = null
+    private var listenerThread: Thread? = null
+    private val isRunningFlag = AtomicBoolean(false)
 
     var currentPort: Int = 8888
         private set
 
-    fun isRunning(): Boolean = server != null
+    fun isRunning(): Boolean = isRunningFlag.get()
 
     /**
      * Starts the embedded server with automatic port-fallback if the preferred port is occupied.
@@ -34,14 +43,16 @@ object RemoteCompanionServer {
     fun start(state: PresentationState, preferredPort: Int = 8888): String {
         stop()
 
-        var boundServer: HttpServer? = null
+        var boundSocket: ServerSocket? = null
         var boundPort = preferredPort
 
         // Try preferred port and up to 50 consecutive ports
         for (portCandidate in preferredPort..(preferredPort + 50)) {
             try {
-                val s = HttpServer.create(InetSocketAddress(portCandidate), 0)
-                boundServer = s
+                val ss = ServerSocket()
+                ss.reuseAddress = true
+                ss.bind(InetSocketAddress(portCandidate))
+                boundSocket = ss
                 boundPort = portCandidate
                 break
             } catch (_: Exception) {
@@ -50,39 +61,51 @@ object RemoteCompanionServer {
         }
 
         // If specific ports failed, bind to ephemeral port (0)
-        if (boundServer == null) {
+        if (boundSocket == null) {
             try {
-                val s = HttpServer.create(InetSocketAddress(0), 0)
-                boundServer = s
-                boundPort = s.address.port
+                val ss = ServerSocket()
+                ss.reuseAddress = true
+                ss.bind(InetSocketAddress(0))
+                boundSocket = ss
+                boundPort = ss.localPort
             } catch (e: Exception) {
                 throw IllegalStateException("Failed to bind HTTP server to any available network port: ${e.message}", e)
             }
         }
 
+        serverSocket = boundSocket
+        currentPort = boundPort
+        isRunningFlag.set(true)
+
         val exec = Executors.newCachedThreadPool { runnable ->
-            Thread(runnable, "Skaldoria-Companion-HTTP").apply {
+            Thread(runnable, "Skaldoria-HTTP-Worker").apply {
                 isDaemon = true
             }
         }
         executor = exec
-        boundServer.executor = exec
 
-        // Register Web and API Contexts
-        boundServer.createContext("/", CompanionWebHandler(state))
-        boundServer.createContext("/remote", CompanionWebHandler(state))
-        boundServer.createContext("/audience", AudienceWebHandler(state))
-        boundServer.createContext("/api/state", StateApiHandler(state))
-        boundServer.createContext("/api/action", ActionApiHandler(state))
-        boundServer.createContext("/api/poll/vote", PollVoteApiHandler(state))
-        boundServer.createContext("/api/qa/submit", QaSubmitApiHandler(state))
-        boundServer.createContext("/api/qa/upvote", QaUpvoteApiHandler(state))
-        boundServer.createContext("/api/qa/dismiss", QaDismissApiHandler(state))
-        boundServer.createContext("/api/parking-lot/add", ParkingLotAddApiHandler(state))
+        val listener = Thread({
+            try {
+                while (isRunningFlag.get() && !boundSocket.isClosed) {
+                    try {
+                        val clientSocket = boundSocket.accept()
+                        exec.submit {
+                            handleClientSocket(clientSocket, state)
+                        }
+                    } catch (se: SocketException) {
+                        // Socket closed during stop()
+                        break
+                    } catch (_: Exception) {}
+                }
+            } finally {
+                isRunningFlag.set(false)
+            }
+        }, "Skaldoria-HTTP-Listener").apply {
+            isDaemon = true
+        }
 
-        boundServer.start()
-        server = boundServer
-        currentPort = boundPort
+        listenerThread = listener
+        listener.start()
 
         val localIp = getLocalIpAddress()
         return "http://$localIp:$boundPort"
@@ -90,13 +113,20 @@ object RemoteCompanionServer {
 
     @Synchronized
     fun stop() {
+        isRunningFlag.set(false)
         try {
-            server?.stop(0)
+            serverSocket?.close()
         } catch (_: Exception) {}
-        server = null
+        serverSocket = null
+
+        try {
+            listenerThread?.interrupt()
+        } catch (_: Exception) {}
+        listenerThread = null
 
         try {
             executor?.shutdownNow()
+            executor?.awaitTermination(1, TimeUnit.SECONDS)
         } catch (_: Exception) {}
         executor = null
     }
@@ -126,6 +156,320 @@ object RemoteCompanionServer {
         }
     }
 
+    // ==========================================
+    // HTTP REQUEST / RESPONSE PROCESSING
+    // ==========================================
+
+    private fun handleClientSocket(socket: Socket, state: PresentationState) {
+        try {
+            socket.soTimeout = 10000 // 10s socket timeout
+            val inputStream = socket.getInputStream()
+            val outputStream = socket.getOutputStream()
+            val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
+
+            val requestLine = reader.readLine() ?: return
+            val parts = requestLine.trim().split(" ")
+            if (parts.size < 2) return
+
+            val method = parts[0].uppercase()
+            val rawUri = parts[1]
+
+            // Read Headers
+            var contentLength = 0
+            val headers = mutableMapOf<String, String>()
+            while (true) {
+                val line = reader.readLine() ?: break
+                if (line.isEmpty()) break
+                val colonIdx = line.indexOf(':')
+                if (colonIdx > 0) {
+                    val hName = line.substring(0, colonIdx).trim().lowercase()
+                    val hVal = line.substring(colonIdx + 1).trim()
+                    headers[hName] = hVal
+                    if (hName == "content-length") {
+                        contentLength = hVal.toIntOrNull() ?: 0
+                    }
+                }
+            }
+
+            // Read Body if present
+            var body = ""
+            if (contentLength > 0 && contentLength < 1024 * 1024) { // 1MB max body limit
+                val buf = CharArray(contentLength)
+                var readTotal = 0
+                while (readTotal < contentLength) {
+                    val read = reader.read(buf, readTotal, contentLength - readTotal)
+                    if (read == -1) break
+                    readTotal += read
+                }
+                body = String(buf, 0, readTotal)
+            }
+
+            // Handle CORS Preflight
+            if (method == "OPTIONS") {
+                sendCorsPreflightResponse(outputStream)
+                return
+            }
+
+            val questionMarkIdx = rawUri.indexOf('?')
+            val path = if (questionMarkIdx >= 0) rawUri.substring(0, questionMarkIdx) else rawUri
+            val queryString = if (questionMarkIdx >= 0) rawUri.substring(questionMarkIdx + 1) else ""
+
+            val queryParams = parseQueryParams(queryString).toMutableMap()
+            if (body.isNotBlank() && (headers["content-type"]?.contains("application/x-www-form-urlencoded") == true)) {
+                queryParams.putAll(parseQueryParams(body))
+            }
+
+            // Route request
+            routeRequest(path, method, queryParams, body, outputStream, state)
+        } catch (_: Exception) {
+            // Socket or I/O error on client disconnect
+        } finally {
+            try {
+                socket.close()
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun routeRequest(
+        path: String,
+        method: String,
+        params: Map<String, String>,
+        body: String,
+        output: OutputStream,
+        state: PresentationState
+    ) {
+        when (path) {
+            "/", "/remote" -> {
+                sendHtmlResponse(output, getCompanionHtml())
+            }
+            "/audience" -> {
+                sendHtmlResponse(output, getAudienceHtml())
+            }
+            "/api/state" -> {
+                handleStateApi(output, state)
+            }
+            "/api/action" -> {
+                handleActionApi(output, params, state)
+            }
+            "/api/poll/vote" -> {
+                handlePollVoteApi(output, params, state)
+            }
+            "/api/qa/submit" -> {
+                handleQaSubmitApi(output, params, state)
+            }
+            "/api/qa/upvote" -> {
+                handleQaUpvoteApi(output, params, state)
+            }
+            "/api/qa/dismiss" -> {
+                handleQaDismissApi(output, params, state)
+            }
+            "/api/parking-lot/add" -> {
+                handleParkingLotAddApi(output, params, state)
+            }
+            else -> {
+                sendErrorResponse(output, "Endpoint not found: $path", 404)
+            }
+        }
+    }
+
+    // ==========================================
+    // API IMPLEMENTATIONS
+    // ==========================================
+
+    private fun handleStateApi(output: OutputStream, state: PresentationState) {
+        try {
+            val current = state.currentSlide
+            val notesJson = (current?.notes ?: emptyList()).joinToString(prefix = "[", postfix = "]") { n ->
+                "\"${escapeJson(n)}\""
+            }
+
+            val pollElement = current?.elements?.filterIsInstance<SlideElement.Poll>()?.firstOrNull()
+            val pollJson = if (pollElement != null) {
+                val votes = state.getVotesForSlide(state.currentSlideIndex)
+                val optionsJson = pollElement.options.mapIndexed { idx, opt ->
+                    val count = votes[idx] ?: 0
+                    """{"index": $idx, "text": "${escapeJson(opt)}", "votes": $count}"""
+                }.joinToString(prefix = "[", postfix = "]")
+                """{"hasPoll": true, "slideIndex": ${state.currentSlideIndex}, "question": "${escapeJson(pollElement.question)}", "options": $optionsJson}"""
+            } else {
+                """{"hasPoll": false}"""
+            }
+
+            val questionsList = try {
+                state.audienceQuestions.toList()
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val questionsJson = questionsList.joinToString(prefix = "[", postfix = "]") { q ->
+                """{"id": "${q.id}", "author": "${escapeJson(q.author)}", "text": "${escapeJson(q.text)}", "upvotes": ${q.upvotes}, "isAnswered": ${q.isAnswered}}"""
+            }
+
+            val title = escapeJson(current?.title ?: "Untitled Slide")
+            val json = """
+                {
+                    "currentSlideIndex": ${state.currentSlideIndex},
+                    "totalSlides": ${state.slides.size},
+                    "title": "$title",
+                    "notes": $notesJson,
+                    "elapsedSeconds": ${state.elapsedSeconds},
+                    "isTimerRunning": ${state.isTimerRunning},
+                    "isBlackout": ${state.isBlackoutActive},
+                    "isWhiteout": ${state.isWhiteoutActive},
+                    "poll": $pollJson,
+                    "questions": $questionsJson
+                }
+            """.trimIndent()
+
+            sendJsonResponse(output, json)
+        } catch (t: Throwable) {
+            sendErrorResponse(output, "Failed to retrieve presentation state: ${t.message}")
+        }
+    }
+
+    private fun handleActionApi(output: OutputStream, params: Map<String, String>, state: PresentationState) {
+        try {
+            val action = params["action"] ?: params["cmd"]
+            when (action) {
+                "next" -> state.nextSlide()
+                "prev" -> state.previousSlide()
+                "jump" -> (params["index"] ?: params["slideIndex"] ?: params["slide"])?.toIntOrNull()?.let { state.goToSlide(it) }
+                "blackout" -> state.toggleBlackout()
+                "whiteout" -> state.toggleWhiteout()
+                "toggleTimer" -> state.toggleTimer()
+                "resetTimer" -> state.resetTimer()
+            }
+            sendJsonResponse(output, """{"status":"ok"}""")
+        } catch (t: Throwable) {
+            sendErrorResponse(output, "Action execution failed: ${t.message}")
+        }
+    }
+
+    private fun handlePollVoteApi(output: OutputStream, params: Map<String, String>, state: PresentationState) {
+        try {
+            val slideIdx = (params["slideIndex"] ?: params["slide"])?.toIntOrNull() ?: state.currentSlideIndex
+            val optionIdx = (params["optionIndex"] ?: params["option"])?.toIntOrNull()
+
+            if (optionIdx != null && optionIdx >= 0) {
+                state.recordVote(slideIdx, optionIdx)
+                sendJsonResponse(output, """{"status":"ok", "votedSlide": $slideIdx, "votedOption": $optionIdx}""")
+            } else {
+                sendJsonResponse(output, """{"status":"error", "message":"Invalid option"}""", 400)
+            }
+        } catch (t: Throwable) {
+            sendErrorResponse(output, "Poll voting failed: ${t.message}")
+        }
+    }
+
+    private fun handleQaSubmitApi(output: OutputStream, params: Map<String, String>, state: PresentationState) {
+        try {
+            val author = params["author"]?.trim()?.ifBlank { "Anonymous" } ?: "Anonymous"
+            val text = params["text"]?.trim() ?: ""
+
+            if (text.isNotBlank()) {
+                val q = state.submitQuestion(author, text)
+                sendJsonResponse(output, """{"status":"ok", "id":"${q.id}"}""")
+            } else {
+                sendJsonResponse(output, """{"status":"error", "message":"Empty question"}""", 400)
+            }
+        } catch (t: Throwable) {
+            sendErrorResponse(output, "Q&A submission failed: ${t.message}")
+        }
+    }
+
+    private fun handleQaUpvoteApi(output: OutputStream, params: Map<String, String>, state: PresentationState) {
+        try {
+            val id = params["id"]
+            if (!id.isNullOrBlank()) {
+                state.upvoteQuestion(id)
+                sendJsonResponse(output, """{"status":"ok"}""")
+            } else {
+                sendJsonResponse(output, """{"status":"error", "message":"Missing question id"}""", 400)
+            }
+        } catch (t: Throwable) {
+            sendErrorResponse(output, "Upvote failed: ${t.message}")
+        }
+    }
+
+    private fun handleQaDismissApi(output: OutputStream, params: Map<String, String>, state: PresentationState) {
+        try {
+            val id = params["id"]
+            if (!id.isNullOrBlank()) {
+                state.dismissQuestion(id)
+                sendJsonResponse(output, """{"status":"ok"}""")
+            } else {
+                sendJsonResponse(output, """{"status":"error", "message":"Missing question id"}""", 400)
+            }
+        } catch (t: Throwable) {
+            sendErrorResponse(output, "Dismiss failed: ${t.message}")
+        }
+    }
+
+    private fun handleParkingLotAddApi(output: OutputStream, params: Map<String, String>, state: PresentationState) {
+        try {
+            val text = params["question"] ?: params["text"] ?: ""
+            val author = params["author"]
+            if (text.isNotBlank()) {
+                state.addFollowUpQuestion(
+                    question = text.trim(),
+                    slideIndex = state.currentSlideIndex,
+                    author = author?.trim()?.ifBlank { null }
+                )
+                sendJsonResponse(output, """{"status":"ok"}""")
+            } else {
+                sendJsonResponse(output, """{"status":"error", "message":"Empty question"}""", 400)
+            }
+        } catch (t: Throwable) {
+            sendErrorResponse(output, "Parking lot addition failed: ${t.message}")
+        }
+    }
+
+    // ==========================================
+    // UTILITY & RESPONSE WRITERS
+    // ==========================================
+
+    private fun sendCorsPreflightResponse(output: OutputStream) {
+        val raw = "HTTP/1.1 204 No Content\r\n" +
+                "Access-Control-Allow-Origin: *\r\n" +
+                "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n" +
+                "Access-Control-Allow-Headers: *\r\n" +
+                "Content-Length: 0\r\n" +
+                "Connection: close\r\n\r\n"
+        output.write(raw.toByteArray(StandardCharsets.UTF_8))
+        output.flush()
+    }
+
+    private fun sendJsonResponse(output: OutputStream, json: String, statusCode: Int = 200) {
+        sendResponse(output, statusCode, if (statusCode == 200) "OK" else "Error", "application/json; charset=utf-8", json.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun sendHtmlResponse(output: OutputStream, html: String) {
+        sendResponse(output, 200, "OK", "text/html; charset=utf-8", html.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun sendErrorResponse(output: OutputStream, error: String, statusCode: Int = 500) {
+        val json = """{"status":"error", "message":"${escapeJson(error)}"}"""
+        sendJsonResponse(output, json, statusCode)
+    }
+
+    private fun sendResponse(
+        output: OutputStream,
+        statusCode: Int,
+        statusText: String,
+        contentType: String,
+        body: ByteArray
+    ) {
+        val header = "HTTP/1.1 $statusCode $statusText\r\n" +
+                "Content-Type: $contentType\r\n" +
+                "Content-Length: ${body.size}\r\n" +
+                "Access-Control-Allow-Origin: *\r\n" +
+                "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n" +
+                "Access-Control-Allow-Headers: *\r\n" +
+                "Connection: close\r\n\r\n"
+        output.write(header.toByteArray(StandardCharsets.UTF_8))
+        output.write(body)
+        output.flush()
+    }
+
     private fun parseQueryParams(query: String?): Map<String, String> {
         if (query.isNullOrBlank()) return emptyMap()
         return query.split("&").associate { param ->
@@ -134,219 +478,6 @@ object RemoteCompanionServer {
             val value = if (parts.size == 2) URLDecoder.decode(parts[1], StandardCharsets.UTF_8.name()) else ""
             key to value
         }
-    }
-
-    // ==========================================
-    // API HANDLERS
-    // ==========================================
-
-    private class StateApiHandler(private val state: PresentationState) : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            try {
-                if (handleCorsPreflight(exchange)) return
-
-                val current = state.currentSlide
-                val notesJson = (current?.notes ?: emptyList()).joinToString(prefix = "[", postfix = "]") { n ->
-                    "\"${escapeJson(n)}\""
-                }
-
-                // Check if current slide has a poll element
-                val pollElement = current?.elements?.filterIsInstance<SlideElement.Poll>()?.firstOrNull()
-                val pollJson = if (pollElement != null) {
-                    val votes = state.getVotesForSlide(state.currentSlideIndex)
-                    val optionsJson = pollElement.options.mapIndexed { idx, opt ->
-                        val count = votes[idx] ?: 0
-                        """{"index": $idx, "text": "${escapeJson(opt)}", "votes": $count}"""
-                    }.joinToString(prefix = "[", postfix = "]")
-                    """{"hasPoll": true, "slideIndex": ${state.currentSlideIndex}, "question": "${escapeJson(pollElement.question)}", "options": $optionsJson}"""
-                } else {
-                    """{"hasPoll": false}"""
-                }
-
-                // Safe snapshot of audience questions
-                val questionsList = try {
-                    state.audienceQuestions.toList()
-                } catch (_: Exception) {
-                    emptyList()
-                }
-                val questionsJson = questionsList.joinToString(prefix = "[", postfix = "]") { q ->
-                    """{"id": "${q.id}", "author": "${escapeJson(q.author)}", "text": "${escapeJson(q.text)}", "upvotes": ${q.upvotes}, "isAnswered": ${q.isAnswered}}"""
-                }
-
-                val title = escapeJson(current?.title ?: "Untitled Slide")
-                val json = """
-                    {
-                        "currentSlideIndex": ${state.currentSlideIndex},
-                        "totalSlides": ${state.slides.size},
-                        "title": "$title",
-                        "notes": $notesJson,
-                        "elapsedSeconds": ${state.elapsedSeconds},
-                        "isTimerRunning": ${state.isTimerRunning},
-                        "isBlackout": ${state.isBlackoutActive},
-                        "isWhiteout": ${state.isWhiteoutActive},
-                        "poll": $pollJson,
-                        "questions": $questionsJson
-                    }
-                """.trimIndent()
-
-                sendJsonResponse(exchange, json)
-            } catch (t: Throwable) {
-                sendErrorResponse(exchange, "Failed to retrieve presentation state: ${t.message}")
-            }
-        }
-    }
-
-    private class ActionApiHandler(private val state: PresentationState) : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            try {
-                if (handleCorsPreflight(exchange)) return
-
-                val params = parseQueryParams(exchange.requestURI.query)
-                val action = params["action"] ?: params["cmd"]
-                when (action) {
-                    "next" -> state.nextSlide()
-                    "prev" -> state.previousSlide()
-                    "jump" -> (params["index"] ?: params["slideIndex"] ?: params["slide"])?.toIntOrNull()?.let { state.goToSlide(it) }
-                    "blackout" -> state.toggleBlackout()
-                    "whiteout" -> state.toggleWhiteout()
-                    "toggleTimer" -> state.toggleTimer()
-                    "resetTimer" -> state.resetTimer()
-                }
-                sendJsonResponse(exchange, """{"status":"ok"}""")
-            } catch (t: Throwable) {
-                sendErrorResponse(exchange, "Action execution failed: ${t.message}")
-            }
-        }
-    }
-
-    private class PollVoteApiHandler(private val state: PresentationState) : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            try {
-                if (handleCorsPreflight(exchange)) return
-
-                val params = parseQueryParams(exchange.requestURI.query)
-                val slideIdx = (params["slideIndex"] ?: params["slide"])?.toIntOrNull() ?: state.currentSlideIndex
-                val optionIdx = (params["optionIndex"] ?: params["option"])?.toIntOrNull()
-
-                if (optionIdx != null && optionIdx >= 0) {
-                    state.recordVote(slideIdx, optionIdx)
-                    sendJsonResponse(exchange, """{"status":"ok", "votedSlide": $slideIdx, "votedOption": $optionIdx}""")
-                } else {
-                    sendJsonResponse(exchange, """{"status":"error", "message":"Invalid option"}""", 400)
-                }
-            } catch (t: Throwable) {
-                sendErrorResponse(exchange, "Poll voting failed: ${t.message}")
-            }
-        }
-    }
-
-    private class QaSubmitApiHandler(private val state: PresentationState) : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            try {
-                if (handleCorsPreflight(exchange)) return
-
-                val params = parseQueryParams(exchange.requestURI.query)
-                val author = params["author"]?.trim()?.ifBlank { "Anonymous" } ?: "Anonymous"
-                val text = params["text"]?.trim() ?: ""
-
-                if (text.isNotBlank()) {
-                    val q = state.submitQuestion(author, text)
-                    sendJsonResponse(exchange, """{"status":"ok", "id":"${q.id}"}""")
-                } else {
-                    sendJsonResponse(exchange, """{"status":"error", "message":"Empty question"}""", 400)
-                }
-            } catch (t: Throwable) {
-                sendErrorResponse(exchange, "Q&A submission failed: ${t.message}")
-            }
-        }
-    }
-
-    private class QaUpvoteApiHandler(private val state: PresentationState) : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            try {
-                if (handleCorsPreflight(exchange)) return
-
-                val params = parseQueryParams(exchange.requestURI.query)
-                val id = params["id"]
-                if (!id.isNullOrBlank()) {
-                    state.upvoteQuestion(id)
-                    sendJsonResponse(exchange, """{"status":"ok"}""")
-                } else {
-                    sendJsonResponse(exchange, """{"status":"error", "message":"Missing question id"}""", 400)
-                }
-            } catch (t: Throwable) {
-                sendErrorResponse(exchange, "Upvote failed: ${t.message}")
-            }
-        }
-    }
-
-    private class QaDismissApiHandler(private val state: PresentationState) : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            try {
-                if (handleCorsPreflight(exchange)) return
-
-                val params = parseQueryParams(exchange.requestURI.query)
-                val id = params["id"]
-                if (!id.isNullOrBlank()) {
-                    state.dismissQuestion(id)
-                    sendJsonResponse(exchange, """{"status":"ok"}""")
-                } else {
-                    sendJsonResponse(exchange, """{"status":"error", "message":"Missing question id"}""", 400)
-                }
-            } catch (t: Throwable) {
-                sendErrorResponse(exchange, "Dismiss failed: ${t.message}")
-            }
-        }
-    }
-
-    private class ParkingLotAddApiHandler(private val state: PresentationState) : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            try {
-                if (handleCorsPreflight(exchange)) return
-
-                val params = parseQueryParams(exchange.requestURI.query)
-                val text = params["question"] ?: params["text"] ?: ""
-                val author = params["author"]
-                if (text.isNotBlank()) {
-                    state.addFollowUpQuestion(
-                        question = text.trim(),
-                        slideIndex = state.currentSlideIndex,
-                        author = author?.trim()?.ifBlank { null }
-                    )
-                    sendJsonResponse(exchange, """{"status":"ok"}""")
-                } else {
-                    sendJsonResponse(exchange, """{"status":"error", "message":"Empty question"}""", 400)
-                }
-            } catch (t: Throwable) {
-                sendErrorResponse(exchange, "Parking lot addition failed: ${t.message}")
-            }
-        }
-    }
-
-    private fun handleCorsPreflight(exchange: HttpExchange): Boolean {
-        exchange.responseHeaders.set("Access-Control-Allow-Origin", "*")
-        exchange.responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        exchange.responseHeaders.set("Access-Control-Allow-Headers", "*")
-        if (exchange.requestMethod.equals("OPTIONS", ignoreCase = true)) {
-            exchange.sendResponseHeaders(204, -1)
-            exchange.responseBody.close()
-            return true
-        }
-        return false
-    }
-
-    private fun sendJsonResponse(exchange: HttpExchange, json: String, statusCode: Int = 200) {
-        val bytes = json.toByteArray(StandardCharsets.UTF_8)
-        exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
-        exchange.responseHeaders.set("Access-Control-Allow-Origin", "*")
-        exchange.responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        exchange.sendResponseHeaders(statusCode, bytes.size.toLong())
-        exchange.responseBody.use { it.write(bytes) }
-    }
-
-    private fun sendErrorResponse(exchange: HttpExchange, error: String, statusCode: Int = 500) {
-        val json = """{"status":"error", "message":"${escapeJson(error)}"}"""
-        sendJsonResponse(exchange, json, statusCode)
     }
 
     private fun escapeJson(str: String): String {
@@ -358,18 +489,10 @@ object RemoteCompanionServer {
     }
 
     // ==========================================
-    // WEB PORTALS (HTML / JS / CSS)
+    // EMBEDDED HTML PORTALS
     // ==========================================
 
-    /**
-     * Speaker's mobile remote control portal.
-     */
-    private class CompanionWebHandler(private val state: PresentationState) : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            try {
-                if (handleCorsPreflight(exchange)) return
-
-                val html = """
+    private fun getCompanionHtml(): String = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -521,26 +644,9 @@ object RemoteCompanionServer {
     </script>
 </body>
 </html>
-                """.trimIndent()
+""".trimIndent()
 
-                val bytes = html.toByteArray(StandardCharsets.UTF_8)
-                exchange.responseHeaders.set("Content-Type", "text/html; charset=utf-8")
-                exchange.responseHeaders.set("Access-Control-Allow-Origin", "*")
-                exchange.sendResponseHeaders(200, bytes.size.toLong())
-                exchange.responseBody.use { it.write(bytes) }
-            } catch (_: Exception) {}
-        }
-    }
-
-    /**
-     * Audience interaction web portal (voting on active polls + submitting Q&A).
-     */
-    private class AudienceWebHandler(private val state: PresentationState) : HttpHandler {
-        override fun handle(exchange: HttpExchange) {
-            try {
-                if (handleCorsPreflight(exchange)) return
-
-                val html = """
+    private fun getAudienceHtml(): String = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -688,14 +794,5 @@ object RemoteCompanionServer {
     </script>
 </body>
 </html>
-                """.trimIndent()
-
-                val bytes = html.toByteArray(StandardCharsets.UTF_8)
-                exchange.responseHeaders.set("Content-Type", "text/html; charset=utf-8")
-                exchange.responseHeaders.set("Access-Control-Allow-Origin", "*")
-                exchange.sendResponseHeaders(200, bytes.size.toLong())
-                exchange.responseBody.use { it.write(bytes) }
-            } catch (_: Exception) {}
-        }
-    }
+""".trimIndent()
 }
