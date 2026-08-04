@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,8 +41,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -149,20 +149,14 @@ fun ParkingLotView(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedTextField(
+            // Compact field rather than OutlinedTextField: the Material component's 56.dp
+            // minimum and 16.dp vertical padding cropped the placeholder at this size.
+            CompactTextField(
                 value = newQuestionText,
                 onValueChange = { newQuestionText = it },
-                placeholder = { Text("Capture question to answer later...", color = theme.textMuted, fontSize = 13.sp) },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = theme.textPrimary,
-                    unfocusedTextColor = theme.textPrimary,
-                    focusedBorderColor = theme.primary,
-                    unfocusedBorderColor = theme.surfaceVariant,
-                    focusedContainerColor = theme.surfaceVariant.copy(alpha = 0.3f),
-                    unfocusedContainerColor = theme.surfaceVariant.copy(alpha = 0.15f)
-                ),
-                shape = RoundedCornerShape(8.dp),
+                placeholder = "Capture question to answer later...",
+                theme = theme,
+                minHeight = 52.dp,
                 modifier = Modifier.weight(1f)
             )
 
@@ -402,9 +396,14 @@ private fun FollowUpQuestionCard(
                     }
                 } else {
                     // Add Answer Prompt
+                    // Material 3 buttons have MinHeight = 40.dp and 8.dp vertical content
+                    // padding. Pinning to 28.dp without shrinking that padding crops the
+                    // label — the same trap as the Material text fields. Height stays 28.dp
+                    // by design, so the padding comes down to match.
                     TextButton(
                         onClick = { isEditingAnswer = true },
-                        modifier = Modifier.padding(start = 36.dp).height(28.dp)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.padding(start = 36.dp).heightIn(min = 28.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
@@ -424,21 +423,19 @@ private fun FollowUpQuestionCard(
             } else {
                 // Editing Answer Input
                 Column(modifier = Modifier.fillMaxWidth().padding(start = 36.dp)) {
-                    OutlinedTextField(
+                    CompactTextField(
                         value = answerDraft,
                         onValueChange = { answerDraft = it },
-                        placeholder = { Text("Type the answer or follow-up note...", color = theme.textMuted, fontSize = 12.sp) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = theme.textPrimary,
-                            unfocusedTextColor = theme.textPrimary,
-                            focusedBorderColor = theme.accent,
-                            unfocusedBorderColor = theme.surfaceVariant,
-                            focusedContainerColor = theme.surface,
-                            unfocusedContainerColor = theme.surface
-                        ),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 3
+                        placeholder = "Type the answer or follow-up note...",
+                        theme = theme,
+                        singleLine = false,
+                        maxLines = 3,
+                        fontSize = 12.sp,
+                        minHeight = 44.dp,
+                        cornerRadius = 6.dp,
+                        borderColor = theme.accent,
+                        containerColor = theme.surface,
+                        modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(6.dp))
                     Row(
@@ -450,7 +447,8 @@ private fun FollowUpQuestionCard(
                                 answerDraft = item.answerText
                                 isEditingAnswer = false
                             },
-                            modifier = Modifier.height(28.dp)
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            modifier = Modifier.heightIn(min = 28.dp)
                         ) {
                             Text("Cancel", fontSize = 11.sp, color = theme.textMuted)
                         }
@@ -465,7 +463,8 @@ private fun FollowUpQuestionCard(
                                 contentColor = if (theme.isDark) Color.Black else Color.White
                             ),
                             shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.height(28.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                            modifier = Modifier.heightIn(min = 28.dp)
                         ) {
                             Text("Save Answer", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
