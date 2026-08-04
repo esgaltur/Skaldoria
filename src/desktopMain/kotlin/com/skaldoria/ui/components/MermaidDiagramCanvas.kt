@@ -45,16 +45,16 @@ data class DiagramNode(
 /**
  * Node shapes the parser can actually produce.
  *
- * DED-4: `RECTANGLE` and `DATABASE` were never emitted by any code path, and `CIRCLE` was
- * unreachable until MMD-6 fixed the alternation order. Removed rather than left as dead
- * branches implying support that does not exist — reinstate alongside the parser support
- * (`[[…]]`, `[(…)]`) if those forms are ever added. `DiagramNode.styleClass` went the same
- * way: nothing ever set it, since `classDef`/`class` are not parsed.
+ * DED-4 removed shapes that no code path could emit rather than leave dead branches implying
+ * support that did not exist. `DATABASE` is back because MMD-9 added `[(cylinder)]` parsing —
+ * the rule being that a shape exists here only when the parser can actually produce it.
  */
 enum class NodeShape {
     ROUNDED_RECT,
     CIRCLE,
-    DIAMOND
+    DIAMOND,
+    /** `A[(Label)]` — a datastore. Reinstated once the parser could actually emit it. */
+    DATABASE
 }
 
 data class DiagramEdge(
@@ -65,11 +65,25 @@ data class DiagramEdge(
     val isBiDirectional: Boolean = false
 )
 
+/**
+ * A `subgraph … end` cluster: a titled frame drawn around the nodes declared inside it.
+ *
+ * Nested subgraphs are flattened — a node belongs to the innermost group that declared it —
+ * because the layered layout has no notion of nested containers. The frame still reads
+ * correctly; only the nesting relationship is lost.
+ */
+data class DiagramGroup(
+    val id: String,
+    val title: String,
+    val nodeIds: List<String>
+)
+
 data class ParsedDiagram(
     val type: String, // "flowchart", "sequence", "graph"
     val isHorizontal: Boolean = true,
     val nodes: List<DiagramNode>,
-    val edges: List<DiagramEdge>
+    val edges: List<DiagramEdge>,
+    val groups: List<DiagramGroup> = emptyList()
 )
 
 /**
@@ -89,8 +103,10 @@ object MermaidParser {
         circleGroup: Int,
         roundGroup: Int,
         diamondGroup: Int,
-        hexagonGroup: Int = -1
+        hexagonGroup: Int = -1,
+        cylinderGroup: Int = -1
     ): NodeShape = when {
+        cylinderGroup >= 0 && match.groupValues.getOrElse(cylinderGroup) { "" }.isNotBlank() -> NodeShape.DATABASE
         match.groupValues.getOrElse(diamondGroup) { "" }.isNotBlank() -> NodeShape.DIAMOND
         // `{{hexagon}}` has no dedicated shape yet; the diamond rendering is the closest
         // visually-distinct match, and it keeps the label clean instead of mangling it.
@@ -111,10 +127,15 @@ object MermaidParser {
      * `N{{Netting}}` matched the single-brace branch, captured `{Netting`, and left a stray
      * `}` that broke the rest of the line.
      *
-     * Groups: 1=id, 2=`[rect]`, 3=`((circle))`, 4=`(round)`, 5=`{{hexagon}}`, 6=`{diamond}`.
+     * MMD-9: `[(cylinder)]` is tried BEFORE `[rect]` for the same reason — otherwise
+     * `DB[(Database)]` matched the square-bracket branch and captured `(Database`, leaving the
+     * parens in the visible label.
+     *
+     * Groups: 1=id, 2=`[(cylinder)]`, 3=`[rect]`, 4=`((circle))`, 5=`(round)`,
+     * 6=`{{hexagon}}`, 7=`{diamond}`.
      */
     private val NODE_TOKEN =
-        Regex("""\s*([A-Za-z0-9_]+)\s*(?:\[(.*?)\]|\(\((.*?)\)\)|\((.*?)\)|\{\{(.*?)\}\}|\{(.*?)\})?""")
+        Regex("""\s*([A-Za-z0-9_]+)\s*(?:\[\((.*?)\)\]|\[(.*?)\]|\(\((.*?)\)\)|\((.*?)\)|\{\{(.*?)\}\}|\{(.*?)\})?""")
 
     /** An arrow with a trailing `|label|`, e.g. `A -->|yes| B`. Dashed/thick variants included. */
     private val ARROW_TOKEN = Regex("""\s*(-\.->|===>|==>|-{2,}>|-{3,}|-->)(?:\|(.*?)\|)?""")
@@ -129,6 +150,29 @@ object MermaidParser {
      */
     private val ARROW_MIDLABEL_TOKEN =
         Regex("""\s*(--|==|-\.)\s*(.+?)\s*(-\.->|===>|==>|-{2,}>|\.->)""")
+
+    /**
+     * `subgraph Backend`, `subgraph id [Title]`, or `subgraph "Quoted Title"`.
+     *
+     * Groups: 1=id, 2=`[Title]`, 3=`"Title"`.
+     */
+    private val SUBGRAPH_START =
+        Regex("""^\s*subgraph\s+([A-Za-z0-9_]*)\s*(?:\[(.*?)\]|"(.*?)")?\s*$""", RegexOption.IGNORE_CASE)
+
+    /** Closes a `subgraph` block. */
+    private val BLOCK_END = Regex("""^end$""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Styling and interaction statements. They contribute no nodes or edges, and matching them
+     * here is what stops the node scanner registering `classDef`, `class` or `style` as ids.
+     */
+    private val IGNORED_DIRECTIVE =
+        Regex("""^\s*(classDef|class|style|linkStyle|click|direction)\b""", RegexOption.IGNORE_CASE)
+
+    /** Accumulates a subgraph's members while its block is open. */
+    private class MutableGroup(val id: String, val title: String) {
+        val nodeIds = mutableListOf<String>()
+    }
 
     /** Resolved arrow: the label (or null) plus whether it is dashed, and where it ends. */
     private data class ArrowMatch(val label: String?, val isDashed: Boolean, val end: Int)
@@ -169,8 +213,12 @@ object MermaidParser {
             val match = NODE_TOKEN.matchAt(line, position) ?: return null
             val id = match.groupValues[1]
             if (id.isBlank()) return null
-            val label = firstNonBlank(match, 2, 3, 4, 5, 6) ?: id
-            val shape = shapeOf(match, circleGroup = 3, roundGroup = 4, diamondGroup = 6, hexagonGroup = 5)
+            val label = firstNonBlank(match, 2, 3, 4, 5, 6, 7) ?: id
+            val shape = shapeOf(
+                match,
+                circleGroup = 4, roundGroup = 5, diamondGroup = 7,
+                hexagonGroup = 6, cylinderGroup = 2
+            )
             // First declaration wins, so a later bare reference cannot erase a label.
             nodesMap.getOrPut(id) { DiagramNode(id, label, shape) }
             position = match.range.last + 1
@@ -218,21 +266,69 @@ object MermaidParser {
         }
 
         // Flowchart parsing
+        val groups = mutableListOf<DiagramGroup>()
+        val openGroups = ArrayDeque<MutableGroup>()
+
         for (line in lines.drop(1)) {
-            // MMD-5: a line is an alternating chain of nodes and arrows, so it is scanned
-            // left to right rather than matched pairwise. `findAll` with a two-node pattern
-            // cannot work here — matches do not overlap, so the first match consumes `B` in
-            // `A --> B --> C` and the second edge is silently lost.
+            // MMD-10: keyword lines must be consumed *before* node scanning. `readNode`
+            // registers an id as soon as it matches, so `subgraph Backend`, `end`,
+            // `classDef …` and `class …` were each creating a phantom node — a diagram using
+            // subgraphs rendered four boxes that do not exist in the source.
+            val subgraphMatch = SUBGRAPH_START.find(line)
+            if (subgraphMatch != null) {
+                val rawId = subgraphMatch.groupValues[1].trim()
+                val bracketTitle = firstNonBlank(subgraphMatch, 2, 3)
+                openGroups.addLast(
+                    MutableGroup(
+                        id = rawId.ifBlank { "group_${groups.size + openGroups.size}" },
+                        title = (bracketTitle ?: rawId).trim().trim('"')
+                    )
+                )
+                continue
+            }
+
+            if (BLOCK_END.matches(line.trim())) {
+                openGroups.removeLastOrNull()?.let { finished ->
+                    // Empty subgraphs would draw an empty frame, so they are dropped.
+                    if (finished.nodeIds.isNotEmpty()) {
+                        groups.add(DiagramGroup(finished.id, finished.title, finished.nodeIds.toList()))
+                    }
+                }
+                continue
+            }
+
+            // Styling and interaction directives carry no geometry; skipping them is what
+            // stops `classDef`/`class`/`style`/`click` becoming nodes.
+            if (IGNORED_DIRECTIVE.containsMatchIn(line)) continue
+
+            val before = nodesMap.keys.toSet()
+
             if (!parseEdgeChain(line, nodesMap, edges)) {
-                // Standalone node: A[Label] or B(Text) — same alternation order as above.
-                val nodeRegex =
-                    Regex("""([A-Za-z0-9_]+)\s*(?:\[(.*?)\]|\(\((.*?)\)\)|\((.*?)\)|\{\{(.*?)\}\}|\{(.*?)\})""")
-                val nodeMatch = nodeRegex.find(line)
-                if (nodeMatch != null) {
+                // Standalone node: A[Label] or B(Text) — same alternation order as NODE_TOKEN.
+                val nodeMatch = NODE_TOKEN.find(line)
+                if (nodeMatch != null && nodeMatch.groupValues[1].isNotBlank()) {
                     val id = nodeMatch.groupValues[1]
-                    val label = firstNonBlank(nodeMatch, 2, 3, 4, 5, 6) ?: id
-                    val shape = shapeOf(nodeMatch, circleGroup = 3, roundGroup = 4, diamondGroup = 6, hexagonGroup = 5)
+                    val label = firstNonBlank(nodeMatch, 2, 3, 4, 5, 6, 7) ?: id
+                    val shape = shapeOf(
+                        nodeMatch,
+                        circleGroup = 4, roundGroup = 5, diamondGroup = 7,
+                        hexagonGroup = 6, cylinderGroup = 2
+                    )
                     nodesMap[id] = DiagramNode(id, label, shape)
+                }
+            }
+
+            // Whatever this line introduced belongs to the innermost open subgraph.
+            openGroups.lastOrNull()?.let { current ->
+                (nodesMap.keys - before).forEach { current.nodeIds.add(it) }
+            }
+        }
+
+        // Unterminated subgraphs still render, rather than being discarded on a typo.
+        while (openGroups.isNotEmpty()) {
+            openGroups.removeLast().let { finished ->
+                if (finished.nodeIds.isNotEmpty()) {
+                    groups.add(DiagramGroup(finished.id, finished.title, finished.nodeIds.toList()))
                 }
             }
         }
@@ -251,7 +347,8 @@ object MermaidParser {
             type = "flowchart",
             isHorizontal = isHorizontal,
             nodes = nodesMap.values.toList(),
-            edges = edges
+            edges = edges,
+            groups = groups
         )
     }
 
@@ -424,6 +521,8 @@ internal fun NodeCard(
         NodeShape.ROUNDED_RECT -> RoundedCornerShape(12.dp)
         NodeShape.CIRCLE -> CircleShape
         NodeShape.DIAMOND -> RoundedCornerShape(8.dp)
+        // A datastore reads as a cylinder: heavily rounded on the flow axis, flat elsewhere.
+        NodeShape.DATABASE -> RoundedCornerShape(topStartPercent = 40, topEndPercent = 40, bottomStartPercent = 40, bottomEndPercent = 40)
     }
 
     Box(

@@ -164,4 +164,133 @@ class MermaidParserTest {
         assertEquals("Existing netting run", hex.label, "label must not keep stray braces")
         assertTrue(diagram.edges.any { it.fromId == "A" && it.toId == "N" && it.label == "go" }, "A->N labelled 'go'")
     }
+
+    // -----------------------------------------------------------------
+    // MMD-10 — subgraphs, and keywords that must never become nodes
+    // -----------------------------------------------------------------
+
+    /**
+     * Keyword lines were being registered as nodes, because `readNode` claims an id the moment
+     * it matches. A diagram using subgraphs rendered phantom `subgraph`, `end`, `classDef` and
+     * `class` boxes that appear nowhere in the source.
+     */
+    @Test
+    fun `subgraph and styling keywords never become nodes`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart LR
+                Client[Browser] --> API[Gateway]
+                subgraph Backend [Backend Services]
+                    API --> Svc[Service]
+                end
+                classDef hot fill:#f9f
+                class API hot
+                style Svc stroke:#333
+                linkStyle 0 stroke:#f00
+                click API "https://example.com"
+            """.trimIndent()
+        )
+
+        val ids = diagram.nodes.map { it.id }
+        listOf("subgraph", "end", "classDef", "class", "style", "linkStyle", "click").forEach {
+            assertTrue(it !in ids, "'$it' is a keyword, not a node — got $ids")
+        }
+        assertEquals(setOf("Client", "API", "Svc"), ids.toSet())
+    }
+
+    @Test
+    fun `subgraph members are grouped with the declared title`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart LR
+                Client[Browser] --> API[Gateway]
+                subgraph Backend [Backend Services]
+                    API --> Svc[Service]
+                    Svc --> DB[(Store)]
+                end
+            """.trimIndent()
+        )
+
+        val group = diagram.groups.single()
+        assertEquals("Backend", group.id)
+        assertEquals("Backend Services", group.title)
+        assertTrue("Svc" in group.nodeIds && "DB" in group.nodeIds, "members: ${group.nodeIds}")
+        assertTrue("Client" !in group.nodeIds, "a node declared outside must not join the group")
+    }
+
+    @Test
+    fun `a subgraph without a bracketed title uses its id`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart TD
+                subgraph Infra
+                    A[Node] --> B[Other]
+                end
+            """.trimIndent()
+        )
+
+        assertEquals("Infra", diagram.groups.single().title)
+    }
+
+    @Test
+    fun `multiple subgraphs are captured separately`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart LR
+                subgraph One [First]
+                    A[A] --> B[B]
+                end
+                subgraph Two [Second]
+                    C[C] --> D[D]
+                end
+            """.trimIndent()
+        )
+
+        assertEquals(2, diagram.groups.size)
+        assertEquals(listOf("First", "Second"), diagram.groups.map { it.title }.sorted())
+        assertEquals(4, diagram.nodes.size)
+    }
+
+    /** A missing `end` should still render the group rather than discard it. */
+    @Test
+    fun `an unterminated subgraph is still captured`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart LR
+                subgraph Backend
+                    A[A] --> B[B]
+            """.trimIndent()
+        )
+
+        assertEquals(1, diagram.groups.size)
+        assertEquals(2, diagram.groups.single().nodeIds.size)
+    }
+
+    @Test
+    fun `an empty subgraph produces no frame`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart LR
+                subgraph Empty
+                end
+                A[A] --> B[B]
+            """.trimIndent()
+        )
+        assertTrue(diagram.groups.isEmpty(), "an empty group would draw an empty box")
+    }
+
+    /** MMD-9: `[(cylinder)]` must win over `[rect]`, or the label keeps its parens. */
+    @Test
+    fun `cylinder nodes parse with a clean label and datastore shape`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart LR
+                Svc[Service] --> DB[(Order Store)]
+            """.trimIndent()
+        )
+
+        val db = diagram.nodes.first { it.id == "DB" }
+        assertEquals("Order Store", db.label, "parens must not survive into the label")
+        assertEquals(NodeShape.DATABASE, db.shape)
+    }
 }

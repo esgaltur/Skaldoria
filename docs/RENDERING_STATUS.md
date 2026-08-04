@@ -1,8 +1,8 @@
 # Slide Rendering — verified status
 
-**Last updated:** 2026-08-05  
-**Suite:** 161 tests, 0 failures  
-**Architecture:** ✅ **ADR-002 implemented** (steps 1–6) + code quality refactored — Geometry refactored to pure, testable `arrange()` functions with centralized `DesignTokens`; cognitive complexity reduced via extraction; build stable and verified  
+**Last updated:** 2026-08-05
+**Suite:** 204 tests, 0 failures
+**Architecture:** ✅ **ADR-002 implemented** (steps 1–6) + code quality refactored — Geometry refactored to pure, testable `arrange()` functions with centralized `DesignTokens`; cognitive complexity reduced via extraction; build stable and verified
 **Evidence:** slides rendered headless via `ImageComposeScene`; PNGs in `build/render-all/` and `build/render-check/`.
 
 Regenerate with:
@@ -25,7 +25,7 @@ Regenerate with:
 | ✅ Verified working | 8 |
 | ❌ Confirmed broken | 0 |
 | ❓ Rendered, not inspected | 5 |
-| 🔲 Not implemented | 1 |
+| 🔲 Not implemented | 0 |
 
 ---
 
@@ -137,9 +137,19 @@ inspected — see ✅ Verified working.)
 
 ---
 
-## 🔲 Not implemented
+## ✅ Images — implemented and verified (COR-10)
 
-**COR-10 · Images never render.** `SlideElement.Image` is parsed, drives layout classification, and is written to HTML export, but no image is ever decoded or drawn — `SplitTextMediaSlide` shows a placeholder icon plus the URL as text. Still awaiting a scope decision (local files only / local + remote / a Compose image loader with caching). See the remediation plan's COR-10 entry.
+`![](…)` now renders. Local paths resolve against the deck folder, absolute paths and `file:`
+URLs work, and `http(s)` sources are fetched with timeouts and a 24 MB mid-stream ceiling.
+Decoding runs off the UI thread and is cached by path + mtime.
+
+**Verified visually** on `examples/companion_test_deck` slide 16, in both states:
+- with `assets/pairing.png` present — real pixels, aspect preserved, fitted to the panel;
+- with the asset absent — alt text plus `File not found: .\assets\pairing.png`, rather than a
+  blank panel.
+
+Other schemes (`data:`, `javascript:`, `ftp:`) are refused at resolution. Covered by
+`ImageResolverTest` (11 cases).
 
 ---
 

@@ -5,6 +5,124 @@ All notable changes to **Skaldoria** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-05
+
+A correctness and hardening release. A full audit produced a defect register
+([`docs/REMEDIATION_PLAN.md`](./docs/REMEDIATION_PLAN.md)); every tracked item is now closed.
+Test suite: **70 to 204 tests**.
+
+### Security - companion server
+- **Stored XSS fixed.** Audience-submitted text reached the presenter remote and every other
+  audience device through `innerHTML`. Both portals now build DOM with `textContent`, and inline
+  `onclick` attributes were replaced with listeners so a quote in an id cannot break out.
+- **Session authentication added.** A 128-bit `SecureRandom` token, regenerated per server start
+  and cleared on stop, gates presenter-scope routes (`/api/action`, `/api/qa/dismiss`). Compared
+  in constant time. Delivered in the pairing QR and returned as an `X-Skaldoria-Token` header.
+- **Speaker notes are no longer readable by the audience.** `/api/state` returns them empty
+  without the token.
+- **CSRF closed.** State-changing endpoints are `POST`-only, and all wildcard
+  `Access-Control-Allow-*` headers were removed - the previous `*` let any site the presenter
+  visited drive the deck.
+- **Rate limiting and vote integrity.** Per-device token bucket on write endpoints; polls now
+  record one ballot per device (voting again replaces, never stacks); question queue and text
+  length are bounded.
+- **Denial-of-service surface reduced.** Bounded worker pool (was unbounded), request-line and
+  header caps, and an explicit `411` for unsupported chunked encoding.
+- **Path traversal fixed.** Deck manifests are untrusted input; slide paths are canonicalised and
+  rejected unless inside the project, on both load *and* save.
+
+### Fixed - diagrams
+- **Flowcharts follow their real topology.** A layered (Sugiyama-style) layout engine replaces the
+  previous renderer, which emitted nodes in parse order as a straight chain - so a branch was
+  drawn as a queue. Includes cycle breaking, layer compaction and barycentre crossing reduction.
+- **Sequence diagrams render as sequence diagrams.** The old renderer drew a table of
+  `From -> To | message` rows with no lifelines or arrows. Rebuilt on a dedicated model with
+  lifelines, all eight arrow types, `loop`/`alt`/`else`/`opt`/`par` frames, notes, activation bars
+  and self-calls.
+- **`subgraph ... end` is supported**, drawn as a labelled frame around its members. Previously
+  `subgraph`, `end`, `classDef` and `class` were each registered as *nodes*, so any diagram using
+  them rendered phantom boxes for keywords that appear nowhere in the source.
+- `[(datastore)]` nodes parse with a clean label and a cylinder shape; the square-bracket branch
+  used to win and leave the parentheses in the visible text.
+- Mid-link edge labels (`A -- yes --> B`) and `{{hexagon}}` nodes are parsed; both were silently
+  dropped, which orphaned nodes and wrecked layout.
+- Chained edges (`A --> B --> C`) no longer lose everything after the first pair.
+- The `((circle))` node shape is reachable (alternation order); edge labels no longer overlap nodes.
+- Diagrams scale to fit instead of clipping.
+
+### Added
+- **Images render.** `![](...)` now loads from the deck folder, an absolute path, or an `http(s)`
+  URL - off the UI thread, cached, with timeouts and a size cap. Previously images were parsed and
+  exported to HTML but never drawn. Unresolvable paths show the alt text and the reason.
+- **Network address picker.** The companion QR advertised the first site-local address found,
+  which on a machine with VirtualBox/VMware/Hyper-V adapters was a host-only address no phone
+  could reach. Detection now prefers the adapter carrying the default route, ranks virtual
+  adapters last, and the pairing dialog lets you choose.
+- **Version is visible** in every window title, on the welcome screen, in exports and in both
+  companion portals, generated from a single `appVersion` in `build.gradle.kts`.
+- **Companion test deck** (`examples/companion_test_deck`) - 17 slides covering every layout with
+  two live polls, Q&A and a seeded parking lot, for exercising the phone companion end to end.
+
+### Fixed - editing and content
+- **Slide operations acted on the wrong slide.** Editing used its own splitter that recognised
+  only a literal `---`, disagreeing with the parser about `##` heading splits and `----` rules.
+  Boundaries now come from the parser itself, so delete/move are exact.
+- **Slide edits in project mode were silently discarded** - they were written to the compiled
+  markdown while the project kept the old per-file content.
+- **The per-slide editor wrote to the wrong file** whenever any file contained more than one slide.
+- **Parking lot deletes now stick.** They were in-memory only, so the `<!-- parking-lot: ... -->`
+  comment stayed in the file and the item returned on the next keystroke. Items carry a persisted
+  `id:`, and captured questions are written to the deck.
+- HTML comments no longer render as literal `<!-- ... -->` text on a slide.
+- A paragraph beginning with a number (e.g. `2024 Roadmap Overview`) is no longer promoted to a
+  giant KPI slide.
+- A second heading in a section no longer leaks its raw `##` markers into the slide.
+- Opening a `.mdpres` manifest opens the **project**, not the manifest's own JSON. Classification
+  is by validation, not by file extension, so an unrelated `.json` cannot be mistaken for a deck.
+
+### Fixed - export
+- **Exported HTML/PDF used the wrong colours.** `Color.value` packs channels in the high bits;
+  the exporter read the low 32 bits.
+- HTML attribute injection closed (`'` escaped, image URLs sanitised, `javascript:`/`data:` refused).
+- PNG export no longer silently drops tables, images and polls; long text is ellipsised instead of
+  running off the canvas.
+- PDF export no longer deadlocks on an undrained subprocess pipe, and the ZIP stream is closed on
+  failure.
+
+### Fixed - performance and correctness
+- Audience/poll mutations from HTTP threads are applied inside a Compose snapshot, removing a
+  swallowed `ConcurrentModificationException`.
+- Autosave is debounced instead of writing the whole document on every keystroke.
+- Find/replace no longer re-scans the entire document on every recomposition.
+- The talk timer is derived from a monotonic clock instead of counting loop iterations, so it no
+  longer drifts; its coroutine scope is cancelled on exit.
+- Exports run off the UI thread (PDF export could freeze the app for 15 seconds).
+- Theme and editor font size persist across launches; config writes are atomic.
+- Audience question ids use `UUID`; project manifests escape JSON; slide files sort naturally
+  (`2_x.md` before `10_x.md`).
+
+### Fixed - UI
+- Slide-overview search, parking-lot capture box and answer editor no longer clip their
+  placeholders: Material 3 text fields enforce a 56.dp minimum and 16.dp vertical padding, so
+  pinning them smaller crops the content. Replaced by a shared `CompactTextField`.
+- Short parking-lot buttons no longer clip their labels (`contentPadding` reduced rather than
+  height forced below the Material minimum).
+
+### Changed
+- **Removed deprecated API usage.** The window icon no longer calls the deprecated
+  `painterResource(String)` behind a `@Suppress("DEPRECATION")`; the project compiles with zero
+  deprecation warnings.
+- `runCatching` replaced with explicit `catch (Exception)` in the image pipeline, rethrowing
+  `CancellationException` so an aborted load is not reported as a decode failure.
+- Unreachable `NodeShape` values and the unused `styleClass` field removed.
+
+### Testing
+- Added a **headless rendering harness** (`SlideRenderingTest`, `ImageComposeScene`) that renders
+  slides and asserts content actually reaches the canvas. It was validated by reintroducing a
+  regression that blanked every slide - unit tests and a clean launch had both missed it.
+
+---
+
 ## [1.1.0] - 2026-08-04
 
 ### Added
@@ -18,7 +136,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Interactive checkboxes for tracking open vs answered items.
   - Expandable text areas for typing answers and resolution notes.
   - Presenter Console Parking Lot tab with 1-click **Park for Later** action on live audience Q&A items.
-  - Bi-directional Markdown persistence supporting `<!-- parking-lot: [ ] Question | Answer | slide:3 -->` directives and task lists.
+  - Markdown persistence supporting `<!-- parking-lot: [ ] Question | Answer | slide:3 -->` directives and task lists. *(Writing back to the deck did not actually work until 1.2.0.)*
   - 1-click **Copy Markdown** action to export the follow-up checklist to the clipboard.
 - **Algorithmic Speaker Rhythm & Pacing Gauge**:
   - Live pacing drift computation formula: $\Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{current}$.
@@ -39,9 +157,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Re-engineered HTTP/1.1 micro-server using standard `java.net.ServerSocket` in `java.base`, eliminating all `com.sun.net.httpserver` JPMS module errors across minimal JREs.
   - Sub-millisecond cold boot latency and 0 KB external footprint.
   - Multi-threaded executor with automatic port-fallback across 50 ports and ephemeral fallback.
-  - Full CORS preflight (`OPTIONS`) handling and resilient error boundaries.
+  - CORS preflight (`OPTIONS`) handling and resilient error boundaries. *(The wildcard CORS headers were removed in 1.2.0 - they were a CSRF vector.)*
   - Added `/api/parking-lot/add` endpoint for remote companion integration.
-  - Documented architectural decisions and protocol evaluations in [ADR-001](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/docs/ADR_COMPANION_SERVER_ARCHITECTURE.md).
+  - Documented architectural decisions and protocol evaluations in [ADR-001](./docs/ADR_COMPANION_SERVER_ARCHITECTURE.md).
 
 ---
 

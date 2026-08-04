@@ -2,7 +2,7 @@
 ## ADR-001: Embedded Companion Server Architecture & Protocol Selection
 
 ### Status
-**Accepted** (2026-08-04)
+**Accepted** (2026-08-04) - reaffirmed 2026-08-05, with amendments below.
 
 ---
 
@@ -67,6 +67,54 @@ Two primary architectural dimensions were evaluated:
 ---
 
 ### Related Components
-* [`RemoteCompanionServer.kt`](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/src/desktopMain/kotlin/com/skaldoria/remote/RemoteCompanionServer.kt)
-* [`PresentationState.kt`](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/src/desktopMain/kotlin/com/skaldoria/state/PresentationState.kt)
-* [`RemoteCompanionServerTest.kt`](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/src/desktopTest/kotlin/com/skaldoria/remote/RemoteCompanionServerTest.kt)
+* [`RemoteCompanionServer.kt`](../src/desktopMain/kotlin/com/skaldoria/remote/RemoteCompanionServer.kt)
+* [`PresentationState.kt`](../src/desktopMain/kotlin/com/skaldoria/state/PresentationState.kt)
+* [`RemoteCompanionServerTest.kt`](../src/desktopTest/kotlin/com/skaldoria/remote/RemoteCompanionServerTest.kt)
+
+
+---
+
+## Amendment - 2026-08-05
+
+### The decision holds, and was re-tested
+
+Ktor was re-evaluated after this ADR, because the security work raised the question of whether a
+framework would carry it more cheaply. Full analysis in
+[KTOR_MIGRATION_TRADEOFFS.md](./KTOR_MIGRATION_TRADEOFFS.md). The conclusion was to stay on
+sockets, but three figures in the table above are overstated and should not be quoted as-is:
+
+| Original claim | Measured |
+| :--- | :--- |
+| "+12 MB to +18 MB in final installer" | **~3-4 MB.** Measured from the local Gradle cache: the shared transitive tree a CIO server needs totals 1.26 MB; coroutines are already a project dependency and cost nothing new. |
+| "~150ms - 300ms cold startup" | Largely irrelevant. The server is started lazily when the user enables the remote, not on the app boot path. |
+| "~20 MB - 35 MB additional heap" | Overstated for a handful of LAN connections. |
+
+The arguments that *do* carry the decision are JPMS/jlink portability across six installer
+formats, and the absence of an SLF4J binding requirement.
+
+**One counter-argument this ADR originally missed:** "zero dependencies, immune to third-party
+CVEs" is one-sided. We are writing our own HTTP parser, and we shipped defects in it - a
+`Content-Length` read as characters rather than bytes (which stalled any non-ASCII body until the
+socket timed out), and no chunked-encoding handling. Trading a maintained parser's CVE stream for
+our own unaudited defect stream is not automatically a security win. It remains the right call
+here for the packaging reasons above, but the trade should be stated honestly.
+
+### Security posture added since
+
+This ADR covered transport and protocol only. The access-control model now layered on top:
+
+- Per-session `SecureRandom` token gating presenter-scope routes; constant-time comparison.
+- `POST`-only for state-changing endpoints, with the token in a custom header (which forces a
+  preflight and closes cross-origin form submission).
+- **All `Access-Control-Allow-*` headers removed.** The original implementation sent `*`, which
+  allowed any page the presenter visited to drive the deck. CORS was a vulnerability here, not a
+  feature.
+- Speaker notes scoped to the presenter token.
+- Bounded worker pool, request-line/header caps, `411` for chunked encoding, per-device rate
+  limiting, and one-ballot-per-device polling.
+
+### Revisit trigger
+
+Unchanged: if push (WebSockets/SSE) replaces the 700 ms polling cycle, revisit Ktor before
+hand-rolling RFC 6455 framing. Decision 3 of this ADR already names WebSockets as the evolution
+path; that is the point at which the cost/benefit flips.

@@ -26,6 +26,62 @@ All contributions to Skaldoria must strictly follow **SOLID principles**, **Clea
 - Write descriptive function and variable names without abbreviations.
 - Keep composable functions short, modular, and reusable.
 - Accompany every parser, theme, or state logic change with unit tests under `src/desktopTest/kotlin`.
+- **A regression test must fail before the fix.** Verify it by reintroducing the bug, or the test
+  is decoration. This is not theoretical: a guard that passes both before and after has been
+  written here before.
+
+### 5. Rendering Changes Must Be Seen, Not Inferred
+
+A green suite and a clean `./gradlew run` are **not** evidence that a slide renders. A change to
+`FitToCanvas` once blanked *every* slide in the app — bullets, diagrams, tables, all of it — while
+150 unit tests passed and the app launched without a single exception. The failure was silent:
+a correct-looking layout tree with zero-height children.
+
+For any change to drawing or layout code:
+
+```bash
+./gradlew desktopTest --tests "*RenderAllProbe*"   # sweep -> build/render-all/*.png
+```
+
+Open the PNGs and look at them. `SlideRenderingTest` renders headlessly via `ImageComposeScene`
+and asserts content pixels exceed a title-only floor, which catches *"nothing drawn"* — but it
+cannot catch *"drawn wrong"*. Only your eyes can.
+
+### 6. No Deprecated APIs, No Blanket Suppressions
+
+This is a greenfield codebase and it compiles with **zero deprecation warnings**. Keep it that way.
+
+- Do not add `@Suppress("DEPRECATION")`. Suppressing a deprecation hides the migration signal and
+  converts a compiler warning into silent technical debt. Migrate, or wrap the call in a small
+  adapter with a comment explaining the trade-off.
+- Prefer `try` / `catch (e: Exception)` over `runCatching` in production code. `runCatching`
+  catches **`Throwable`**, which swallows `OutOfMemoryError` and — inside a coroutine —
+  `CancellationException`, silently breaking structured concurrency. If you catch inside a
+  coroutine, rethrow `CancellationException` explicitly.
+- Never wrap a `@Composable` call in `try`/`catch`. Compose gives no slot-table consistency
+  guarantee if a composable throws mid-invocation.
+
+### 7. Material 3 Sizing Invariant
+
+**Do not pin a Material 3 component below its content height without also reducing that content's
+padding.** The height modifier constrains and crops; it does not compress.
+
+- Text fields enforce `MinHeight = 56.dp` plus 16.dp vertical content padding. For a compact field,
+  use the shared `CompactTextField` rather than shrinking an `OutlinedTextField`.
+- Buttons enforce `MinHeight = 40.dp` plus 8.dp vertical `contentPadding`. To make one shorter,
+  pass a reduced `contentPadding` — do not just set a smaller height.
+
+### 8. Untrusted Input Boundaries
+
+Three inputs are untrusted and must stay that way:
+
+- **Audience submissions** (companion server) — render with `textContent`, never `innerHTML`;
+  cap length; rate-limit.
+- **Deck manifests and slide paths** — canonicalise and reject anything resolving outside the
+  project root, on read *and* write. Classify a file as a project by **validating** it, never by
+  its extension.
+- **Image sources** — allow only `http`/`https`/`file` and local paths; bound remote fetches by
+  timeout and size.
 
 ---
 
