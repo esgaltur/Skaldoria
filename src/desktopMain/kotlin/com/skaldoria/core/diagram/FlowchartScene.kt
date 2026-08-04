@@ -18,9 +18,26 @@ data class FlowchartScene(
     val nodes: Map<String, NodePlacement>,
     val edges: List<EdgePlacement>,
     val width: Int,
-    val height: Int
+    val height: Int,
+    /** `subgraph` frames, already resolved to rectangles. */
+    val groups: List<GroupPlacement> = emptyList()
 ) {
     data class NodePlacement(val id: String, val rect: Rect)
+
+    /**
+     * A resolved `subgraph` frame.
+     *
+     * Computed here rather than in the renderer so the two invariants that make a frame
+     * *honest* can be asserted without rendering anything:
+     *  - it must not enclose a node that is not a member;
+     *  - it must not overlap another group's frame.
+     */
+    data class GroupPlacement(
+        val id: String,
+        val title: String,
+        val rect: Rect,
+        val titleAnchor: Offset
+    )
     data class EdgePlacement(
         val fromId: String,
         val toId: String,
@@ -41,34 +58,113 @@ data class FlowchartScene(
             edges: List<DiagramEdge>,
             horizontal: Boolean,
             availableBounds: IntSize,
-            labelWidths: Map<String, Float>
+            labelWidths: Map<String, Float>,
+            /** node id -> subgraph id. Absent means the node belongs to no subgraph. */
+            groupOf: Map<String, String> = emptyMap(),
+            /** Subgraphs to frame, in declaration order: id, title, member ids. */
+            groups: List<Triple<String, String, List<String>>> = emptyList()
         ): FlowchartScene {
             if (nodeIds.isEmpty()) return FlowchartScene(emptyMap(), emptyList(), 0, 0)
 
-            val bounds = positionNodes(layout, nodeSize, horizontal, labelWidths)
+            val bounds = positionNodes(layout, nodeSize, horizontal, labelWidths, nodeIds, groupOf)
             val (shifted, contentWidth, contentHeight) = normalizeToOrigin(bounds)
             val nodePlacements = shifted.mapValues { (id, rect) -> NodePlacement(id, rect) }
             val edgePlacements = arrangeEdgesWithLabels(edges, shifted, horizontal, labelWidths)
+            val groupPlacements = arrangeGroups(groups, shifted)
 
-            return FlowchartScene(nodePlacements, edgePlacements, contentWidth, contentHeight)
+            return FlowchartScene(
+                nodePlacements, edgePlacements, contentWidth, contentHeight, groupPlacements
+            )
         }
 
+        /** Breathing room between a frame and the nodes it contains. */
+        const val GROUP_PADDING = 18f
+
+        /** Height of the strip above a frame that carries its title. */
+        const val GROUP_TITLE_BAND = 20f
+
+        /** Resolves each subgraph to the rectangle enclosing its members. */
+        private fun arrangeGroups(
+            groups: List<Triple<String, String, List<String>>>,
+            bounds: Map<String, Rect>
+        ): List<GroupPlacement> = groups.mapNotNull { (id, title, memberIds) ->
+            val rects = memberIds.mapNotNull { bounds[it] }
+            if (rects.isEmpty()) return@mapNotNull null
+
+            val rect = Rect(
+                left = rects.minOf { it.left } - GROUP_PADDING,
+                top = rects.minOf { it.top } - GROUP_PADDING - GROUP_TITLE_BAND,
+                right = rects.maxOf { it.right } + GROUP_PADDING,
+                bottom = rects.maxOf { it.bottom } + GROUP_PADDING
+            )
+            GroupPlacement(id, title, rect, Offset(rect.left + 10f, rect.top + 5f))
+        }
+
+        /**
+         * Reserved either side of a subgraph frame: padding plus the title band.
+         * Kept in step with the renderer so a frame never touches a neighbouring band.
+         */
+        private const val GROUP_BAND_MARGIN = 58f
+
+        /**
+         * Positions every node, giving each subgraph its own cross-axis band.
+         *
+         * Bands exist because a subgraph frame is drawn as the bounding box of its members.
+         * Without them the box lies in two ways, both of which were observed: it overlapped a
+         * neighbouring group's frame, and — when a group spanned several layers — it enclosed
+         * an unrelated node that merely happened to sit between its members.
+         *
+         * Reserving a band per group makes the bounding box honest by construction: only that
+         * group's members ever occupy its cross-axis range, whatever layer they land in.
+         * Diagrams with no subgraphs have a single band and lay out exactly as before.
+         */
         private fun positionNodes(
             layout: FlowchartLayoutEngine.Layout,
             nodeSize: Map<String, IntSize>,
             horizontal: Boolean,
-            labelWidths: Map<String, Float>
+            labelWidths: Map<String, Float>,
+            nodeIds: List<String>,
+            groupOf: Map<String, String>
         ): Map<String, Rect> {
             val siblingGap = with(DesignTokens.Diagram) { flowchartSiblingGap.value }
             val minLaneGap = with(DesignTokens.Diagram) { flowchartMinLaneGap.value }
             val laneGap = kotlin.math.max(minLaneGap, (labelWidths.values.maxOrNull() ?: 0f) + 28f)
+
+            // Band order follows first appearance, so bands read in authoring order.
+            val bandOrder = LinkedHashSet<String>()
+            nodeIds.forEach { bandOrder.add(groupOf[it] ?: "") }
+
+            // A band's cross extent is its worst layer, so it stays a constant strip.
+            val bandExtent = bandOrder.associateWith { band ->
+                (0 until layout.layerCount).maxOfOrNull { layerIndex ->
+                    val members = layout.layer(layerIndex).filter { (groupOf[it.id] ?: "") == band }
+                    if (members.isEmpty()) 0f
+                    else members.sumOf { m ->
+                        val size = nodeSize[m.id] ?: IntSize.Zero
+                        (if (horizontal) size.height else size.width).toDouble()
+                    }.toFloat() + siblingGap * (members.size - 1)
+                } ?: 0f
+            }
+
+            val bandMargin = if (bandOrder.size > 1) GROUP_BAND_MARGIN else 0f
+            val totalCross = bandExtent.values.sum() + bandMargin * (bandOrder.size - 1).coerceAtLeast(0)
+
+            val bandStart = mutableMapOf<String, Float>()
+            var cursor = -totalCross / 2f
+            for (band in bandOrder) {
+                bandStart[band] = cursor
+                cursor += (bandExtent[band] ?: 0f) + bandMargin
+            }
 
             val bounds = mutableMapOf<String, Rect>()
             var flowCursor = 0f
 
             for (layerIndex in 0 until layout.layerCount) {
                 val members = layout.layer(layerIndex)
-                val laneExtent = positionLayer(members, nodeSize, horizontal, siblingGap, flowCursor, bounds)
+                val laneExtent = positionLayer(
+                    members, nodeSize, horizontal, siblingGap, flowCursor, bounds,
+                    groupOf, bandStart, bandExtent
+                )
                 flowCursor += laneExtent + laneGap
             }
 
@@ -81,22 +177,33 @@ data class FlowchartScene(
             horizontal: Boolean,
             siblingGap: Float,
             flowCursor: Float,
-            bounds: MutableMap<String, Rect>
+            bounds: MutableMap<String, Rect>,
+            groupOf: Map<String, String>,
+            bandStart: Map<String, Float>,
+            bandExtent: Map<String, Float>
         ): Float {
             val placeables = members.mapNotNull { nodeSize[it.id] }
             if (placeables.isEmpty()) return 0f
 
             val laneExtent = placeables.maxOf { if (horizontal) it.width else it.height }.toFloat()
-            val crossTotal = placeables.sumOf { if (horizontal) it.height else it.width }
-                .toFloat() + siblingGap * (placeables.size - 1)
 
-            var crossCursor = -crossTotal / 2f
-            for (placement in members) {
-                val placeable = nodeSize[placement.id] ?: continue
-                val nodeRect = positionNodeInLayer(placeable, horizontal, laneExtent, flowCursor, crossCursor)
-                bounds[placement.id] = nodeRect
-                val crossExtent = (if (horizontal) placeable.height else placeable.width).toFloat()
-                crossCursor += crossExtent + siblingGap
+            // Each band is laid out independently inside its reserved strip, and centred in it
+            // so a layer with fewer members of that band still lines up with the others.
+            for ((band, bandMembers) in members.groupBy { groupOf[it.id] ?: "" }) {
+                val used = bandMembers.sumOf { m ->
+                    val size = nodeSize[m.id] ?: IntSize.Zero
+                    (if (horizontal) size.height else size.width).toDouble()
+                }.toFloat() + siblingGap * (bandMembers.size - 1)
+
+                val strip = bandExtent[band] ?: used
+                var crossCursor = (bandStart[band] ?: -used / 2f) + (strip - used) / 2f
+
+                for (placement in bandMembers) {
+                    val placeable = nodeSize[placement.id] ?: continue
+                    bounds[placement.id] =
+                        positionNodeInLayer(placeable, horizontal, laneExtent, flowCursor, crossCursor)
+                    crossCursor += (if (horizontal) placeable.height else placeable.width).toFloat() + siblingGap
+                }
             }
 
             return laneExtent

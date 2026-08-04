@@ -205,7 +205,9 @@ object MermaidParser {
     private fun parseEdgeChain(
         line: String,
         nodesMap: MutableMap<String, DiagramNode>,
-        edges: MutableList<DiagramEdge>
+        edges: MutableList<DiagramEdge>,
+        /** Every id this line referred to — including ones that already existed. */
+        mentioned: MutableList<String> = mutableListOf()
     ): Boolean {
         var position = 0
 
@@ -213,6 +215,7 @@ object MermaidParser {
             val match = NODE_TOKEN.matchAt(line, position) ?: return null
             val id = match.groupValues[1]
             if (id.isBlank()) return null
+            mentioned.add(id)
             val label = firstNonBlank(match, 2, 3, 4, 5, 6, 7) ?: id
             val shape = shapeOf(
                 match,
@@ -268,6 +271,7 @@ object MermaidParser {
         // Flowchart parsing
         val groups = mutableListOf<DiagramGroup>()
         val openGroups = ArrayDeque<MutableGroup>()
+        val assignedToGroup = mutableSetOf<String>()
 
         for (line in lines.drop(1)) {
             // MMD-10: keyword lines must be consumed *before* node scanning. `readNode`
@@ -301,13 +305,14 @@ object MermaidParser {
             // stops `classDef`/`class`/`style`/`click` becoming nodes.
             if (IGNORED_DIRECTIVE.containsMatchIn(line)) continue
 
-            val before = nodesMap.keys.toSet()
+            val mentioned = mutableListOf<String>()
 
-            if (!parseEdgeChain(line, nodesMap, edges)) {
+            if (!parseEdgeChain(line, nodesMap, edges, mentioned)) {
                 // Standalone node: A[Label] or B(Text) — same alternation order as NODE_TOKEN.
                 val nodeMatch = NODE_TOKEN.find(line)
                 if (nodeMatch != null && nodeMatch.groupValues[1].isNotBlank()) {
                     val id = nodeMatch.groupValues[1]
+                    mentioned.add(id)
                     val label = firstNonBlank(nodeMatch, 2, 3, 4, 5, 6, 7) ?: id
                     val shape = shapeOf(
                         nodeMatch,
@@ -318,9 +323,17 @@ object MermaidParser {
                 }
             }
 
-            // Whatever this line introduced belongs to the innermost open subgraph.
+            // Membership follows *mention*, not creation. A subgraph body most often just
+            // lists ids that were declared earlier (`A1` on its own line, or `A1 --> A2`);
+            // capturing only newly-created nodes meant those groups came out empty and were
+            // dropped, so the subgraph disappeared entirely.
+            //
+            // First group to mention a node wins, matching Mermaid: a node belongs to the
+            // subgraph it is declared in, and a later reference does not move it.
             openGroups.lastOrNull()?.let { current ->
-                (nodesMap.keys - before).forEach { current.nodeIds.add(it) }
+                mentioned.forEach { id ->
+                    if (id in nodesMap && assignedToGroup.add(id)) current.nodeIds.add(id)
+                }
             }
         }
 

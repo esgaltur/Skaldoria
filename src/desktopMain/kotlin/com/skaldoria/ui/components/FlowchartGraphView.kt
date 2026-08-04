@@ -68,6 +68,11 @@ fun FlowchartGraphView(
             .toMap()
     }
 
+    // node -> subgraph, so the layout can reserve a cross-axis band per group.
+    val groupOf = remember(diagram) {
+        diagram.groups.flatMap { g -> g.nodeIds.map { it to g.id } }.toMap()
+    }
+
     SubcomposeLayout(modifier) { constraints ->
         val nodes = diagram.nodes
         if (nodes.isEmpty()) return@SubcomposeLayout layout(0, 0) {}
@@ -91,13 +96,15 @@ fun FlowchartGraphView(
             edges = diagram.edges,
             horizontal = diagram.isHorizontal,
             availableBounds = IntSize(constraints.maxWidth, constraints.maxHeight),
-            labelWidths = labelWidths
+            labelWidths = labelWidths,
+            groupOf = groupOf,
+            groups = diagram.groups.map { Triple(it.id, it.title, it.nodeIds) }
         )
 
         // 3. Draw subgraph frames, then edges, into one canvas behind the node cards.
         val edgePlaceable = subcompose("edges") {
             Canvas(Modifier) {
-                drawSubgraphFrames(diagram.groups, scene, theme, measurer)
+                drawSubgraphFrames(scene, theme, measurer)
                 drawFlowchartEdges(scene, theme, measurer)
             }
         }.first().measure(Constraints.fixed(scene.width, scene.height))
@@ -141,30 +148,22 @@ private const val GROUP_TITLE_BAND = 20f
  * connected to each other and the layered layout already places connected nodes together.
  */
 private fun DrawScope.drawSubgraphFrames(
-    groups: List<DiagramGroup>,
     scene: FlowchartScene,
     theme: PresentationTheme,
     measurer: TextMeasurer
 ) {
-    for (group in groups) {
-        val rects = group.nodeIds.mapNotNull { scene.nodes[it]?.rect }
-        if (rects.isEmpty()) continue
-
-        val left = rects.minOf { it.left } - GROUP_PADDING
-        val top = rects.minOf { it.top } - GROUP_PADDING - GROUP_TITLE_BAND
-        val right = rects.maxOf { it.right } + GROUP_PADDING
-        val bottom = rects.maxOf { it.bottom } + GROUP_PADDING
-
+    for (group in scene.groups) {
+        val rect = group.rect
         drawRoundRect(
             color = theme.primary.copy(alpha = 0.05f),
-            topLeft = Offset(left, top),
-            size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
+            topLeft = Offset(rect.left, rect.top),
+            size = androidx.compose.ui.geometry.Size(rect.width, rect.height),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f)
         )
         drawRoundRect(
             color = theme.primary.copy(alpha = 0.35f),
-            topLeft = Offset(left, top),
-            size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
+            topLeft = Offset(rect.left, rect.top),
+            size = androidx.compose.ui.geometry.Size(rect.width, rect.height),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f),
             style = androidx.compose.ui.graphics.drawscope.Stroke(
                 width = 1.2f,
@@ -178,7 +177,7 @@ private fun DrawScope.drawSubgraphFrames(
                 style = GROUP_TITLE_STYLE.copy(color = theme.primary),
                 maxLines = 1
             )
-            translate(left + 10f, top + 5f) { drawText(layoutResult) }
+            translate(group.titleAnchor.x, group.titleAnchor.y) { drawText(layoutResult) }
         }
     }
 }
