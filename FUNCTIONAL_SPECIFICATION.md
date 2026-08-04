@@ -159,6 +159,10 @@ $$\text{Contrast Ratio} = \frac{L_1 + 0.05}{L_2 + 0.05} \ge 4.5$$
   - `/remote`: Presenter clicker, notes, and live Q&A moderation.
   - `/audience`: In-slide poll voting and Q&A question submission.
   - `/api/parking-lot/add`: Remote submission of follow-up items.
+- **FR-REMOTE-05 (Zero-Dependency QR Code Generator & Slide Badges):**
+  - Pure Kotlin standard ISO/IEC 18004 Model 2 QR encoder (`QrCodeGenerator`) rendering directly to high-DPI Compose canvases (`QrCodeView`).
+  - Interactive QR switcher in `RemotePairingDialog` for instant Speaker Remote and Audience Portal smartphone scanning.
+  - High-contrast scannable QR badge embedded in the footer banner of live `PollSlide` presentations for frictionless audience participation.
 
 ### 5.5 In-Editor Find & Replace (FR-FIND)
 - **FR-FIND-01 (Interactive Find Bar):** Integrated non-modal find bar with keyboard shortcuts (<kbd>Ctrl+F</kbd>, <kbd>Ctrl+H</kbd>, <kbd>Esc</kbd>).

@@ -203,6 +203,15 @@ my_presentation/
 
 ---
 
+## 📚 Documentation & Guides
+
+* 📘 **[Comprehensive User Guide & Feature Manual](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/docs/USER_GUIDE.md)**: Full walkthrough of slide authoring, layouts, presenter console, wireless companions, and parking lot.
+* 📋 **[Functional Specification](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/FUNCTIONAL_SPECIFICATION.md)**: Formal requirements and system architecture.
+* 📐 **[ADR-001: Companion Server Architecture](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/docs/ADR_COMPANION_SERVER_ARCHITECTURE.md)**: Technical evaluation of native sockets vs Ktor and HTTP/1.1 vs HTTP/2.
+* 🚀 **[Changelog](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/CHANGELOG.md)**: Release history and version updates.
+
+---
+
 ## 📜 License
 
 MIT License. Designed with precision for speakers, engineers, and master storytellers worldwide.
