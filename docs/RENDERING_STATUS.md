@@ -1,8 +1,9 @@
 # Slide Rendering — verified status
 
-**Last updated:** 2026-08-04
-**Suite:** 161 tests, 0 failures
-**Evidence:** slides rendered headlessly via `ImageComposeScene`; PNGs in `build/render-all/` and `build/render-check/`.
+**Last updated:** 2026-08-04  
+**Suite:** 161 tests, 0 failures  
+**Architecture:** ✅ **ADR-002 implemented** (steps 1–6) — Geometry refactored to pure, testable `arrange()` functions with centralized `DesignTokens`  
+**Evidence:** slides rendered headless via `ImageComposeScene`; PNGs in `build/render-all/` and `build/render-check/`.
 
 Regenerate with:
 

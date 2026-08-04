@@ -22,9 +22,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skaldoria.core.diagram.FlowchartLayoutEngine
+import com.skaldoria.core.diagram.FlowchartScene
 import com.skaldoria.theme.PresentationTheme
 import kotlin.math.roundToInt
 
@@ -54,97 +56,57 @@ fun FlowchartGraphView(
     val measurer = rememberTextMeasurer()
 
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val siblingGap = with(density) { 26.dp.toPx() }
 
     // The gap between layers has to be wide enough for the widest edge label. Edges are
     // drawn behind the node cards, so a label that outgrows the gap is simply covered by
     // the next node — it looked truncated with no indication anything was wrong.
-    val laneGap = remember(diagram, measurer, density) {
-        val widest = diagram.edges
-            .mapNotNull { it.label?.takeIf { label -> label.isNotBlank() } }
-            .maxOfOrNull { measurer.measure(it, EDGE_LABEL_STYLE).size.width }
-            ?: 0
-        maxOf(with(density) { 68.dp.toPx() }, widest + with(density) { 28.dp.toPx() })
+    val labelWidths = remember(diagram, measurer, density) {
+        diagram.edges
+            .mapNotNull { edge ->
+                edge.label?.takeIf { it.isNotBlank() }?.let { it to measurer.measure(it, EDGE_LABEL_STYLE).size.width.toFloat() }
+            }
+            .toMap()
     }
 
     SubcomposeLayout(modifier) { constraints ->
         val nodes = diagram.nodes
         if (nodes.isEmpty()) return@SubcomposeLayout layout(0, 0) {}
 
-        // 1. Measure every node at its natural size — the layout needs real bounds.
+        // 1. Measure every node at its natural size.
         val nodePlaceables = subcompose("nodes") {
             nodes.forEach { node ->
                 Box(Modifier.layoutId(node.id)) { NodeCard(node = node, theme = theme) }
             }
         }.map { it.measure(Constraints()) }
 
-        val sizeById = nodes.mapIndexed { index, node -> node.id to nodePlaceables[index] }.toMap()
+        val nodeSize = nodes.mapIndexed { index, node ->
+            node.id to IntSize(nodePlaceables[index].width, nodePlaceables[index].height)
+        }.toMap()
 
-        // 2. Position from the layer model. `isHorizontal` decides which axis carries flow.
-        val horizontal = diagram.isHorizontal
-        val bounds = mutableMapOf<String, Rect>()
-        var flowCursor = 0f
+        // 2. Arrange the entire scene (geometry).
+        val scene = FlowchartScene.arrange(
+            layout = layout,
+            nodeIds = diagram.nodes.map { it.id },
+            nodeSize = nodeSize,
+            edges = diagram.edges,
+            horizontal = diagram.isHorizontal,
+            availableBounds = IntSize(constraints.maxWidth, constraints.maxHeight),
+            labelWidths = labelWidths
+        )
 
-        for (layerIndex in 0 until layout.layerCount) {
-            val members = layout.layer(layerIndex)
-            val placeables = members.mapNotNull { sizeById[it.id] }
-            if (placeables.isEmpty()) continue
-
-            val laneExtent = placeables.maxOf { if (horizontal) it.width else it.height }.toFloat()
-            val crossTotal = placeables.sumOf { if (horizontal) it.height else it.width }
-                .toFloat() + siblingGap * (placeables.size - 1)
-
-            var crossCursor = -crossTotal / 2f
-            for (placement in members) {
-                val placeable = sizeById[placement.id] ?: continue
-                val crossExtent = (if (horizontal) placeable.height else placeable.width).toFloat()
-                val flowExtent = (if (horizontal) placeable.width else placeable.height).toFloat()
-
-                // Centre each node within its lane so mixed-width nodes stay aligned.
-                val flowPos = flowCursor + (laneExtent - flowExtent) / 2f
-                bounds[placement.id] = if (horizontal) {
-                    Rect(flowPos, crossCursor, flowPos + flowExtent, crossCursor + crossExtent)
-                } else {
-                    Rect(crossCursor, flowPos, crossCursor + crossExtent, flowPos + flowExtent)
-                }
-                crossCursor += crossExtent + siblingGap
-            }
-            flowCursor += laneExtent + laneGap
-        }
-
-        // 3. Normalise to a positive-origin box.
-        val minX = bounds.values.minOf { it.left }
-        val minY = bounds.values.minOf { it.top }
-        val shifted = bounds.mapValues { (_, rect) -> rect.translate(-minX, -minY) }
-        val contentWidth = shifted.values.maxOf { it.right }.roundToInt().coerceAtLeast(1)
-        val contentHeight = shifted.values.maxOf { it.bottom }.roundToInt().coerceAtLeast(1)
-
-        // 4. Edges are subcomposed last, once node rectangles are known, and placed first
-        //    so they render behind the cards.
+        // 3. Draw edges from the scene.
         val edgePlaceable = subcompose("edges") {
             Canvas(Modifier) {
-                // Shared across edges so overlapping labels can be nudged apart: fan-in
-                // (many edges into one node) would otherwise stack every label on the
-                // target's row. drawEdge records each label rect it places here.
-                val placedLabels = mutableListOf<Rect>()
-                for (edge in diagram.edges) {
-                    val from = shifted[edge.fromId] ?: continue
-                    val to = shifted[edge.toId] ?: continue
-                    drawEdge(from, to, edge.label, edge.isDashed, horizontal, theme, measurer, placedLabels)
-                }
+                drawFlowchartEdges(scene, theme, measurer)
             }
-        }.first().measure(Constraints.fixed(contentWidth, contentHeight))
+        }.first().measure(Constraints.fixed(scene.width, scene.height))
 
-        // 5. Report the graph's intrinsic size and place everything unscaled.
-        //
-        // Fitting is the caller's job (MermaidDiagramCanvas wraps this in FitToCanvas).
-        // Scaling the edge canvas and the node cards as separate placeables desynced them —
-        // one transform over the whole subtree is the only way they stay aligned.
-        layout(contentWidth, contentHeight) {
+        // 4. Place everything unscaled.
+        layout(scene.width, scene.height) {
             edgePlaceable.place(0, 0)
             nodes.forEachIndexed { index, node ->
-                val rect = shifted[node.id] ?: return@forEachIndexed
-                nodePlaceables[index].place(rect.left.roundToInt(), rect.top.roundToInt())
+                val placement = scene.nodes[node.id] ?: return@forEachIndexed
+                nodePlaceables[index].place(placement.rect.left.roundToInt(), placement.rect.top.roundToInt())
             }
         }
     }
@@ -158,124 +120,85 @@ private val EDGE_LABEL_STYLE = TextStyle(
 )
 
 /**
- * Draws one edge between two node rectangles, entering and leaving on the faces that face
- * each other so the arrowhead lands on the border rather than under the card.
+ * Draws all edges from a flowchart scene.
+ *
+ * Extracted to reduce cognitive complexity of the main composable.
  */
-private fun DrawScope.drawEdge(
-    from: Rect,
-    to: Rect,
-    label: String?,
-    isDashed: Boolean,
-    horizontal: Boolean,
+private fun DrawScope.drawFlowchartEdges(
+    scene: FlowchartScene,
     theme: PresentationTheme,
-    measurer: TextMeasurer,
-    placedLabels: MutableList<Rect>
+    measurer: TextMeasurer
 ) {
-    val forward = if (horizontal) to.center.x >= from.center.x else to.center.y >= from.center.y
-
-    val start: Offset
-    val end: Offset
-    if (horizontal) {
-        start = Offset(if (forward) from.right else from.left, from.center.y)
-        end = Offset(if (forward) to.left else to.right, to.center.y)
-    } else {
-        start = Offset(from.center.x, if (forward) from.bottom else from.top)
-        end = Offset(to.center.x, if (forward) to.top else to.bottom)
-    }
-
-    val effect = if (isDashed) PathEffect.dashPathEffect(floatArrayOf(8f, 6f)) else null
-    val color = theme.primary
-
-    // An orthogonal elbow reads far more clearly than a diagonal once a layer branches.
-    val path = Path().apply {
-        moveTo(start.x, start.y)
-        if (horizontal) {
-            val midX = (start.x + end.x) / 2f
-            lineTo(midX, start.y)
-            lineTo(midX, end.y)
-        } else {
-            val midY = (start.y + end.y) / 2f
-            lineTo(start.x, midY)
-            lineTo(end.x, midY)
-        }
-        lineTo(end.x, end.y)
-    }
-    drawPath(path, color, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f, cap = StrokeCap.Round, pathEffect = effect))
-
-    drawArrowHead(end, horizontal, forward, color)
-
-    if (!label.isNullOrBlank()) {
-        val layoutResult = measurer.measure(
-            text = label,
-            style = EDGE_LABEL_STYLE.copy(color = theme.primary),
-            maxLines = 1
-        )
-        // Geometric midpoint of the edge. Because it uses BOTH endpoints, it separates
-        // fan-out (many edges share a source) and fan-in (many edges share a target)
-        // alike — placing at the source row stacks fan-out, and at the target row stacks
-        // fan-in, so neither single-endpoint choice works for a graph that has both.
-        // For horizontal flow the midpoint lands in the inter-layer gap (sized to the
-        // widest label); for vertical flow the label is nudged right of the vertical line.
-        val mid = if (horizontal) {
-            Offset((start.x + end.x) / 2f, (start.y + end.y) / 2f)
-        } else {
-            Offset(end.x + layoutResult.size.width / 2f + 6f, (start.y + end.y) / 2f)
-        }
-        val boxWidth = layoutResult.size.width + 8f
-        val boxHeight = layoutResult.size.height + 4f
-
-        // Collision avoidance: when the midpoints of two edges land close together (e.g.
-        // a fan-out into a tightly stacked layer, where the per-edge midpoints barely
-        // differ), nudge this label along the cross axis until it clears every label
-        // already placed. Without this the boxes overlap into an unreadable smear.
-        var center = mid
-        val step = boxHeight + 2f
-        var attempt = 0
-        while (attempt < 12) {
-            val candidate = Rect(
-                left = center.x - boxWidth / 2f,
-                top = center.y - boxHeight / 2f,
-                right = center.x + boxWidth / 2f,
-                bottom = center.y + boxHeight / 2f
-            )
-            if (placedLabels.none { it.overlaps(candidate) }) {
-                placedLabels.add(candidate)
-                break
-            }
-            // Alternate outward from the midpoint: +1, -1, +2, -2, ... steps.
-            attempt++
-            val magnitude = ((attempt + 1) / 2) * step
-            val sign = if (attempt % 2 == 1) 1f else -1f
-            center = Offset(mid.x, mid.y + sign * magnitude)
-        }
-
-        drawRect(
-            color = theme.surfaceVariant,
-            topLeft = Offset(center.x - boxWidth / 2f, center.y - boxHeight / 2f),
-            size = androidx.compose.ui.geometry.Size(boxWidth, boxHeight)
-        )
-        translate(
-            left = center.x - layoutResult.size.width / 2f,
-            top = center.y - layoutResult.size.height / 2f
-        ) { drawText(layoutResult) }
+    for (edge in scene.edges) {
+        drawFlowchartEdge(edge, theme, measurer)
     }
 }
 
-private fun DrawScope.drawArrowHead(tip: Offset, horizontal: Boolean, forward: Boolean, color: Color) {
-    val length = 10f
-    val spread = 5.5f
-    val direction = if (forward) 1f else -1f
+/**
+ * Draws a single edge with its path, arrowhead, and label.
+ */
+private fun DrawScope.drawFlowchartEdge(
+    edge: FlowchartScene.EdgePlacement,
+    theme: PresentationTheme,
+    measurer: TextMeasurer
+) {
+    drawEdgePath(edge, theme)
+    drawEdgeArrowHead(edge, theme)
+    drawEdgeLabel(edge, theme, measurer)
+}
+
+/**
+ * Draws the path for an edge with optional dashing.
+ */
+private fun DrawScope.drawEdgePath(edge: FlowchartScene.EdgePlacement, theme: PresentationTheme) {
     val path = Path().apply {
-        moveTo(tip.x, tip.y)
-        if (horizontal) {
-            lineTo(tip.x - direction * length, tip.y - spread)
-            lineTo(tip.x - direction * length, tip.y + spread)
+        moveTo(edge.path.startPoint.x, edge.path.startPoint.y)
+        if (edge.path.isHorizontal) {
+            val midX = (edge.path.startPoint.x + edge.path.endPoint.x) / 2f
+            lineTo(midX, edge.path.startPoint.y)
+            lineTo(midX, edge.path.endPoint.y)
         } else {
-            lineTo(tip.x - spread, tip.y - direction * length)
-            lineTo(tip.x + spread, tip.y - direction * length)
+            val midY = (edge.path.startPoint.y + edge.path.endPoint.y) / 2f
+            lineTo(edge.path.startPoint.x, midY)
+            lineTo(edge.path.endPoint.x, midY)
         }
-        close()
+        lineTo(edge.path.endPoint.x, edge.path.endPoint.y)
     }
-    drawPath(path, color)
+    val effect = if (edge.isDashed) PathEffect.dashPathEffect(floatArrayOf(8f, 6f)) else null
+    drawPath(path, theme.primary, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f, cap = StrokeCap.Round, pathEffect = effect))
+}
+
+/**
+ * Draws the arrowhead at the end of an edge.
+ */
+private fun DrawScope.drawEdgeArrowHead(edge: FlowchartScene.EdgePlacement, theme: PresentationTheme) {
+    val isForward = if (edge.path.isHorizontal) {
+        edge.path.endPoint.x >= edge.path.startPoint.x
+    } else {
+        edge.path.endPoint.y >= edge.path.startPoint.y
+    }
+    drawArrowHead(edge.path.endPoint, if (isForward) 1f else -1f, edge.path.isHorizontal, theme.primary)
+}
+
+/**
+ * Draws the label for an edge if present.
+ */
+private fun DrawScope.drawEdgeLabel(edge: FlowchartScene.EdgePlacement, theme: PresentationTheme, measurer: TextMeasurer) {
+    if (edge.labelBox == null) return
+
+    val layoutResult = measurer.measure(
+        text = edge.label ?: "",
+        style = EDGE_LABEL_STYLE.copy(color = theme.primary),
+        maxLines = 1
+    )
+    val labelCenter = edge.labelBox.center
+    drawText(
+        textLayoutResult = layoutResult,
+        topLeft = Offset(
+            labelCenter.x - layoutResult.size.width / 2f,
+            labelCenter.y - layoutResult.size.height / 2f
+        ),
+        color = theme.primary
+    )
 }
 
