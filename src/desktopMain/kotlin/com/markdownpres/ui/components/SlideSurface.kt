@@ -40,26 +40,38 @@ fun SlideSurface(
     showFooter: Boolean = true
 ) {
     BoxWithConstraints(
-        modifier = modifier
-            .aspectRatio(16f / 9f)
-            .shadow(16.dp, RoundedCornerShape(16.dp), spotColor = theme.primary.copy(alpha = 0.15f))
-            .clip(RoundedCornerShape(16.dp))
-            .background(theme.background)
-            .border(1.dp, theme.cardBorder, RoundedCornerShape(16.dp))
+        modifier = modifier,
+        contentAlignment = Alignment.Center
     ) {
-        // Scale the fixed design canvas to fill whatever real size we were given.
-        val scale = min(maxWidth / DESIGN_WIDTH, maxHeight / DESIGN_HEIGHT)
+        // Fit the largest 16:9 rectangle inside BOTH the available width and
+        // height (letterbox). Sizing from width alone lets a short/wide window
+        // compute a height taller than the space and overflow over the toolbar.
+        val availableRatio = maxWidth / maxHeight
+        val targetRatio = 16f / 9f
+        val surfaceWidth = if (availableRatio >= targetRatio) maxHeight * targetRatio else maxWidth
+        val surfaceHeight = if (availableRatio >= targetRatio) maxHeight else maxWidth * (9f / 16f)
+
+        // Uniform scale of the fixed design canvas to the fitted surface size.
+        val scale = min(surfaceWidth / DESIGN_WIDTH, surfaceHeight / DESIGN_HEIGHT)
 
         Box(
             modifier = Modifier
-                .align(Alignment.Center)
-                .requiredSize(DESIGN_WIDTH, DESIGN_HEIGHT)
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    transformOrigin = TransformOrigin.Center
-                }
+                .size(surfaceWidth, surfaceHeight)
+                .shadow(16.dp, RoundedCornerShape(16.dp), spotColor = theme.primary.copy(alpha = 0.15f))
+                .clip(RoundedCornerShape(16.dp))
+                .background(theme.background)
+                .border(1.dp, theme.cardBorder, RoundedCornerShape(16.dp))
         ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .requiredSize(DESIGN_WIDTH, DESIGN_HEIGHT)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        transformOrigin = TransformOrigin.Center
+                    }
+            ) {
             // Render Slide Content by Auto-Detected Layout
             when (slide.layoutType) {
                 SlideLayoutType.HERO_TITLE,
@@ -100,6 +112,7 @@ fun SlideSurface(
                         fontFamily = FontFamily.Monospace
                     )
                 }
+            }
             }
         }
     }
