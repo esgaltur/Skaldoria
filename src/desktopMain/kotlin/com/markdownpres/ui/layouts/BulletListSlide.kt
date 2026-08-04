@@ -50,10 +50,13 @@ fun BulletListSlide(
 
         Spacer(Modifier.height(24.dp))
 
-        // Content Area
+        // Content Area — fills remaining height and centers vertically so
+        // bullets use the whole slide instead of clumping under the title.
         Column(
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.fillMaxWidth()
+            verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
         ) {
             slide.elements.forEach { elem ->
                 when (elem) {
