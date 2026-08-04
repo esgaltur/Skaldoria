@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.sp
 import com.markdownpres.core.models.Slide
 import com.markdownpres.core.models.SlideElement
 import com.markdownpres.theme.PresentationTheme
+import com.markdownpres.ui.components.inlineMarkdown
 
 @Composable
 fun BulletListSlide(
@@ -49,10 +50,13 @@ fun BulletListSlide(
 
         Spacer(Modifier.height(24.dp))
 
-        // Content Area
+        // Content Area — fills remaining height and centers vertically so
+        // bullets use the whole slide instead of clumping under the title.
         Column(
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.fillMaxWidth()
+            verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
         ) {
             slide.elements.forEach { elem ->
                 when (elem) {
@@ -86,7 +90,7 @@ fun BulletListSlide(
                                 Spacer(Modifier.width(16.dp))
 
                                 Text(
-                                    text = item,
+                                    text = inlineMarkdown(item, theme),
                                     color = theme.textPrimary,
                                     fontSize = 16.sp,
                                     lineHeight = 22.sp,
@@ -98,7 +102,7 @@ fun BulletListSlide(
 
                     is SlideElement.Text -> {
                         Text(
-                            text = elem.content,
+                            text = inlineMarkdown(elem.content, theme),
                             color = theme.textSecondary,
                             fontSize = 16.sp,
                             lineHeight = 24.sp,

@@ -1,8 +1,8 @@
 # Functional Specification: Markdown Presentation Processor
 
-**Document Version:** 1.0.0  
-**Status:** Approved / Ready for Implementation  
-**Target Audience:** Engineering, Product, UI/UX, QA  
+**Document Version:** 1.0.0
+**Status:** Approved / Ready for Implementation
+**Target Audience:** Engineering, Product, UI/UX, QA
 
 ---
 
@@ -161,7 +161,7 @@ Items can be revealed progressively on click or forward arrow:
 2. **Mathematical Notation (LaTeX / KaTeX):**
    ```markdown
    Euler's identity: $\mathrm{e}^{i\pi} + 1 = 0$
-   
+
    $$\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}$$
    ```
 3. **Diagrams (Mermaid):**
@@ -179,13 +179,13 @@ Items can be revealed progressively on click or forward arrow:
 ## 4. Theming & Design System Specification
 
 ### 4.1 Built-in Theme Presets
-| Theme ID | Primary Palette | Background | Typography | Ideal Use-Case |
-| :--- | :--- | :--- | :--- | :--- |
+| Theme ID | Primary Palette | Background | Typography | Ideal Use-Case                |
+| :--- | :--- | :--- | :--- |:------------------------------|
 | `nord-dark` | Ice Blue (`#88C0D0`), White (`#ECEFF4`) | Polar Night (`#2E3440`) | `Inter`, `Fira Code` | Tech talks, developer meetups |
-| `sleek-light` | Indigo (`#4F46E5`), Slate (`#334155`) | Pure White / Slate 50 (`#F8FAFC`) | `Outfit`, `JetBrains Mono` | Product launches, pitches |
-| `corporate` | Navy (`#1E3A8A`), Gold (`#D97706`) | Off-white (`#F1F5F9`) | `Roboto`, `Source Code Pro` | Executive briefs, board meetings |
-| `cyberpunk` | Neon Pink (`#FF007F`), Cyan (`#00F0FF`) | Deep Black (`#0A0A0F`) | `Space Grotesk`, `Share Tech Mono`| Keynotes, high-impact demos |
-| `minimalist` | Monochrome (`#18181B`, `#71717A`) | Cream / Light Gray (`#FAFAFA`) | `Newsreader`, `IBM Plex Mono` | Academic, design philosophy |
+| `sleek-light` | Indigo (`#4F46E5`), Slate (`#334155`) | Pure White / Slate 50 (`#F8FAFC`) | `Outfit`, `JetBrains Mono` | Product launches, pitches     |
+| `corporate` | Navy (`#1E3A8A`), Gold (`#D97706`) | Off-white (`#F1F5F9`) | `Roboto`, `Source Code Pro` | Team briefs, Team meetings    |
+| `cyberpunk` | Neon Pink (`#FF007F`), Cyan (`#00F0FF`) | Deep Black (`#0A0A0F`) | `Space Grotesk`, `Share Tech Mono`| Keynotes, high-impact demos   |
+| `minimalist` | Monochrome (`#18181B`, `#71717A`) | Cream / Light Gray (`#FAFAFA`) | `Newsreader`, `IBM Plex Mono` | Academic, design philosophy   |
 
 ### 4.2 CSS Design Tokens & Variable Overrides
 Themes are powered by CSS Custom Properties, allowing instant customization via frontmatter or custom CSS files:

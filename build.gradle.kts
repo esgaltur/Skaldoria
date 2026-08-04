@@ -50,6 +50,14 @@ compose.desktop {
             packageVersion = "1.0.0"
             description = "Skaldoria — Native 120 FPS Markdown Presentation Studio"
             vendor = "Skaldoria"
+
+            val iconsDir = project.file("src/desktopMain/resources/icons")
+            windows {
+                iconFile.set(iconsDir.resolve("app.ico"))
+            }
+            linux {
+                iconFile.set(iconsDir.resolve("app.png"))
+            }
         }
     }
 }
