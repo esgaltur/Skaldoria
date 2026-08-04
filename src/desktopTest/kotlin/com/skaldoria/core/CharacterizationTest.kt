@@ -11,16 +11,14 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * PHASE 0 SAFETY NET — see docs/REMEDIATION_PLAN.md.
+ * Characterization tests for the bundled decks — see docs/QUALITY_BASELINE.md.
  *
- * These tests pin down what the app does *today*, so that the refactors in later
- * phases are visible instead of silent. They are deliberately broad rather than
- * deep: slide counts, titles, layout types, and document structure.
+ * These pin parser output so that a change to slide splitting or layout classification is
+ * visible rather than silent. They are deliberately broad rather than deep: slide counts,
+ * titles, layout types, and document structure.
  *
- * IMPORTANT — some assertions below encode KNOWN-BUGGY behaviour on purpose.
- * They are tagged with the plan ID that will change them. When you fix that item,
- * you are expected to UPDATE the assertion, not preserve it. Any assertion NOT
- * tagged is intended behaviour and breaking it is a real regression.
+ * Breaking one is a regression unless the change was intended, in which case update the
+ * expectation deliberately and say why in the commit.
  */
 class CharacterizationTest {
 

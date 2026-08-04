@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.0] - 2026-08-05
 
-A correctness and hardening release. A full audit produced a defect register
-([`docs/REMEDIATION_PLAN.md`](./docs/REMEDIATION_PLAN.md)); every tracked item is now closed.
-Test suite: **70 to 204 tests**.
+A correctness and hardening release, following a systematic pre-release review of the codebase.
+The invariants established are recorded in [`docs/QUALITY_BASELINE.md`](./docs/QUALITY_BASELINE.md).
+Test suite: **70 to 221 tests**.
 
 ### Security - companion server
 - **Stored XSS fixed.** Audience-submitted text reached the presenter remote and every other
