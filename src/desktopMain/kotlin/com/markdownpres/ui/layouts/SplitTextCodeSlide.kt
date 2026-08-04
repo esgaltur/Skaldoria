@@ -3,6 +3,7 @@ package com.markdownpres.ui.layouts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -51,10 +52,12 @@ fun SplitTextCodeSlide(
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // Left Column: Text & Bullets
+            // Left Column: Text & Bullets (fills height, vertically centered)
             Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically)
             ) {
                 slide.elements.filter { it !is SlideElement.CodeBlock }.forEach { elem ->
                     when (elem) {
@@ -62,8 +65,8 @@ fun SplitTextCodeSlide(
                             Text(
                                 text = inlineMarkdown(elem.content, theme),
                                 color = theme.textSecondary,
-                                fontSize = 15.sp,
-                                lineHeight = 22.sp
+                                fontSize = 17.sp,
+                                lineHeight = 25.sp
                             )
                         }
 
@@ -74,14 +77,14 @@ fun SplitTextCodeSlide(
                                         text = "•",
                                         color = theme.primary,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp
+                                        fontSize = 18.sp
                                     )
                                     Spacer(Modifier.width(10.dp))
                                     Text(
                                         text = inlineMarkdown(item, theme),
                                         color = theme.textPrimary,
-                                        fontSize = 14.sp,
-                                        lineHeight = 20.sp
+                                        fontSize = 16.sp,
+                                        lineHeight = 23.sp
                                     )
                                 }
                             }
