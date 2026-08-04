@@ -58,9 +58,53 @@ object DeckProjectManager {
     }
 
     /**
-     * Loads a project from a manifest file (.mdpres, .json, or .md index).
+     * Loads [file] as a deck manifest, or returns null when it is not one.
+     *
+     * This is a **validation**, not a guess. Classifying by file extension is unsafe: it
+     * would make any `.json` a manifest, and [loadProjectFromManifest] falls back to
+     * adopting every `.md` beside it — so opening an unrelated `package.json` would build a
+     * deck out of whatever markdown happened to share the folder.
+     *
+     * A file is a manifest only if it **explicitly declares** slides — a `"slides": [ … ]`
+     * array, or `<!-- include: … -->` directives — and at least one of those entries
+     * resolves to a real file inside the project root (see [resolveWithinRoot]). No entries,
+     * or entries that all escape the root, means "not a project".
      */
-    fun loadProjectFromManifest(file: File): DeckProject {
+    fun readManifestProject(file: File): DeckProject? {
+        if (!file.isFile) return null
+
+        val project = runCatching { loadProjectFromManifest(file, allowDirectoryScan = false) }
+            .getOrNull() ?: return null
+
+        return project.takeIf { it.slideFiles.isNotEmpty() }
+    }
+
+    /**
+     * True when [dir] is a deck project directory: it carries a manifest, or a `slides/`
+     * folder holding markdown. Selecting a folder is an explicit act, so a plain folder of
+     * markdown is *not* silently adopted — that is what [loadProjectFromDirectory] is for
+     * once the caller has decided.
+     */
+    fun isProjectDirectory(dir: File): Boolean {
+        if (!dir.isDirectory) return false
+        if (File(dir, "deck.mdpres").isFile || File(dir, "deck.json").isFile) return true
+
+        val slidesDir = File(dir, "slides")
+        return slidesDir.isDirectory &&
+            slidesDir.listFiles { f -> f.isFile && f.extension.equals("md", ignoreCase = true) }
+                ?.isNotEmpty() == true
+    }
+
+    /**
+     * Loads a project from a manifest file (.mdpres, .json, or .md index).
+     *
+     * @param allowDirectoryScan when the manifest declares no usable slides, adopt the
+     *   sibling `.md` files instead. Appropriate when the user picked a *directory* and the
+     *   manifest is incidental; never when validating an arbitrary chosen file, since it
+     *   turns any file into a project. See [readManifestProject].
+     */
+    @JvmOverloads
+    fun loadProjectFromManifest(file: File, allowDirectoryScan: Boolean = true): DeckProject {
         val rootDir = file.parentFile ?: File(".")
         val text = file.readText()
         val extension = file.extension.lowercase()
@@ -120,7 +164,7 @@ object DeckProjectManager {
         }
 
         // If no includes were found, treat directory's md files as slides
-        if (slideEntries.isEmpty()) {
+        if (slideEntries.isEmpty() && allowDirectoryScan) {
             val mdFiles = rootDir.listFiles { f -> f.isFile && f.extension.equals("md", ignoreCase = true) && f.name != file.name }
                 ?.sortedWith(compareBy(naturalOrder) { it.name }) ?: emptyList()
 

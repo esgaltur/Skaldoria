@@ -447,8 +447,56 @@ class PresentationState(
         }
     }
 
-    fun openDeckProject(projectDir: java.io.File) {
-        val proj = com.skaldoria.project.DeckProjectManager.loadProjectFromDirectory(projectDir)
+    /**
+     * Opens whatever the user picked — a deck project or a single markdown file.
+     *
+     * The file dialog has always offered `.mdpres` and `.json`, but every selection was
+     * routed through [loadMarkdownFromFile], so choosing a manifest loaded the JSON itself
+     * as the deck. [openDeckProject] existed and was reachable from nowhere.
+     *
+     * Falls back to opening the selection as plain markdown when it does not resolve to a
+     * project, so a malformed manifest still shows something rather than failing silently.
+     */
+    fun openPath(target: java.io.File) {
+        if (!target.exists()) return
+
+        // Classification is by validation, never by file extension. A name-based guess would
+        // make every `.json` a manifest, and the manifest loader adopts sibling `.md` files
+        // when a manifest declares nothing — so opening an unrelated JSON file would build a
+        // deck from whatever markdown shared its folder.
+        val manager = com.skaldoria.project.DeckProjectManager
+
+        if (target.isDirectory) {
+            // A folder only opens as a project when it actually carries one; there is no
+            // markdown file to fall back to, so an ordinary folder simply does nothing.
+            if (manager.isProjectDirectory(target)) openDeckProject(target)
+            return
+        }
+
+        // A file is a project only if it parses as a manifest *and* resolves to real slides
+        // inside the project root. Anything else — including a malformed or unrelated
+        // manifest — opens as plain markdown, which is the honest fallback.
+        val project = manager.readManifestProject(target)
+        if (project != null) {
+            adoptProject(project)
+            return
+        }
+
+        loadMarkdownFromFile(target.absolutePath, target.readText())
+    }
+
+    /** Loads a deck project from either a project directory or a manifest file. */
+    fun openDeckProject(target: java.io.File) {
+        val proj = if (target.isDirectory) {
+            com.skaldoria.project.DeckProjectManager.loadProjectFromDirectory(target)
+        } else {
+            com.skaldoria.project.DeckProjectManager.loadProjectFromManifest(target)
+        }
+        adoptProject(proj)
+    }
+
+    /** Makes [proj] the active deck. Shared by every project entry point. */
+    private fun adoptProject(proj: DeckProject) {
         activeProject = proj
         currentFilePath = proj.rootDir
         val combined = proj.compileCombinedMarkdown()
@@ -456,6 +504,7 @@ class PresentationState(
         slides = MarkdownSlideParser.parse(combined)
         currentSlideIndex = 0
         showWelcome = false
+        reconcileFollowUpQuestions(combined)
         ConfigManager.addRecentProject(proj.rootDir, proj.name, slides.size)
     }
 
@@ -648,8 +697,10 @@ class PresentationState(
     }
 
     fun openFile() {
-        com.skaldoria.export.FileManager.openMarkdownFile { path, content ->
-            loadMarkdownFromFile(path, content)
+        // Routes through openPath so a manifest opens as a project rather than as its own
+        // JSON text — the dialog has always accepted `.mdpres`, the handler never did.
+        com.skaldoria.export.FileManager.openFileOrProject { file ->
+            openPath(file)
         }
     }
 
