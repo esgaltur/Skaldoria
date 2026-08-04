@@ -36,7 +36,9 @@ fun SlideSurface(
     theme: PresentationTheme,
     totalSlides: Int,
     modifier: Modifier = Modifier,
-    showFooter: Boolean = true
+    showFooter: Boolean = true,
+    votes: Map<Int, Int> = emptyMap(),
+    onVote: ((Int) -> Unit)? = null
 ) {
     BoxWithConstraints(
         modifier = modifier,
@@ -89,6 +91,7 @@ fun SlideSurface(
                     SlideLayoutType.DATA_TABLE -> DataTableSlide(slide, theme)
                     SlideLayoutType.DIAGRAM -> DiagramSlide(slide, theme)
                     SlideLayoutType.MATH_FORMULA -> MathFormulaSlide(slide, theme)
+                    SlideLayoutType.POLL -> PollSlide(slide, theme, votes = votes, onVote = onVote)
                 }
 
                 // Slide Footer (Number & Progress)

@@ -135,6 +135,13 @@ object FileManager {
                     is SlideElement.MathFormula -> {
                         contentBuilder.append("<div class='math-block'>$$${escapeHtml(elem.formula)}$$</div>")
                     }
+                    is SlideElement.Poll -> {
+                        contentBuilder.append("<div class='poll-container'><h4>📊 ${escapeHtml(elem.question.ifBlank { "Live Poll" })}</h4><div class='poll-options'>")
+                        elem.options.forEachIndexed { optIdx, opt ->
+                            contentBuilder.append("<div class='poll-opt'><span class='opt-badge'>${('A' + optIdx)}</span><span>${escapeHtml(opt)}</span></div>")
+                        }
+                        contentBuilder.append("</div></div>")
+                    }
                 }
             }
             contentBuilder.append("</div>")

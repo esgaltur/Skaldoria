@@ -285,6 +285,7 @@ object DeckExporter {
                     is SlideElement.Image -> "<img src='${el.url}' alt='${escapeHtml(el.altText)}' />"
                     is SlideElement.MermaidDiagram -> "<div class='mermaid'>${escapeHtml(el.code)}</div>"
                     is SlideElement.MathFormula -> "<div class='math-block'>$$${escapeHtml(el.formula)}$$</div>"
+                    is SlideElement.Poll -> "<div class='poll-container'><h4>📊 ${escapeHtml(el.question.ifBlank { "Live Poll" })}</h4><div class='poll-options'>" + el.options.mapIndexed { idx, opt -> "<div class='poll-opt'><span class='opt-badge'>${('A' + idx)}</span><span>${escapeHtml(opt)}</span></div>" }.joinToString("") + "</div></div>"
                 }
             }
 

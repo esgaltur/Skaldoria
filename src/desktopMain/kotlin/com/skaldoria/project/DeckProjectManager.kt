@@ -22,7 +22,8 @@ object DeckProjectManager {
 
         if (extension == "json" || extension == "mdpres") {
             // Simple robust line-based / key-value extraction without requiring external heavy json dependencies
-            val slidePathRegex = Regex("\"slides\"\\s*:\\s*\\[([^\\]]+)\\]", RegexOption.DOT_MATCHES_ALL)
+            val slidePathRegex = Regex("\"slides\"\\s*:\\s*\\[([^" +
+                "\\]]+)\\]", RegexOption.DOT_MATCHES_ALL)
             val slideMatch = slidePathRegex.find(text)
 
             if (slideMatch != null) {
@@ -176,10 +177,10 @@ object DeckProjectManager {
 
         val defaultContent = """
             ## $title
-            
+
             - Key insight or bullet point
             - Another progressive point
-            
+
             <!-- note: Speaker notes for $title -->
         """.trimIndent()
 

@@ -6,10 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,7 +27,7 @@ import java.awt.datatransfer.StringSelection
 
 /**
  * Interactive pairing modal for connecting smartphones and tablets
- * as wireless slide clickers and speaker note monitors.
+ * as wireless slide clickers, speaker notes monitors, and audience live interaction.
  */
 @Composable
 fun RemotePairingDialog(
@@ -38,18 +35,21 @@ fun RemotePairingDialog(
     onDismiss: () -> Unit
 ) {
     val theme = state.currentTheme
-    var serverUrl by remember {
-        mutableStateOf(
-            if (state.isRemoteServerRunning) state.remoteServerUrl ?: "http://${RemoteCompanionServer.getLocalIpAddress()}:8888"
-            else "http://${RemoteCompanionServer.getLocalIpAddress()}:8888"
-        )
+    val baseUrl = if (state.isRemoteServerRunning) {
+        state.remoteServerUrl ?: "http://${RemoteCompanionServer.getLocalIpAddress()}:${RemoteCompanionServer.currentPort}"
+    } else {
+        "http://${RemoteCompanionServer.getLocalIpAddress()}:${RemoteCompanionServer.currentPort}"
     }
-    var copied by remember { mutableStateOf(false) }
+    val presenterUrl = "$baseUrl/remote"
+    val audienceUrl = "$baseUrl/audience"
+
+    var copiedPresenter by remember { mutableStateOf(false) }
+    var copiedAudience by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
-                .width(460.dp)
+                .width(500.dp)
                 .shadow(24.dp, RoundedCornerShape(20.dp), spotColor = theme.primary.copy(alpha = 0.25f))
                 .clip(RoundedCornerShape(20.dp))
                 .background(theme.surface)
@@ -83,13 +83,13 @@ fun RemotePairingDialog(
                         }
                         Column {
                             Text(
-                                text = "Mobile Remote Control",
+                                text = "Wireless Remote & Audience Portal",
                                 color = theme.textPrimary,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Wireless phone clicker & notes",
+                                text = "Live clicker, notes & interactive audience",
                                 color = theme.textMuted,
                                 fontSize = 12.sp
                             )
@@ -100,7 +100,7 @@ fun RemotePairingDialog(
                     }
                 }
 
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(18.dp))
 
                 // Server Status Card
                 Card(
@@ -134,12 +134,7 @@ fun RemotePairingDialog(
                             }
 
                             Button(
-                                onClick = {
-                                    state.toggleRemoteServer()
-                                    if (state.isRemoteServerRunning) {
-                                        serverUrl = state.remoteServerUrl ?: "http://${RemoteCompanionServer.getLocalIpAddress()}:8888"
-                                    }
-                                },
+                                onClick = { state.toggleRemoteServer() },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (state.isRemoteServerRunning) Color(0xFFDC2626) else theme.primary
                                 ),
@@ -154,44 +149,97 @@ fun RemotePairingDialog(
                             }
                         }
 
+                        if (state.remoteServerError != null) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = "⚠️ Server Notice: ${state.remoteServerError}",
+                                color = Color(0xFFF87171),
+                                fontSize = 11.sp
+                            )
+                        }
+
                         if (state.isRemoteServerRunning) {
                             Spacer(Modifier.height(14.dp))
-                            Text(
-                                text = "Open this URL on your phone's browser (same Wi-Fi):",
-                                color = theme.textMuted,
-                                fontSize = 12.sp
-                            )
-                            Spacer(Modifier.height(6.dp))
 
+                            // 1. Presenter Clicker Link
+                            Text(
+                                text = "📱 Speaker Clicker & Notes URL:",
+                                color = theme.textSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(Modifier.height(4.dp))
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(theme.surface)
                                     .border(1.dp, theme.cardBorder, RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = serverUrl,
+                                    text = presenterUrl,
                                     color = theme.primary,
-                                    fontSize = 14.sp,
+                                    fontSize = 13.sp,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold
                                 )
-
                                 IconButton(
                                     onClick = {
-                                        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(serverUrl), null)
-                                        copied = true
+                                        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(presenterUrl), null)
+                                        copiedPresenter = true
                                     },
                                     modifier = Modifier.size(24.dp)
                                 ) {
                                     Icon(
                                         Icons.Default.ContentCopy,
                                         "Copy",
-                                        tint = if (copied) theme.success else theme.textMuted,
+                                        tint = if (copiedPresenter) theme.success else theme.textMuted,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(Modifier.height(12.dp))
+
+                            // 2. Audience Interaction Link
+                            Text(
+                                text = "👥 Audience Live Polls & Q&A URL:",
+                                color = theme.accent,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(theme.surface)
+                                    .border(1.dp, theme.cardBorder, RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = audienceUrl,
+                                    color = theme.accent,
+                                    fontSize = 13.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                IconButton(
+                                    onClick = {
+                                        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(audienceUrl), null)
+                                        copiedAudience = true
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.ContentCopy,
+                                        "Copy",
+                                        tint = if (copiedAudience) theme.success else theme.textMuted,
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -200,7 +248,7 @@ fun RemotePairingDialog(
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(14.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -209,7 +257,7 @@ fun RemotePairingDialog(
                 ) {
                     Icon(Icons.Default.Wifi, null, tint = theme.accent, modifier = Modifier.size(16.dp))
                     Text(
-                        text = "Both devices must be connected to the same local Wi-Fi network.",
+                        text = "Devices must be connected to the same local network.",
                         color = theme.textMuted,
                         fontSize = 11.sp
                     )

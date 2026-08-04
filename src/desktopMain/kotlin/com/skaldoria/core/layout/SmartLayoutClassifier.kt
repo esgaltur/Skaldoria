@@ -31,12 +31,14 @@ object SmartLayoutClassifier {
                 is SlideElement.CodeBlock -> SlideLayoutType.FULL_CODE
                 is SlideElement.MermaidDiagram -> SlideLayoutType.DIAGRAM
                 is SlideElement.MathFormula -> SlideLayoutType.MATH_FORMULA
+                is SlideElement.Poll -> SlideLayoutType.POLL
                 is SlideElement.Table -> SlideLayoutType.DATA_TABLE
                 is SlideElement.BulletList -> SlideLayoutType.BULLET_LIST
                 else -> SlideLayoutType.BULLET_LIST
             }
         }
 
+        val hasPoll = elements.any { it is SlideElement.Poll }
         val hasDiagram = elements.any { it is SlideElement.MermaidDiagram }
         val hasMath = elements.any { it is SlideElement.MathFormula }
         val hasTable = elements.any { it is SlideElement.Table }
@@ -46,6 +48,7 @@ object SmartLayoutClassifier {
         val hasQuote = elements.any { it is SlideElement.Quote }
 
         return when {
+            hasPoll -> SlideLayoutType.POLL
             hasDiagram -> SlideLayoutType.DIAGRAM
             hasMath && !hasCode && !hasImage -> SlideLayoutType.MATH_FORMULA
             hasTable -> SlideLayoutType.DATA_TABLE

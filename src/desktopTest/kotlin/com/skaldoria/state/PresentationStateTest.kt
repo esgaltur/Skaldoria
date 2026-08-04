@@ -99,7 +99,7 @@ class PresentationStateTest {
     @Test
     fun testThemeAssignment() {
         val state = PresentationState()
-        assertEquals("Nord Dark", state.currentTheme.name)
+        assertEquals("Skaldoria Dark", state.currentTheme.name)
 
         state.currentTheme = BuiltinThemes.CyberMidnight
         assertEquals("Cyber Midnight", state.currentTheme.name)
@@ -169,5 +169,32 @@ class PresentationStateTest {
         // Move to slide 4 (index 3) -> ideal elapsed = 900s
         state.goToSlide(3)
         assertEquals(900L, state.idealElapsedSecondsAtCurrentSlide)
+    }
+
+    @Test
+    fun testCorporateThemeUnlocking() {
+        val state = PresentationState()
+        assertFalse(state.isCorporateThemeUnlocked)
+        assertEquals(4, state.availableThemes.size)
+        assertFalse(state.availableThemes.any { it.id == "deutsche-borse" })
+
+        // Attempt invalid code
+        val failed = state.unlockCorporateTheme("wrong_code")
+        assertFalse(failed)
+        assertFalse(state.isCorporateThemeUnlocked)
+
+        // Attempt valid code
+        val success = state.unlockCorporateTheme("DB_CORP_2026")
+        assertTrue(success)
+        assertTrue(state.isCorporateThemeUnlocked)
+        assertEquals("Deutsche Börse", state.currentTheme.name)
+        assertEquals(5, state.availableThemes.size)
+        assertTrue(state.availableThemes.any { it.id == "deutsche-borse" })
+
+        // Lock corporate themes again
+        state.lockCorporateTheme()
+        assertFalse(state.isCorporateThemeUnlocked)
+        assertEquals("Skaldoria Dark", state.currentTheme.name)
+        assertEquals(4, state.availableThemes.size)
     }
 }

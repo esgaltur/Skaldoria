@@ -1,5 +1,6 @@
 package com.skaldoria.ui.editor
 
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -26,6 +27,12 @@ class MarkdownVisualTransformation(
     }
 
     companion object {
+        private val KEYWORDS = setOf(
+            "fun", "val", "var", "class", "object", "interface", "import", "package",
+            "return", "if", "else", "when", "for", "while", "try", "catch", "def",
+            "async", "await", "const", "let", "function", "public", "private", "override"
+        )
+
         fun highlightMarkdown(text: String, theme: PresentationTheme): AnnotatedString {
             return buildAnnotatedString {
                 append(text)
@@ -33,6 +40,11 @@ class MarkdownVisualTransformation(
                 val lines = text.split("\n")
                 var currentOffset = 0
                 var insideCodeFence = false
+
+                // Safe high-contrast colors regardless of light/dark theme
+                val editorCodeTextColor = if (theme.isDark) theme.codeText else Color(0xFF0F172A)
+                val editorInlineCodeTextColor = if (theme.isDark) theme.codeText else theme.primary
+                val editorInlineCodeBg = if (theme.isDark) theme.codeBackground else theme.surfaceVariant
 
                 for (line in lines) {
                     val lineStart = currentOffset
@@ -56,10 +68,66 @@ class MarkdownVisualTransformation(
                     }
 
                     if (insideCodeFence) {
+                        // Apply base code styling
                         addStyle(
                             SpanStyle(
-                                color = theme.codeText,
+                                color = editorCodeTextColor,
                                 fontFamily = FontFamily.Monospace
+                            ),
+                            lineStart,
+                            lineEnd
+                        )
+
+                        // Highlight comments
+                        if (trimmed.startsWith("//") || trimmed.startsWith("#") || trimmed.startsWith("/*")) {
+                            addStyle(
+                                SpanStyle(color = theme.codeComment, fontStyle = FontStyle.Italic),
+                                lineStart,
+                                lineEnd
+                            )
+                        } else {
+                            // Token highlighting for code
+                            val wordRegex = Regex("\\b[a-zA-Z_][a-zA-Z0-9_]*\\b")
+                            for (match in wordRegex.findAll(line)) {
+                                if (KEYWORDS.contains(match.value)) {
+                                    val start = lineStart + match.range.first
+                                    val end = lineStart + match.range.last + 1
+                                    addStyle(
+                                        SpanStyle(
+                                            color = theme.codeKeyword,
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        start,
+                                        end
+                                    )
+                                }
+                            }
+
+                            // String literals
+                            val stringRegex = Regex("\"[^\"]*\"|'[^']*'")
+                            for (match in stringRegex.findAll(line)) {
+                                val start = lineStart + match.range.first
+                                val end = lineStart + match.range.last + 1
+                                addStyle(
+                                    SpanStyle(color = theme.codeString),
+                                    start,
+                                    end
+                                )
+                            }
+                        }
+
+                        currentOffset += line.length + 1
+                        continue
+                    }
+
+                    // Math Equation blocks ($$ ... $$)
+                    if (trimmed.startsWith("$$") || trimmed.endsWith("$$")) {
+                        addStyle(
+                            SpanStyle(
+                                color = theme.primary,
+                                fontStyle = FontStyle.Italic,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.Serif
                             ),
                             lineStart,
                             lineEnd
@@ -151,9 +219,9 @@ class MarkdownVisualTransformation(
 
                         addStyle(
                             SpanStyle(
-                                color = theme.codeText,
+                                color = editorInlineCodeTextColor,
                                 fontFamily = FontFamily.Monospace,
-                                background = theme.codeBackground
+                                background = editorInlineCodeBg
                             ),
                             lineStart + startTick,
                             lineStart + endTick + 1

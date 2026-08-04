@@ -227,7 +227,9 @@ fun EditorWorkspace(
                                 slide = currentSlide,
                                 theme = state.currentTheme,
                                 totalSlides = state.slides.size,
-                                modifier = Modifier.fillMaxWidth(0.95f)
+                                modifier = Modifier.fillMaxWidth(0.95f),
+                                votes = state.getVotesForSlide(currentSlide.index),
+                                onVote = { state.recordVote(currentSlide.index, it) }
                             )
                         }
                     }

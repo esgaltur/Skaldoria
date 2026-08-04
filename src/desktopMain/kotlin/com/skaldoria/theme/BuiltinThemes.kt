@@ -4,9 +4,9 @@ import androidx.compose.ui.graphics.Color
 
 object BuiltinThemes {
 
-    val NordDark = PresentationTheme(
-        id = "nord-dark",
-        name = "Nord Dark",
+    val SkaldoriaDark = PresentationTheme(
+        id = "skaldoria-dark",
+        name = "Skaldoria Dark",
         isDark = true,
         background = Color(0xFF2E3440),
         surface = Color(0xFF3B4252),
@@ -46,12 +46,12 @@ object BuiltinThemes {
         textSecondary = Color(0xFF334155),
         textMuted = Color(0xFF64748B),
         codeBackground = Color(0xFF0F172A),
-        codeText = Color(0xFFF8FAFC),
-        codeKeyword = Color(0xFF818CF8),
-        codeString = Color(0xFF34D399),
+        codeText = Color(0xFF0F172A),
+        codeKeyword = Color(0xFF4F46E5),
+        codeString = Color(0xFF059669),
         codeComment = Color(0xFF64748B),
-        codeNumber = Color(0xFFF472B6),
-        codeHighlightLine = Color(0x334F46E5),
+        codeNumber = Color(0xFFD97706),
+        codeHighlightLine = Color(0x1F4F46E5),
         badgeBackground = Color(0xFFEEF2FF),
         badgeText = Color(0xFF4F46E5)
     )
@@ -98,43 +98,64 @@ object BuiltinThemes {
         textSecondary = Color(0xFF44403C),
         textMuted = Color(0xFF78716C),
         codeBackground = Color(0xFF292524),
-        codeText = Color(0xFFFAF8F5),
-        codeKeyword = Color(0xFFFB923C),
-        codeString = Color(0xFF86EFAC),
+        codeText = Color(0xFF1C1917),
+        codeKeyword = Color(0xFFC2410C),
+        codeString = Color(0xFF15803D),
         codeComment = Color(0xFF78716C),
-        codeNumber = Color(0xFFFDE047),
-        codeHighlightLine = Color(0x33C2410C),
+        codeNumber = Color(0xFFB45309),
+        codeHighlightLine = Color(0x1FC2410C),
         badgeBackground = Color(0xFFFFEDD5),
         badgeText = Color(0xFFC2410C)
     )
 
+    /**
+     * Corporate Enterprise Executive Theme (Restricted Access).
+     * High-contrast, executive deep navy and gold styling for institutional presentations.
+     */
     val DeutscheBorseExecutive = PresentationTheme(
         id = "deutsche-borse",
         name = "Deutsche Börse",
         isDark = false,
         background = Color(0xFFFFFFFF),
         surface = Color(0xFFFFFFFF),
-        surfaceVariant = Color(0xFFF4F5F8),
-        cardBorder = Color(0xFFD2D2D2),
-        primary = Color(0xFF000099),
-        accent = Color(0xFFFFCC00),
-        success = Color(0xFF007A33),
-        warning = Color(0xFFC77700),
-        textPrimary = Color(0xFF1A1A2E),
-        textSecondary = Color(0xFF666666),
-        textMuted = Color(0xFF919191),
-        codeBackground = Color(0xFF14142B),
-        codeText = Color(0xFFF2F2F7),
-        codeKeyword = Color(0xFF7A7AFF),
-        codeString = Color(0xFF4CAF50),
-        codeComment = Color(0xFF919191),
-        codeNumber = Color(0xFFFFCC00),
-        codeHighlightLine = Color(0x22000099),
-        badgeBackground = Color(0xFFE6E6F5),
+        surfaceVariant = Color(0xFFF1F5F9),
+        cardBorder = Color(0xFFCBD5E1),
+        primary = Color(0xFF000099),       // Deutsche Börse Corporate Navy
+        accent = Color(0xFF0055B8),        // Executive Accent Blue
+        success = Color(0xFF00873E),       // Corporate Green
+        warning = Color(0xFFC77700),       // Warning Amber
+        textPrimary = Color(0xFF0A0E1A),   // Deep crisp dark navy/black (high contrast)
+        textSecondary = Color(0xFF334155), // Slate dark gray
+        textMuted = Color(0xFF64748B),     // Muted gray
+        codeBackground = Color(0xFF0F172A),
+        codeText = Color(0xFF000080),      // Deep visible navy
+        codeKeyword = Color(0xFF000099),   // DB Blue
+        codeString = Color(0xFF00873E),    // Deep green
+        codeComment = Color(0xFF64748B),   // Crisp comment gray
+        codeNumber = Color(0xFFB45309),    // Deep gold/amber
+        codeHighlightLine = Color(0x1F000099),
+        badgeBackground = Color(0xFFE2E8F0),
         badgeText = Color(0xFF000099)
     )
 
-    val all = listOf(NordDark, SleekLight, CyberMidnight, MinimalistEditorial, DeutscheBorseExecutive)
+    val publicThemes = listOf(SkaldoriaDark, SleekLight, CyberMidnight, MinimalistEditorial)
+    val allWithCorporate = listOf(SkaldoriaDark, SleekLight, CyberMidnight, MinimalistEditorial, DeutscheBorseExecutive)
+    val all = allWithCorporate
 
-    fun getById(id: String): PresentationTheme = all.find { it.id == id } ?: NordDark
+    val corporateUnlockCodes = setOf(
+        "DB_CORP_2026",
+        "deutsche-borse",
+        "DEUTSCHE_BORSE",
+        "DB_EXECUTIVE",
+        "FRANKFURT_FLOOR",
+        "DEUTSCHE-BOERSE",
+        "DB2026"
+    )
+
+    fun isCorporateCode(input: String): Boolean {
+        val trimmed = input.trim()
+        return corporateUnlockCodes.any { it.equals(trimmed, ignoreCase = true) }
+    }
+
+    fun getById(id: String): PresentationTheme = allWithCorporate.find { it.id == id } ?: SkaldoriaDark
 }

@@ -37,6 +37,7 @@ fun PresenterView(
     var currentTime by remember { mutableStateOf(LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))) }
     var notesFontSize by remember { mutableStateOf(18.sp) }
     var showRemoteDialog by remember { mutableStateOf(false) }
+    var selectedRightTab by remember { mutableStateOf(0) } // 0: Notes, 1: Audience Q&A
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -194,7 +195,9 @@ fun PresenterView(
                             slide = currentSlide,
                             theme = state.currentTheme,
                             totalSlides = state.slides.size,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            votes = state.getVotesForSlide(currentSlide.index),
+                            onVote = { state.recordVote(currentSlide.index, it) }
                         )
                     }
                 }
@@ -217,7 +220,8 @@ fun PresenterView(
                             theme = state.currentTheme,
                             totalSlides = state.slides.size,
                             modifier = Modifier.fillMaxSize(),
-                            showFooter = false
+                            showFooter = false,
+                            votes = state.getVotesForSlide(nextSlide.index)
                         )
                     } else {
                         Box(
@@ -239,7 +243,7 @@ fun PresenterView(
                 }
             }
 
-            // Right Column: Speaker Notes
+            // Right Column: Speaker Notes & Audience Q&A Tab
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -247,100 +251,232 @@ fun PresenterView(
                     .clip(RoundedCornerShape(14.dp))
                     .background(state.currentTheme.surface)
                     .border(1.dp, state.currentTheme.cardBorder, RoundedCornerShape(14.dp))
-                    .padding(20.dp)
+                    .padding(16.dp)
             ) {
-                // Speaker Notes Header
+                // Dual Tab Switcher
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(state.currentTheme.background)
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // Notes Tab Button
+                    Button(
+                        onClick = { selectedRightTab = 0 },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedRightTab == 0) state.currentTheme.surfaceVariant else Color.Transparent,
+                            contentColor = if (selectedRightTab == 0) state.currentTheme.primary else state.currentTheme.textMuted
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(vertical = 6.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Notes,
-                            contentDescription = "Speaker Notes",
-                            tint = state.currentTheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "SPEAKER NOTES",
-                            color = state.currentTheme.primary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            letterSpacing = 1.sp
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Notes, null, modifier = Modifier.size(14.dp))
+                            Text("Notes", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
 
-                    // Font Zoom Controls for Notes
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    // Q&A Tab Button
+                    Button(
+                        onClick = { selectedRightTab = 1 },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedRightTab == 1) state.currentTheme.surfaceVariant else Color.Transparent,
+                            contentColor = if (selectedRightTab == 1) state.currentTheme.accent else state.currentTheme.textMuted
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(vertical = 6.dp)
                     ) {
-                        IconButton(
-                            onClick = { if (notesFontSize.value > 12) notesFontSize = (notesFontSize.value - 2).sp },
-                            modifier = Modifier.size(24.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(Icons.Default.Remove, "Smaller Notes", tint = state.currentTheme.textMuted, modifier = Modifier.size(14.dp))
-                        }
-
-                        Text(
-                            text = "${notesFontSize.value.toInt()}pt",
-                            color = state.currentTheme.textSecondary,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-
-                        IconButton(
-                            onClick = { if (notesFontSize.value < 36) notesFontSize = (notesFontSize.value + 2).sp },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(Icons.Default.Add, "Larger Notes", tint = state.currentTheme.textMuted, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.QuestionAnswer, null, modifier = Modifier.size(14.dp))
+                            Text("Live Q&A (${state.audienceQuestions.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(12.dp))
 
-                // Scrollable Notes Body
-                val currentNotes = state.currentSlide?.notes ?: emptyList()
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (currentNotes.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxSize().padding(top = 40.dp),
-                            contentAlignment = Alignment.Center
+                if (selectedRightTab == 0) {
+                    // Speaker Notes Header with Zoom Controls
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "SLIDE NOTES",
+                            color = state.currentTheme.textMuted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+
+                        // Font Zoom Controls for Notes
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
+                            IconButton(
+                                onClick = { if (notesFontSize.value > 12) notesFontSize = (notesFontSize.value - 2).sp },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.Remove, "Smaller Notes", tint = state.currentTheme.textMuted, modifier = Modifier.size(14.dp))
+                            }
+
                             Text(
-                                text = "No speaker notes for this slide.\n(Add <!-- note: ... --> in markdown)",
-                                color = state.currentTheme.textMuted.copy(alpha = 0.6f),
-                                fontSize = 14.sp,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                text = "${notesFontSize.value.toInt()}pt",
+                                color = state.currentTheme.textSecondary,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
                             )
+
+                            IconButton(
+                                onClick = { if (notesFontSize.value < 36) notesFontSize = (notesFontSize.value + 2).sp },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.Add, "Larger Notes", tint = state.currentTheme.textMuted, modifier = Modifier.size(14.dp))
+                            }
                         }
-                    } else {
-                        currentNotes.forEach { note ->
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // Scrollable Notes Body
+                    val currentNotes = state.currentSlide?.notes ?: emptyList()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (currentNotes.isEmpty()) {
                             Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(state.currentTheme.surfaceVariant.copy(alpha = 0.4f))
-                                    .padding(14.dp)
+                                modifier = Modifier.fillMaxSize().padding(top = 40.dp),
+                                contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = note,
-                                    color = state.currentTheme.textPrimary,
-                                    fontSize = notesFontSize,
-                                    lineHeight = (notesFontSize.value + 8).sp,
-                                    fontFamily = FontFamily.SansSerif
+                                    text = "No speaker notes for this slide.\n(Add <!-- note: ... --> in markdown)",
+                                    color = state.currentTheme.textMuted.copy(alpha = 0.6f),
+                                    fontSize = 13.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
+                            }
+                        } else {
+                            currentNotes.forEach { note ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(state.currentTheme.surfaceVariant.copy(alpha = 0.4f))
+                                        .padding(12.dp)
+                                ) {
+                                    Text(
+                                        text = note,
+                                        color = state.currentTheme.textPrimary,
+                                        fontSize = notesFontSize,
+                                        lineHeight = (notesFontSize.value + 6).sp,
+                                        fontFamily = FontFamily.SansSerif
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Live Audience Q&A Stream
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (state.audienceQuestions.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxSize().padding(top = 40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No audience questions yet.\nAudience can submit via the companion portal.",
+                                    color = state.currentTheme.textMuted.copy(alpha = 0.6f),
+                                    fontSize = 13.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        } else {
+                            state.audienceQuestions.forEach { q ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (q.isAnswered) state.currentTheme.background.copy(alpha = 0.5f) else state.currentTheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .border(1.dp, if (q.isAnswered) state.currentTheme.cardBorder.copy(alpha = 0.3f) else state.currentTheme.primary.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                                        .padding(12.dp)
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = q.author,
+                                                color = state.currentTheme.primary,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(state.currentTheme.accent.copy(alpha = 0.2f))
+                                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "👍 ${q.upvotes}",
+                                                    color = state.currentTheme.accent,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontFamily = FontFamily.Monospace
+                                                )
+                                            }
+                                        }
+
+                                        Text(
+                                            text = q.text,
+                                            color = if (q.isAnswered) state.currentTheme.textMuted else state.currentTheme.textPrimary,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.End,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            if (!q.isAnswered) {
+                                                TextButton(
+                                                    onClick = { state.markQuestionAnswered(q.id) },
+                                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text("Mark Answered", fontSize = 11.sp, color = state.currentTheme.success)
+                                                }
+                                            }
+                                            TextButton(
+                                                onClick = { state.dismissQuestion(q.id) },
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Dismiss", fontSize = 11.sp, color = Color(0xFFEF4444))
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

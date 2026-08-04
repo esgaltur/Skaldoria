@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 
 class InlineMarkdownTest {
 
-    private val theme = BuiltinThemes.NordDark
+    private val theme = BuiltinThemes.SkaldoriaDark
 
     @Test
     fun testPlainTextIsUnchanged() {
