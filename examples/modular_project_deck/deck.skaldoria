@@ -1,0 +1,13 @@
+{
+  "name": "Distributed Systems Keynote 2026",
+  "theme": "Cyberpunk Neon",
+  "transition": "ZOOM",
+  "slides": [
+    "slides/01_hero_title.md",
+    "slides/02_problem_statement.md",
+    "slides/03_architecture_overview.md",
+    "slides/04_code_deep_dive.md",
+    "slides/05_performance_benchmarks.md",
+    "slides/06_key_takeaways.md"
+  ]
+}

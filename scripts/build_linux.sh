@@ -1,31 +1,95 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# Skaldoria Studio — Local Linux Release & Packaging Script
+# Builds native Linux packages (.deb, .rpm, .tar.gz, universal .jar)
+# ==============================================================================
 set -euo pipefail
 
 VERSION="${1:-1.0.0}"
+PUBLISH_GH="${2:-false}"
 
-echo "========================================="
-echo " 👑 Skaldoria Linux Packager v${VERSION}"
-echo "========================================="
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# 1. Create dist directory
+echo "=========================================================="
+echo " 👑 Skaldoria Studio — Linux Packaging Pipeline"
+echo " Version: ${VERSION}"
+echo " Project: ${PROJECT_ROOT}"
+echo "=========================================================="
+
+cd "${PROJECT_ROOT}"
+
+# 1. Clean & Prepare dist directory
 mkdir -p dist
+rm -f dist/*
 
-# 2. Build native Linux distribution
-echo -e "\n[1/2] Building native Linux distributable..."
-./gradlew createDistributable packageDeb
+# 2. Run Automated Verification Tests
+echo -e "\n[1/5] 🧪 Running test suite..."
+./gradlew desktopTest --no-daemon
+echo "  -> All tests passed successfully!"
 
-# 3. Compress into .tar.gz archive
-APP_DIR="build/compose/binaries/main/app/Skaldoria"
-TAR_NAME="Skaldoria-v${VERSION}-linux-x64.tar.gz"
-TAR_PATH="dist/${TAR_NAME}"
+# 3. Build Linux Distributable & Universal JAR
+echo -e "\n[2/5] 🔨 Building native Linux standalone distributable & universal JAR..."
+./gradlew createDistributable packageUberJarForCurrentOS --no-daemon
 
-echo -e "\n[2/2] Creating Linux package archive: ${TAR_PATH}..."
-tar -czf "${TAR_PATH}" -C "${APP_DIR}" .
-
-# Copy .deb if produced
-if [ -d "build/compose/binaries/main/deb" ]; then
-    cp build/compose/binaries/main/deb/*.deb dist/ || true
+# Attempt to build .deb and .rpm if tools are installed
+if command -v dpkg-deb >/dev/null 2>&1 || command -v fakeroot >/dev/null 2>&1; then
+    echo "  -> Building Debian (.deb) package..."
+    ./gradlew packageDeb --no-daemon || true
 fi
 
-echo -e "\n-> Build complete! Artifacts created in dist/:"
-ls -lh dist/
+if command -v rpmbuild >/dev/null 2>&1; then
+    echo "  -> Building RedHat (.rpm) package..."
+    ./gradlew packageRpm --no-daemon || true
+fi
+
+# 4. Bundle Portable Tarball and Collect Artifacts
+echo -e "\n[3/5] 📦 Bundling Linux packages..."
+
+APP_DIR="build/compose/binaries/main/app/Skaldoria"
+if [ -d "${APP_DIR}" ]; then
+    TAR_NAME="Skaldoria-v${VERSION}-linux-x64-portable.tar.gz"
+    echo "  -> Creating portable archive: ${TAR_NAME}..."
+    tar -czf "dist/${TAR_NAME}" -C "${APP_DIR}" .
+fi
+
+if [ -d "build/compose/binaries/main/deb" ]; then
+    for deb in build/compose/binaries/main/deb/*.deb; do
+        [ -f "$deb" ] && cp "$deb" "dist/Skaldoria-v${VERSION}-linux-amd64.deb" && echo "  -> Collected DEB: Skaldoria-v${VERSION}-linux-amd64.deb"
+    done
+fi
+
+if [ -d "build/compose/binaries/main/rpm" ]; then
+    for rpm in build/compose/binaries/main/rpm/*.rpm; do
+        [ -f "$rpm" ] && cp "$rpm" "dist/Skaldoria-v${VERSION}-linux-x86_64.rpm" && echo "  -> Collected RPM: Skaldoria-v${VERSION}-linux-x86_64.rpm"
+    done
+fi
+
+if [ -d "build/compose/jars" ]; then
+    for jar in build/compose/jars/*.jar; do
+        [ -f "$jar" ] && cp "$jar" "dist/Skaldoria-v${VERSION}-universal.jar" && echo "  -> Collected Universal JAR: Skaldoria-v${VERSION}-universal.jar"
+    done
+fi
+
+# 5. Generate Checksums
+echo -e "\n[4/5] 🔒 Generating SHA-256 Checksums..."
+cd dist
+sha256sum * > checksums-sha256.txt 2>/dev/null || true
+cd "${PROJECT_ROOT}"
+echo "  -> Checksums saved to dist/checksums-sha256.txt"
+
+# 6. Publish to GitHub
+echo -e "\n[5/5] 🚀 GitHub Release..."
+if [ "${PUBLISH_GH}" = "--publish" ] || [ "${PUBLISH_GH}" = "true" ]; then
+    if command -v gh >/dev/null 2>&1; then
+        echo "  Publishing release to GitHub with 'gh' CLI..."
+        gh release create "v${VERSION}" dist/* --title "Skaldoria Studio v${VERSION}" --notes-file "CHANGELOG.md" || true
+    else
+        echo "  Warning: 'gh' CLI not found. Artifacts ready in dist/."
+    fi
+else
+    echo "  Build complete! Artifacts created in dist/:"
+    ls -lh dist/
+fi
+
+echo -e "\n🎉 Linux release build finished successfully!\n"

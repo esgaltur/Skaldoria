@@ -15,6 +15,21 @@
 
 ---
 
+## 📖 The Name: Realm of the Storyteller
+
+**Skaldoria** draws from the archetype of the **Skald** — the master poet, bard, and orator who held audiences captive with powerful narratives, epic histories, and commanding presence.
+
+Combined with the domain suffix **-oria** (*realm* or *sanctuary*), **Skaldoria** stands for:
+
+> **"The Realm of the Master Storyteller"**
+
+In modern technical and creative presentations, you are the storyteller:
+- **Story Over Menus**: Compose your vision in pure, readable Markdown without getting bogged down by complicated slide editors.
+- **Commanding Presence**: A dedicated dual-screen Presenter HUD, wireless mobile companion control, and live interactive annotations give you complete mastery of the room.
+- **Distraction-Free Speed**: A minimalist, high-performance studio powered by a blazing 120 FPS hardware-accelerated Compose rendering engine.
+
+---
+
 ## ⚡ Highlights
 
 - **Pure Standard Markdown**: No complex DSLs or proprietary tags. If it's valid Markdown, Skaldoria renders it into a stunning slide deck.

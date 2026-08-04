@@ -4,7 +4,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose") version "2.1.0"
 }
 
-group = "com.markdownpres"
+group = "com.skaldoria"
 version = "1.0.0"
 
 kotlin {
@@ -36,7 +36,7 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "com.markdownpres.MainKt"
+        mainClass = "com.skaldoria.MainKt"
         nativeDistributions {
             targetFormats(
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
