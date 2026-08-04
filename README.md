@@ -18,15 +18,19 @@
 
 ## 📖 The Meaning of Skaldoria: Realm of the Storyteller
 
-The name **Skaldoria** celebrates the timeless art of the **master orator and storyteller** — the individual who commands the stage, weaves ideas into unforgettable narratives, and holds audiences captivated from the opening sentence to the final question.
+The name **Skaldoria** celebrates the timeless art of the **master orator and storyteller** — the individual who
+commands the stage, weaves ideas into unforgettable narratives, and holds audiences captivated from the opening sentence
+to the final question.
 
 Combined with the domain suffix **-oria** (*creative realm* or *sanctuary*), **Skaldoria** represents:
 
 > **"The Realm of the Master Storyteller"**
 
 In modern technical and executive communication, you are that storyteller:
+
 - **Story Over Menus**: Write your vision in pure, standard Markdown.
-- **Commanding Delivery**: Dual-screen Presenter HUD, wireless mobile companion control, real-time audience polling, live canvas annotations, and an integrated **Parking Lot** for unanswered questions.
+- **Commanding Delivery**: Dual-screen Presenter HUD, wireless mobile companion control, real-time audience polling,
+  live canvas annotations, and an integrated **Parking Lot** for unanswered questions.
 - **Algorithmic Speaker Rhythm**: Real-time pacing telemetry keeping talks on schedule.
 - **Distraction-Free Speed**: 120 FPS hardware-accelerated Compose rendering engine with zero lag.
 
@@ -61,10 +65,13 @@ $$\Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{
 
 ### 5. 📊 Live Audience Interaction (In-Slide Polls & Real-Time Q&A)
 - **Live In-Slide Polling**: Embed polls directly in Markdown using `<!-- poll: Option A | Option B | Option C -->`.
-- **Real-Time Bar Graphs**: Audience votes from their mobile phones via `/audience`, and results animate in real time on the big screen!
-- **Audience Q&A Stream**: Audience members submit and upvote questions live; speakers review, moderate, and answer or defer to the Parking Lot.
+- **Real-Time Bar Graphs**: Audience votes from their mobile phones via `/audience`, and results
+  animate in real time on the big screen!
+- **Audience Q&A Stream**: Audience members submit and upvote questions live; speakers review, moderate, and answer or
+  defer to the Parking Lot.
 
 ### 6. 📱 Wireless Mobile Remote & Resilient Companion Server
+
 - Embedded daemonized HTTP server with automatic multi-port fallback (tries port 8888 through 8938, then ephemeral).
 - **Presenter Remote (`/remote`)**: Next/Prev slide, live notes, stopwatch timer, blackout (`B`), and live Q&A moderation.
 - **Audience Portal (`/audience`)**: Vote in active polls and submit questions from any smartphone on the local network.
@@ -81,7 +88,9 @@ $$\Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{
   ```
 
 ### 8. 📄 Standalone HTML & PDF Export
-- Export complete decks to single-file self-contained HTML presentations with embedded KaTeX, Mermaid JS, and customizable themes.
+
+- Export complete decks to single-file self-contained HTML presentations with embedded KaTeX, Mermaid JS, and
+  customizable themes.
 - One-click print-to-PDF ready.
 
 ### 9. 🎨 10+ Intelligent Slide Layouts
@@ -100,6 +109,7 @@ $$\Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{
 ## 🚀 Quick Start
 
 ### Running from Source
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/skaldoria.git
@@ -110,11 +120,13 @@ cd skaldoria
 ```
 
 ### Running Unit Tests
+
 ```bash
 ./gradlew desktopTest
 ```
 
 ### Packaging Standalone Native Executable
+
 ```bash
 ./gradlew createDistributable
 # Output directory: build/compose/binaries/main/app/Skaldoria/Skaldoria.exe
@@ -124,36 +136,38 @@ cd skaldoria
 
 ## ⌨️ Keyboard Shortcuts
 
-| Shortcut | Action |
-| :--- | :--- |
-| <kbd>F5</kbd> | Launch Fullscreen Presentation Mode |
-| <kbd>P</kbd> | Launch Presenter Console & Notes Window |
-| <kbd>Ctrl</kbd> + <kbd>K</kbd> | Open Spotlight Command Palette |
+| Shortcut                                                        | Action                                                                                                 |
+|:----------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------|
+| <kbd>F5</kbd>                                                   | Launch Fullscreen Presentation Mode                                                                    |
+| <kbd>P</kbd>                                                    | Launch Presenter Console & Notes Window                                                                |
+| <kbd>Ctrl</kbd> + <kbd>K</kbd>                                  | Open Spotlight Command Palette                                                                         |
 | <kbd>Ctrl</kbd> + <kbd>F</kbd> | Find in Slide Source Editor |
 | <kbd>Ctrl</kbd> + <kbd>H</kbd> | Find & Replace in Slide Source Editor |
-| <kbd>Ctrl</kbd> + <kbd>O</kbd> | Open Markdown File, Directory, or `.mdpres` Project |
-| <kbd>Ctrl</kbd> + <kbd>S</kbd> | Save Current Slide / Project |
-| <kbd>Ctrl</kbd> + <kbd>E</kbd> | Export to Self-Contained HTML / PDF |
-| <kbd>Ctrl</kbd> + <kbd>+</kbd> / <kbd>Ctrl</kbd> + <kbd>−</kbd> | Zoom Editor Font In / Out |
-| <kbd>Ctrl</kbd> + <kbd>0</kbd> | Reset Editor Font Size |
-| <kbd>→</kbd> / <kbd>Space</kbd> / <kbd>PageDown</kbd> | Next Slide |
-| <kbd>←</kbd> / <kbd>Backspace</kbd> / <kbd>PageUp</kbd> | Previous Slide |
-| <kbd>Home</kbd> / <kbd>End</kbd> | Jump to First / Last Slide |
+| <kbd>Ctrl</kbd> + <kbd>O</kbd>                                  | Open Markdown File, Directory, or `.mdpres` Project                                                    |
+| <kbd>Ctrl</kbd> + <kbd>S</kbd>                                  | Save Current Slide / Project                                                                           |
+| <kbd>Ctrl</kbd> + <kbd>E</kbd>                                  | Export to Self-Contained HTML / PDF                                                                    |
+| <kbd>Ctrl</kbd> + <kbd>+</kbd> / <kbd>Ctrl</kbd> + <kbd>−</kbd> | Zoom Editor Font In / Out                                                                              |
+| <kbd>Ctrl</kbd> + <kbd>0</kbd>                                  | Reset Editor Font Size                                                                                 |
+| <kbd>→</kbd> / <kbd>Space</kbd> / <kbd>PageDown</kbd>           | Next Slide                                                                                             |
+| <kbd>←</kbd> / <kbd>Backspace</kbd> / <kbd>PageUp</kbd>         | Previous Slide                                                                                         |
+| <kbd>Home</kbd> / <kbd>End</kbd>                                | Jump to First / Last Slide                                                                             |
 | <kbd>B</kbd> | Blackout Screen (Stage Focus) |
-| <kbd>W</kbd> | Whiteout / Annotation Canvas Mode |
+| <kbd>W</kbd>                                                    | Whiteout / Annotation Canvas Mode                                                                      |
 | <kbd>T</kbd> | Cycle Color Themes |
-| <kbd>Esc</kbd> | Exit Fullscreen / Close Modal |
+| <kbd>Esc</kbd>                                                  | Exit Fullscreen / Close Modal                                                                          |
 
 ---
 
 ## 📝 Markdown Directives Quick Reference
 
 ### Slide Separator
+
 ```markdown
 ---
 ```
 
 ### Speaker Notes
+
 ```markdown
 <!-- note: Remind the team about latency milestones -->
 ```
@@ -165,11 +179,13 @@ cd skaldoria
 ```
 
 ### In-Slide Live Poll
+
 ```markdown
 <!-- poll: PostgreSQL | MongoDB | CockroachDB | Redis -->
 ```
 
 ### Diagrams (Mermaid)
+
 ````markdown
 ```mermaid
 sequenceDiagram
@@ -187,7 +203,8 @@ $$ \Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_
 
 ## 📁 Modular Project Structure (`.skaldoria` / `.mdpres`)
 
-For large presentations, Skaldoria supports splitting decks into individual slide files organized by a lightweight manifest:
+For large presentations, Skaldoria supports splitting decks into individual slide files organized by a lightweight
+manifest:
 
 ```
 my_presentation/

@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skaldoria.core.diagram.SequenceDiagramParser
@@ -83,8 +84,17 @@ object MermaidParser {
             .firstOrNull { it.isNotBlank() }
 
     /** Node shape implied by which bracket form matched. */
-    private fun shapeOf(match: MatchResult, circleGroup: Int, roundGroup: Int, diamondGroup: Int): NodeShape = when {
+    private fun shapeOf(
+        match: MatchResult,
+        circleGroup: Int,
+        roundGroup: Int,
+        diamondGroup: Int,
+        hexagonGroup: Int = -1
+    ): NodeShape = when {
         match.groupValues.getOrElse(diamondGroup) { "" }.isNotBlank() -> NodeShape.DIAMOND
+        // `{{hexagon}}` has no dedicated shape yet; the diamond rendering is the closest
+        // visually-distinct match, and it keeps the label clean instead of mangling it.
+        hexagonGroup >= 0 && match.groupValues.getOrElse(hexagonGroup) { "" }.isNotBlank() -> NodeShape.DIAMOND
         match.groupValues.getOrElse(circleGroup) { "" }.isNotBlank() -> NodeShape.CIRCLE
         match.groupValues.getOrElse(roundGroup) { "" }.isNotBlank() -> NodeShape.ROUNDED_RECT
         else -> NodeShape.ROUNDED_RECT
@@ -96,11 +106,53 @@ object MermaidParser {
      * MMD-6: `((circle))` is tried BEFORE `(round)`. Regex alternation is ordered, so with
      * the single-paren branch first, `A((Round))` matched it and captured `(Round` — which
      * made [NodeShape.CIRCLE] unreachable and left a stray paren in every circle label.
+     *
+     * MMD-7: `{{hexagon}}` is tried BEFORE `{diamond}` for the same reason — otherwise
+     * `N{{Netting}}` matched the single-brace branch, captured `{Netting`, and left a stray
+     * `}` that broke the rest of the line.
+     *
+     * Groups: 1=id, 2=`[rect]`, 3=`((circle))`, 4=`(round)`, 5=`{{hexagon}}`, 6=`{diamond}`.
      */
-    private val NODE_TOKEN = Regex("""\s*([A-Za-z0-9_]+)\s*(?:\[(.*?)\]|\(\((.*?)\)\)|\((.*?)\)|\{(.*?)\})?""")
+    private val NODE_TOKEN =
+        Regex("""\s*([A-Za-z0-9_]+)\s*(?:\[(.*?)\]|\(\((.*?)\)\)|\((.*?)\)|\{\{(.*?)\}\}|\{(.*?)\})?""")
 
-    /** An arrow, with an optional `|label|`. Dashed and thick variants included. */
+    /** An arrow with a trailing `|label|`, e.g. `A -->|yes| B`. Dashed/thick variants included. */
     private val ARROW_TOKEN = Regex("""\s*(-\.->|===>|==>|-{2,}>|-{3,}|-->)(?:\|(.*?)\|)?""")
+
+    /**
+     * Mermaid's *mid-link* label form, where the text sits between the dashes rather than in
+     * a `|…|`: `A -- yes --> B`, `A == x ==> B`, `A -. x .-> B`. This was unsupported, so
+     * every such edge was silently dropped — which orphaned the target node and wrecked the
+     * layout. Tried only after [ARROW_TOKEN] fails, so plain `-->`/`-->|…|` still win.
+     *
+     * Groups: 1=opener (`--`/`==`/`-.`), 2=label, 3=closer (`-->`/`==>`/`.->`/`---`).
+     */
+    private val ARROW_MIDLABEL_TOKEN =
+        Regex("""\s*(--|==|-\.)\s*(.+?)\s*(-\.->|===>|==>|-{2,}>|\.->)""")
+
+    /** Resolved arrow: the label (or null) plus whether it is dashed, and where it ends. */
+    private data class ArrowMatch(val label: String?, val isDashed: Boolean, val end: Int)
+
+    /** Matches either arrow form at [position], preferring the standard `|label|` form. */
+    private fun matchArrow(line: String, position: Int): ArrowMatch? {
+        ARROW_TOKEN.matchAt(line, position)?.let { m ->
+            return ArrowMatch(
+                label = m.groupValues[2].ifBlank { null },
+                isDashed = m.groupValues[1].contains("."),
+                end = m.range.last + 1
+            )
+        }
+        ARROW_MIDLABEL_TOKEN.matchAt(line, position)?.let { m ->
+            val opener = m.groupValues[1]
+            val closer = m.groupValues[3]
+            return ArrowMatch(
+                label = m.groupValues[2].ifBlank { null },
+                isDashed = opener.contains(".") || closer.contains("."),
+                end = m.range.last + 1
+            )
+        }
+        return null
+    }
 
     /**
      * Walks one flowchart line as `node (arrow node)*`, registering every node and edge.
@@ -117,8 +169,8 @@ object MermaidParser {
             val match = NODE_TOKEN.matchAt(line, position) ?: return null
             val id = match.groupValues[1]
             if (id.isBlank()) return null
-            val label = firstNonBlank(match, 2, 3, 4, 5) ?: id
-            val shape = shapeOf(match, circleGroup = 3, roundGroup = 4, diamondGroup = 5)
+            val label = firstNonBlank(match, 2, 3, 4, 5, 6) ?: id
+            val shape = shapeOf(match, circleGroup = 3, roundGroup = 4, diamondGroup = 6, hexagonGroup = 5)
             // First declaration wins, so a later bare reference cannot erase a label.
             nodesMap.getOrPut(id) { DiagramNode(id, label, shape) }
             position = match.range.last + 1
@@ -129,16 +181,16 @@ object MermaidParser {
         var linked = false
 
         while (position < line.length) {
-            val arrow = ARROW_TOKEN.matchAt(line, position) ?: break
-            position = arrow.range.last + 1
+            val arrow = matchArrow(line, position) ?: break
+            position = arrow.end
 
             val nextId = readNode() ?: break
             edges.add(
                 DiagramEdge(
                     fromId = previousId,
                     toId = nextId,
-                    label = arrow.groupValues[2].ifBlank { null },
-                    isDashed = arrow.groupValues[1].contains(".")
+                    label = arrow.label,
+                    isDashed = arrow.isDashed
                 )
             )
             previousId = nextId
@@ -173,12 +225,13 @@ object MermaidParser {
             // `A --> B --> C` and the second edge is silently lost.
             if (!parseEdgeChain(line, nodesMap, edges)) {
                 // Standalone node: A[Label] or B(Text) — same alternation order as above.
-                val nodeRegex = Regex("""([A-Za-z0-9_]+)\s*(?:\[(.*?)\]|\(\((.*?)\)\)|\((.*?)\)|\{(.*?)\})""")
+                val nodeRegex =
+                    Regex("""([A-Za-z0-9_]+)\s*(?:\[(.*?)\]|\(\((.*?)\)\)|\((.*?)\)|\{\{(.*?)\}\}|\{(.*?)\})""")
                 val nodeMatch = nodeRegex.find(line)
                 if (nodeMatch != null) {
                     val id = nodeMatch.groupValues[1]
-                    val label = firstNonBlank(nodeMatch, 2, 3, 4, 5) ?: id
-                    val shape = shapeOf(nodeMatch, circleGroup = 3, roundGroup = 4, diamondGroup = 5)
+                    val label = firstNonBlank(nodeMatch, 2, 3, 4, 5, 6) ?: id
+                    val shape = shapeOf(nodeMatch, circleGroup = 3, roundGroup = 4, diamondGroup = 6, hexagonGroup = 5)
                     nodesMap[id] = DiagramNode(id, label, shape)
                 }
             }
@@ -256,6 +309,14 @@ fun MermaidDiagramCanvas(
         if (diagram.type == "sequence") SequenceDiagramParser.parse(code) else null
     }
 
+    val diagramTypeLabel = remember(sequence, diagram.type) {
+        when {
+            sequence != null && !sequence.isEmpty -> "SEQUENCE DIAGRAM"
+            diagram.type == "flowchart" -> "ARCHITECTURE FLOWCHART"
+            else -> "MERMAID DIAGRAM"
+        }
+    }
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -285,7 +346,7 @@ fun MermaidDiagramCanvas(
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
-                        text = "MERMAID ARCHITECTURE DIAGRAM",
+                        text = diagramTypeLabel,
                         color = theme.primary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -390,14 +451,18 @@ internal fun NodeCard(
                 color = theme.textPrimary,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
             )
             if (node.id != node.label && node.id.isNotBlank()) {
                 Text(
                     text = node.id,
                     color = theme.textMuted,
                     fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

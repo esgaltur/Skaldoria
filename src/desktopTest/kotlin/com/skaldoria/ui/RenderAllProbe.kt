@@ -91,6 +91,34 @@ class RenderAllProbe {
             ```
         """.trimIndent())
 
+        render("13_td_midlabel", """
+            ## Where the Check Sits
+
+            ```mermaid
+            flowchart TD
+                A[New Select Invest front leg] --> B{RESL member and settles tomorrow?}
+                B -- No --> L[Normal path · Cash Balance check]
+                B -- Yes --> C[Standard validations]
+                C --> D[Nominal and settlement-amount checks]
+                D --> E[Cash Balance check · SKIPPED]
+                E --> F{Enough maturing cash in the bucket?}
+                F -- No --> R[Reject · code 3018]
+                F -- Yes --> G[Accept · draw the balance down · reply to F7]
+            ```
+        """.trimIndent())
+
+        render("14_lr_hexagon", """
+            ## Netting
+
+            ```mermaid
+            flowchart LR
+                A[Maturing term legs · settle tomorrow] -->|cash coming back| N{{Existing netting run · unchanged}}
+                B[New front legs · booked a day early] -->|cash needed| N
+                N -->|matched amount| S[Settles directly · nothing moves]
+                N -->|leftover only| E[Small adjustment sent to CmaX]
+            ```
+        """.trimIndent())
+
         render("06_table", """
             ## Benchmarks
 

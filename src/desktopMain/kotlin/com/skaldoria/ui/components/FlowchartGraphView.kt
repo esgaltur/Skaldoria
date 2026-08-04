@@ -123,10 +123,14 @@ fun FlowchartGraphView(
         //    so they render behind the cards.
         val edgePlaceable = subcompose("edges") {
             Canvas(Modifier) {
+                // Shared across edges so overlapping labels can be nudged apart: fan-in
+                // (many edges into one node) would otherwise stack every label on the
+                // target's row. drawEdge records each label rect it places here.
+                val placedLabels = mutableListOf<Rect>()
                 for (edge in diagram.edges) {
                     val from = shifted[edge.fromId] ?: continue
                     val to = shifted[edge.toId] ?: continue
-                    drawEdge(from, to, edge.label, edge.isDashed, horizontal, theme, measurer)
+                    drawEdge(from, to, edge.label, edge.isDashed, horizontal, theme, measurer, placedLabels)
                 }
             }
         }.first().measure(Constraints.fixed(contentWidth, contentHeight))
@@ -164,7 +168,8 @@ private fun DrawScope.drawEdge(
     isDashed: Boolean,
     horizontal: Boolean,
     theme: PresentationTheme,
-    measurer: TextMeasurer
+    measurer: TextMeasurer,
+    placedLabels: MutableList<Rect>
 ) {
     val forward = if (horizontal) to.center.x >= from.center.x else to.center.y >= from.center.y
 
@@ -205,27 +210,53 @@ private fun DrawScope.drawEdge(
             style = EDGE_LABEL_STYLE.copy(color = theme.primary),
             maxLines = 1
         )
-        // Sit on the segment that runs into the target, inside the lane gap. The raw
-        // midpoint of start..end lands on the elbow — which for a fanned-out branch is
-        // right on top of the target node, and stacks every sibling label in one spot.
-        // Centred across the FULL lane gap (start..end spans it), at the *target's* row so
-        // sibling branches separate vertically instead of stacking on the elbow corner.
-        // The gap is sized to the widest label, so centring here is what keeps it uncovered.
+        // Geometric midpoint of the edge. Because it uses BOTH endpoints, it separates
+        // fan-out (many edges share a source) and fan-in (many edges share a target)
+        // alike — placing at the source row stacks fan-out, and at the target row stacks
+        // fan-in, so neither single-endpoint choice works for a graph that has both.
+        // For horizontal flow the midpoint lands in the inter-layer gap (sized to the
+        // widest label); for vertical flow the label is nudged right of the vertical line.
         val mid = if (horizontal) {
-            Offset((start.x + end.x) / 2f, end.y - layoutResult.size.height / 2f - 4f)
+            Offset((start.x + end.x) / 2f, (start.y + end.y) / 2f)
         } else {
             Offset(end.x + layoutResult.size.width / 2f + 6f, (start.y + end.y) / 2f)
         }
         val boxWidth = layoutResult.size.width + 8f
         val boxHeight = layoutResult.size.height + 4f
+
+        // Collision avoidance: when the midpoints of two edges land close together (e.g.
+        // a fan-out into a tightly stacked layer, where the per-edge midpoints barely
+        // differ), nudge this label along the cross axis until it clears every label
+        // already placed. Without this the boxes overlap into an unreadable smear.
+        var center = mid
+        val step = boxHeight + 2f
+        var attempt = 0
+        while (attempt < 12) {
+            val candidate = Rect(
+                left = center.x - boxWidth / 2f,
+                top = center.y - boxHeight / 2f,
+                right = center.x + boxWidth / 2f,
+                bottom = center.y + boxHeight / 2f
+            )
+            if (placedLabels.none { it.overlaps(candidate) }) {
+                placedLabels.add(candidate)
+                break
+            }
+            // Alternate outward from the midpoint: +1, -1, +2, -2, ... steps.
+            attempt++
+            val magnitude = ((attempt + 1) / 2) * step
+            val sign = if (attempt % 2 == 1) 1f else -1f
+            center = Offset(mid.x, mid.y + sign * magnitude)
+        }
+
         drawRect(
             color = theme.surfaceVariant,
-            topLeft = Offset(mid.x - boxWidth / 2f, mid.y - boxHeight / 2f),
+            topLeft = Offset(center.x - boxWidth / 2f, center.y - boxHeight / 2f),
             size = androidx.compose.ui.geometry.Size(boxWidth, boxHeight)
         )
         translate(
-            left = mid.x - layoutResult.size.width / 2f,
-            top = mid.y - layoutResult.size.height / 2f
+            left = center.x - layoutResult.size.width / 2f,
+            top = center.y - layoutResult.size.height / 2f
         ) { drawText(layoutResult) }
     }
 }
@@ -248,5 +279,3 @@ private fun DrawScope.drawArrowHead(tip: Offset, horizontal: Boolean, forward: B
     drawPath(path, color)
 }
 
-private fun Rect.translate(dx: Float, dy: Float): Rect =
-    Rect(left + dx, top + dy, right + dx, bottom + dy)
