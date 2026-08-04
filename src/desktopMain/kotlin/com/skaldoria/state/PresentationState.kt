@@ -70,6 +70,10 @@ class PresentationState(
     var isWhiteoutActive by mutableStateOf(false)
     var isGridOverviewOpen by mutableStateOf(false)
     var isRemoteServerRunning by mutableStateOf(false)
+    // DED-5: the pairing dialog reads the tokenised URL straight from the server (SEC-2),
+    // so this only exists to show "running at …" in the UI. It deliberately holds the
+    // *base* URL — never the presenter URL, which carries the session credential and must
+    // not sit in long-lived observable state.
     var remoteServerUrl by mutableStateOf<String?>(null)
     var remoteServerError by mutableStateOf<String?>(null)
     var isCustomThemeDialogOpen by mutableStateOf(false)
@@ -98,7 +102,8 @@ class PresentationState(
 
     // Live Audience Interaction: Polls & Q&A
     val audienceQuestions = mutableStateListOf<AudienceQuestion>()
-    private val pollVotesMap = mutableStateMapOf<Int, MutableMap<Int, Int>>()
+    /** SEC-5: `slideIndex -> (voterKey -> chosen option)`. Counts are derived, not stored. */
+    private val pollVotesMap = mutableStateMapOf<Int, Map<String, Int>>()
 
     // Presentation Aside: Parking Lot & Unanswered Questions Follow-Up
     val followUpQuestions = mutableStateListOf<FollowUpQuestion>()
@@ -343,8 +348,50 @@ class PresentationState(
     /** Seconds banked from previous runs, so pausing does not lose time. */
     private var accumulatedSeconds: Long = 0L
 
-    /** Releases the background timer. Call when the app shuts down. */
+    /**
+     * DED-1: an unsaved draft recovered from the last session, or null.
+     *
+     * The autosave file was written on every keystroke and never read back — pure cost.
+     * The welcome screen offers it, so a crash mid-talk no longer loses the deck.
+     * "Meaningfully different" excludes the built-in samples, so a user who never edited
+     * anything is not prompted.
+     */
+    fun recoverableDraft(): String? {
+        val draft = ConfigManager.loadDraft()?.takeIf { it.isNotBlank() } ?: return null
+        if (draft.trim() == DEFAULT_SAMPLE_MARKDOWN.trim()) return null
+        if (draft.trim() == BLANK_STARTER_MARKDOWN.trim()) return null
+        return draft
+    }
+
+    /** DED-1: adopt a recovered draft as the working deck. */
+    fun restoreDraft(draft: String) {
+        activeProject = null
+        currentFilePath = null
+        updateMarkdown(draft)
+        currentSlideIndex = 0
+        showWelcome = false
+    }
+
+    /** DED-1: forget the recovered draft so it stops being offered. */
+    fun discardDraft() {
+        ConfigManager.clearDraft()
+    }
+
+    /** DED-2: persist the settings that were modelled and parsed but never actually saved. */
+    fun persistUiPreferences() {
+        ConfigManager.saveUiPreferences(currentTheme.id, editorFontSize)
+    }
+
+    /** DED-2: restore them at startup. Unknown theme ids fall back to the default. */
+    fun restoreUiPreferences() {
+        val config = ConfigManager.loadConfig()
+        editorFontSize = config.editorFontSize.coerceIn(10, 32)
+        BuiltinThemes.allWithCorporate.firstOrNull { it.id == config.lastThemeId }?.let { currentTheme = it }
+    }
+
+    /** Releases the background timer and flushes preferences. Call when the app shuts down. */
     fun dispose() {
+        persistUiPreferences()
         scope.cancel()
     }
 
@@ -469,24 +516,34 @@ class PresentationState(
     fun next() = nextSlide()
     fun prev() = previousSlide()
 
+    /**
+     * DED-3: delegates to [com.skaldoria.project.DeckProjectManager.addNewSlideFile] rather
+     * than duplicating it. The two implementations had drifted — this one never persisted
+     * the manifest, and the manager's mutated `slideFiles` in place, which cannot trigger
+     * recomposition because `activeProject` is Compose state.
+     */
     fun addNewSlideFile(name: String = "New Slide") {
-        if (isProjectMode) {
-            val proj = activeProject ?: return
-            val fileCount = proj.slideFiles.size + 1
-            val slug = String.format("%02d_new_slide.md", fileCount)
-            val slidesDir = java.io.File(proj.rootDir, "slides").takeIf { it.exists() && it.isDirectory } ?: java.io.File(proj.rootDir)
-            val newFile = java.io.File(slidesDir, slug)
-            val template = "<!-- layout: hero -->\n# $name\n### Subtitle\n"
-            newFile.writeText(template, Charsets.UTF_8)
-            val updated = com.skaldoria.project.DeckProjectManager.loadProjectFromDirectory(java.io.File(proj.rootDir))
-            activeProject = updated
-            val combined = updated.compileCombinedMarkdown()
-            markdownText = combined
-            slides = MarkdownSlideParser.parse(combined)
-            currentSlideIndex = (slides.size - 1).coerceAtLeast(0)
-        } else {
+        if (!isProjectMode) {
             insertSlide(currentSlideIndex, SlideLayoutType.HERO_TITLE)
+            return
         }
+
+        val proj = activeProject ?: return
+        try {
+            com.skaldoria.project.DeckProjectManager.addNewSlideFile(proj, name)
+        } catch (e: Exception) {
+            remoteServerError = "Could not create slide file: ${e.message}"
+            return
+        }
+
+        // Reload so `activeProject` is a fresh instance and recomposition actually fires.
+        val updated = com.skaldoria.project.DeckProjectManager.loadProjectFromDirectory(java.io.File(proj.rootDir))
+        activeProject = updated
+        val combined = updated.compileCombinedMarkdown()
+        markdownText = combined
+        slides = MarkdownSlideParser.parse(combined)
+        currentSlideIndex = (slides.size - 1).coerceAtLeast(0)
+        scheduleDraftSave(combined)
     }
 
     fun goToSlide(index: Int) {
@@ -621,17 +678,27 @@ class PresentationState(
     }
 
     // Live Poll Votes
-    fun recordVote(slideIndex: Int, optionIndex: Int) {
-        val currentVotes = pollVotesMap.getOrPut(slideIndex) { mutableMapOf() }
-        val prevCount = currentVotes[optionIndex] ?: 0
-        val updated = currentVotes.toMutableMap()
-        updated[optionIndex] = prevCount + 1
-        pollVotesMap[slideIndex] = updated
+    /**
+     * SEC-5: records one ballot per voter rather than incrementing a counter.
+     *
+     * The old model stored `option -> count` and added 1 per request, so refreshing the
+     * audience page and voting again stacked votes indefinitely — the client-side
+     * `lastVotedSlide` guard was cosmetic. Keying by voter both prevents stuffing and
+     * lets someone change their mind, which a counter cannot express.
+     *
+     * @param voterKey stable per audience device. Null means a local in-app vote from the
+     *   speaker's own machine, which is always counted as a distinct ballot.
+     */
+    fun recordVote(slideIndex: Int, optionIndex: Int, voterKey: String? = null) {
+        val ballots = pollVotesMap[slideIndex].orEmpty().toMutableMap()
+        val key = voterKey ?: "local:${ballots.size}"
+        ballots[key] = optionIndex
+        pollVotesMap[slideIndex] = ballots
     }
 
-    fun getVotesForSlide(slideIndex: Int): Map<Int, Int> {
-        return pollVotesMap[slideIndex] ?: emptyMap()
-    }
+    /** Tallies the current ballots into `optionIndex -> count`. */
+    fun getVotesForSlide(slideIndex: Int): Map<Int, Int> =
+        pollVotesMap[slideIndex].orEmpty().values.groupingBy { it }.eachCount()
 
     fun resetVotesForSlide(slideIndex: Int) {
         pollVotesMap.remove(slideIndex)
@@ -643,10 +710,16 @@ class PresentationState(
             // COR-6: millisecond + 4-digit-random collides under the concurrent submissions
             // this endpoint is explicitly built for; upvote/dismiss then hit the wrong item.
             id = "q_${java.util.UUID.randomUUID()}",
-            author = author.ifBlank { "Anonymous" },
-            text = text.trim()
+            author = author.ifBlank { "Anonymous" }.take(MAX_AUTHOR_LENGTH),
+            // SEC-5: bound the payload. Untrusted devices submit this, and it is re-sent to
+            // every other device on each poll.
+            text = text.trim().take(MAX_QUESTION_LENGTH)
         )
         audienceQuestions.add(0, q)
+        // SEC-5: the queue grew without limit. Oldest entries fall off the end.
+        while (audienceQuestions.size > MAX_AUDIENCE_QUESTIONS) {
+            audienceQuestions.removeAt(audienceQuestions.size - 1)
+        }
         return q
     }
 
@@ -958,6 +1031,11 @@ class PresentationState(
          * touches the disk, short enough that a crash loses at most a sentence.
          */
         private const val DRAFT_SAVE_DEBOUNCE_MS = 750L
+
+        /** SEC-5: bounds on audience-supplied content. */
+        const val MAX_AUDIENCE_QUESTIONS = 200
+        const val MAX_QUESTION_LENGTH = 500
+        const val MAX_AUTHOR_LENGTH = 60
 
         val BLANK_STARTER_MARKDOWN = """
 # Your Presentation Title

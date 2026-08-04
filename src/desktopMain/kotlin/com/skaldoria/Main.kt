@@ -27,7 +27,9 @@ private fun loadAppIcon(): Painter? = runCatching {
 }.getOrNull()
 
 fun main() = application {
-    val state = remember { PresentationState() }
+    // DED-2: theme and editor font size were modelled, serialized and parsed but never
+    // saved or restored, so they reset on every launch.
+    val state = remember { PresentationState().apply { restoreUiPreferences() } }
     val appIcon = loadAppIcon()
     val mainWindowState = rememberWindowState(width = 1240.dp, height = 840.dp)
 
@@ -66,7 +68,11 @@ fun main() = application {
 
     // Main Studio Window — always hosts the editor (or welcome screen)
     Window(
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = {
+            // PRF-4 / DED-2: cancel the timer scope and flush preferences before exit.
+            state.dispose()
+            exitApplication()
+        },
         icon = appIcon,
         title = "Skaldoria Studio",
         state = mainWindowState,
