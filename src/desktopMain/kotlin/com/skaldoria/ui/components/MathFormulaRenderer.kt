@@ -129,28 +129,37 @@ private fun RenderLatexExpression(
     rawFormula: String,
     theme: PresentationTheme
 ) {
-    // Check for fractions: \frac{A}{B}
-    val fracRegex = Regex("""\\frac\{([^}]+)\}\{([^}]+)\}""")
-    val fracMatch = fracRegex.find(rawFormula)
+    val fracInfo = findFraction(rawFormula)
 
-    if (fracMatch != null) {
-        val before = rawFormula.substring(0, fracMatch.range.first).trim()
-        val num = fracMatch.groupValues[1].trim()
-        val den = fracMatch.groupValues[2].trim()
-        val after = rawFormula.substring(fracMatch.range.last + 1).trim()
+    if (fracInfo != null) {
+        val before = rawFormula.substring(0, fracInfo.startIndex).trim()
+        val num = fracInfo.numerator
+        val den = fracInfo.denominator
+        val after = rawFormula.substring(fracInfo.endIndex).trim()
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             if (before.isNotBlank()) {
                 LatexTextSegment(before, theme, fontSize = 28)
             }
 
+            if (fracInfo.isEnclosedInParens) {
+                Text(
+                    text = "(",
+                    fontSize = 44.sp,
+                    fontWeight = FontWeight.Light,
+                    fontFamily = FontFamily.Serif,
+                    color = theme.textSecondary,
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
+            }
+
             // Fraction vertical stack
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(horizontal = 6.dp)
+                modifier = Modifier.padding(horizontal = 4.dp)
             ) {
                 LatexTextSegment(num, theme, fontSize = 22)
                 Spacer(Modifier.height(3.dp))
@@ -164,6 +173,17 @@ private fun RenderLatexExpression(
                 LatexTextSegment(den, theme, fontSize = 22)
             }
 
+            if (fracInfo.isEnclosedInParens) {
+                Text(
+                    text = ")",
+                    fontSize = 44.sp,
+                    fontWeight = FontWeight.Light,
+                    fontFamily = FontFamily.Serif,
+                    color = theme.textSecondary,
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
+            }
+
             if (after.isNotBlank()) {
                 LatexTextSegment(after, theme, fontSize = 28)
             }
@@ -172,6 +192,70 @@ private fun RenderLatexExpression(
         // Linear Math Expression with formatting
         LatexTextSegment(rawFormula, theme, fontSize = 32)
     }
+}
+
+data class FractionInfo(
+    val startIndex: Int,
+    val endIndex: Int,
+    val numerator: String,
+    val denominator: String,
+    val isEnclosedInParens: Boolean
+)
+
+fun findFraction(text: String): FractionInfo? {
+    val fracIdx = text.indexOf("\\frac")
+    if (fracIdx == -1) return null
+
+    var startIdx = fracIdx
+    var isEnclosed = false
+
+    // Check if preceded by \left( or (
+    val prefix = text.substring(0, fracIdx).trimEnd()
+    if (prefix.endsWith("\\left(")) {
+        startIdx = text.lastIndexOf("\\left(", fracIdx)
+        isEnclosed = true
+    } else if (prefix.endsWith("(")) {
+        startIdx = text.lastIndexOf("(", fracIdx)
+        isEnclosed = true
+    }
+
+    // Find numerator: { ... }
+    val firstBrace = text.indexOf('{', fracIdx + 5)
+    if (firstBrace == -1) return null
+    val numCloseBrace = findMatchingBrace(text, firstBrace) ?: return null
+    val num = text.substring(firstBrace + 1, numCloseBrace).trim()
+
+    // Find denominator: { ... }
+    val secondBrace = text.indexOf('{', numCloseBrace + 1)
+    if (secondBrace == -1 || text.substring(numCloseBrace + 1, secondBrace).isNotBlank()) return null
+    val denCloseBrace = findMatchingBrace(text, secondBrace) ?: return null
+    val den = text.substring(secondBrace + 1, denCloseBrace).trim()
+
+    var endIdx = denCloseBrace + 1
+    if (isEnclosed) {
+        val suffix = text.substring(endIdx).trimStart()
+        if (suffix.startsWith("\\right)")) {
+            val rightIdx = text.indexOf("\\right)", endIdx)
+            endIdx = rightIdx + 7
+        } else if (suffix.startsWith(")")) {
+            val parenIdx = text.indexOf(")", endIdx)
+            endIdx = parenIdx + 1
+        }
+    }
+
+    return FractionInfo(startIdx, endIdx, num, den, isEnclosed)
+}
+
+fun findMatchingBrace(text: String, openBraceIndex: Int): Int? {
+    var depth = 0
+    for (i in openBraceIndex until text.length) {
+        if (text[i] == '{') depth++
+        else if (text[i] == '}') {
+            depth--
+            if (depth == 0) return i
+        }
+    }
+    return null
 }
 
 @Composable

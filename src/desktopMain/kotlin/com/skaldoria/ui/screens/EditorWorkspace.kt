@@ -22,11 +22,13 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.unit.sp
 import com.skaldoria.core.models.SlideLayoutType
 import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.components.AppTooltip
 import com.skaldoria.ui.components.CommandPalette
+import com.skaldoria.ui.components.ParkingLotView
 import com.skaldoria.ui.components.SlideSurface
 import com.skaldoria.ui.components.TopBar
 import com.skaldoria.ui.editor.MarkdownVisualTransformation
@@ -131,11 +133,27 @@ fun EditorWorkspace(
                             )
                         }
 
-                        // Editor Font Size Controls
+                        // Editor Header Actions & Font Size Controls
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
+                            AppTooltip(text = if (state.isFindOpen) "Close Find (Esc)" else "Find & Replace in Editor", theme = state.currentTheme, shortcut = "Ctrl+F") {
+                                IconButton(
+                                    onClick = { state.toggleFind() },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "Find",
+                                        tint = if (state.isFindOpen) state.currentTheme.primary else state.currentTheme.textSecondary,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(Modifier.width(2.dp))
+
                             AppTooltip(text = "Decrease Editor Font Size", theme = state.currentTheme, shortcut = "Ctrl+-") {
                                 IconButton(
                                     onClick = { state.decreaseEditorFontSize() },
@@ -179,13 +197,24 @@ fun EditorWorkspace(
                         }
                     }
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
 
-                    // TextField with Syntax Highlighting VisualTransformation
+                    if (state.isFindOpen) {
+                        com.skaldoria.ui.components.EditorFindBar(
+                            state = state,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
+
+                    // TextField with Syntax Highlighting VisualTransformation & Search Highlights
                     TextField(
                         value = state.currentEditorText,
                         onValueChange = { state.updateEditorContent(it) },
-                        visualTransformation = MarkdownVisualTransformation(state.currentTheme),
+                        visualTransformation = MarkdownVisualTransformation(
+                            theme = state.currentTheme,
+                            searchMatches = if (state.isFindOpen) state.findMatches else emptyList(),
+                            activeMatchIndex = if (state.isFindOpen) state.currentMatchIndex else -1
+                        ),
                         modifier = Modifier
                             .fillMaxSize()
                             .background(Color.Transparent),
@@ -497,6 +526,61 @@ fun EditorWorkspace(
                 state = state,
                 onClose = { state.isCommandPaletteOpen = false }
             )
+        }
+
+        // Parking Lot & Unanswered Questions Aside Drawer (Right-side slide overlay)
+        if (state.isParkingLotDrawerOpen) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .clickable { state.isParkingLotDrawerOpen = false }
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .width(420.dp)
+                        .fillMaxHeight()
+                        .align(Alignment.CenterEnd)
+                        .clickable(enabled = false) {}, // consume clicks inside
+                    color = state.currentTheme.surface,
+                    shadowElevation = 16.dp,
+                    border = BorderStroke(1.dp, state.currentTheme.cardBorder)
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(state.currentTheme.surfaceVariant.copy(alpha = 0.5f))
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Presentation Aside: Parking Lot",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = state.currentTheme.textPrimary
+                            )
+                            IconButton(
+                                onClick = { state.isParkingLotDrawerOpen = false },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close Aside",
+                                    tint = state.currentTheme.textMuted,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        ParkingLotView(
+                            state = state,
+                            theme = state.currentTheme,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
         }
     }
 }

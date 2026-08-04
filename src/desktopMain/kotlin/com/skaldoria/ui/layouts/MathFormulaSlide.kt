@@ -24,18 +24,15 @@ fun MathFormulaSlide(
     theme: PresentationTheme,
     modifier: Modifier = Modifier
 ) {
-    val mathElem = slide.elements.filterIsInstance<SlideElement.MathFormula>().firstOrNull()
-    val otherText = slide.elements.filterIsInstance<SlideElement.Text>()
-    val bulletList = slide.elements.filterIsInstance<SlideElement.BulletList>().firstOrNull()
-
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 44.dp, vertical = 32.dp),
-        verticalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column {
-            if (slide.title.isNotBlank() && !slide.title.startsWith("Slide ")) {
+        // Slide Title Header
+        if (slide.title.isNotBlank() && !slide.title.startsWith("Slide ")) {
+            Column {
                 Text(
                     text = slide.title,
                     color = theme.textPrimary,
@@ -51,52 +48,56 @@ fun MathFormulaSlide(
                         fontSize = 16.sp
                     )
                 }
-                Spacer(Modifier.height(20.dp))
-            }
-
-            if (mathElem != null) {
-                MathFormulaRenderer(
-                    formula = mathElem.formula,
-                    theme = theme,
-                    isBlock = mathElem.isBlock
-                )
             }
         }
 
-        if (otherText.isNotEmpty() || bulletList != null) {
-            Column(
-                modifier = Modifier.padding(top = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                for (t in otherText) {
-                    Text(
-                        text = inlineMarkdown(t.content, theme),
-                        color = theme.textSecondary,
-                        fontSize = 16.sp,
-                        lineHeight = 22.sp
-                    )
-                }
-                if (bulletList != null) {
-                    for (item in bulletList.items) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(theme.primary)
-                            )
-                            Text(
-                                text = inlineMarkdown(item, theme),
-                                color = theme.textPrimary,
-                                fontSize = 15.sp,
-                                lineHeight = 22.sp
-                            )
+        // Render Slide Elements sequentially
+        Column(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically)
+        ) {
+            for (elem in slide.elements) {
+                when (elem) {
+                    is SlideElement.MathFormula -> {
+                        MathFormulaRenderer(
+                            formula = elem.formula,
+                            theme = theme,
+                            isBlock = elem.isBlock
+                        )
+                    }
+                    is SlideElement.BulletList -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            for (item in elem.items) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(theme.primary)
+                                    )
+                                    Text(
+                                        text = inlineMarkdown(item, theme),
+                                        color = theme.textPrimary,
+                                        fontSize = 16.sp,
+                                        lineHeight = 22.sp
+                                    )
+                                }
+                            }
                         }
                     }
+                    is SlideElement.Text -> {
+                        Text(
+                            text = inlineMarkdown(elem.content, theme),
+                            color = theme.textSecondary,
+                            fontSize = 16.sp,
+                            lineHeight = 24.sp
+                        )
+                    }
+                    else -> Unit
                 }
             }
         }

@@ -10,6 +10,7 @@ import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
@@ -19,7 +20,7 @@ import java.util.concurrent.Executors
 object RemoteCompanionServer {
 
     private var server: HttpServer? = null
-    private val executor = Executors.newFixedThreadPool(4)
+    private var executor: ExecutorService? = null
 
     var currentPort: Int = 8888
         private set
@@ -36,8 +37,8 @@ object RemoteCompanionServer {
         var boundServer: HttpServer? = null
         var boundPort = preferredPort
 
-        // Try preferred port and up to 20 consecutive ports
-        for (portCandidate in preferredPort..(preferredPort + 20)) {
+        // Try preferred port and up to 50 consecutive ports
+        for (portCandidate in preferredPort..(preferredPort + 50)) {
             try {
                 val s = HttpServer.create(InetSocketAddress(portCandidate), 0)
                 boundServer = s
@@ -50,12 +51,22 @@ object RemoteCompanionServer {
 
         // If specific ports failed, bind to ephemeral port (0)
         if (boundServer == null) {
-            val s = HttpServer.create(InetSocketAddress(0), 0)
-            boundServer = s
-            boundPort = s.address.port
+            try {
+                val s = HttpServer.create(InetSocketAddress(0), 0)
+                boundServer = s
+                boundPort = s.address.port
+            } catch (e: Exception) {
+                throw IllegalStateException("Failed to bind HTTP server to any available network port: ${e.message}", e)
+            }
         }
 
-        boundServer.executor = executor
+        val exec = Executors.newCachedThreadPool { runnable ->
+            Thread(runnable, "Skaldoria-Companion-HTTP").apply {
+                isDaemon = true
+            }
+        }
+        executor = exec
+        boundServer.executor = exec
 
         // Register Web and API Contexts
         boundServer.createContext("/", CompanionWebHandler(state))
@@ -67,6 +78,7 @@ object RemoteCompanionServer {
         boundServer.createContext("/api/qa/submit", QaSubmitApiHandler(state))
         boundServer.createContext("/api/qa/upvote", QaUpvoteApiHandler(state))
         boundServer.createContext("/api/qa/dismiss", QaDismissApiHandler(state))
+        boundServer.createContext("/api/parking-lot/add", ParkingLotAddApiHandler(state))
 
         boundServer.start()
         server = boundServer
@@ -82,26 +94,33 @@ object RemoteCompanionServer {
             server?.stop(0)
         } catch (_: Exception) {}
         server = null
+
+        try {
+            executor?.shutdownNow()
+        } catch (_: Exception) {}
+        executor = null
     }
 
     fun getLocalIpAddress(): String {
         return try {
             val interfaces = NetworkInterface.getNetworkInterfaces()
             var candidate: String? = null
-            while (interfaces.hasMoreElements()) {
-                val iface = interfaces.nextElement()
-                if (iface.isLoopback || !iface.isUp) continue
-                val addresses = iface.inetAddresses
-                while (addresses.hasMoreElements()) {
-                    val addr = addresses.nextElement()
-                    if (!addr.isLoopbackAddress && addr.isSiteLocalAddress && addr.hostAddress.contains('.')) {
-                        return addr.hostAddress
-                    } else if (!addr.isLoopbackAddress && addr.hostAddress.contains('.')) {
-                        candidate = addr.hostAddress
+            if (interfaces != null) {
+                while (interfaces.hasMoreElements()) {
+                    val iface = interfaces.nextElement()
+                    if (iface.isLoopback || !iface.isUp) continue
+                    val addresses = iface.inetAddresses
+                    while (addresses.hasMoreElements()) {
+                        val addr = addresses.nextElement()
+                        if (!addr.isLoopbackAddress && addr.isSiteLocalAddress && addr.hostAddress.contains('.')) {
+                            return addr.hostAddress
+                        } else if (!addr.isLoopbackAddress && addr.hostAddress.contains('.')) {
+                            candidate = addr.hostAddress
+                        }
                     }
                 }
             }
-            candidate ?: InetAddress.getLocalHost().hostAddress ?: "127.0.0.1"
+            candidate ?: InetAddress.getLocalHost()?.hostAddress ?: "127.0.0.1"
         } catch (_: Exception) {
             "127.0.0.1"
         }
@@ -123,127 +142,211 @@ object RemoteCompanionServer {
 
     private class StateApiHandler(private val state: PresentationState) : HttpHandler {
         override fun handle(exchange: HttpExchange) {
-            val current = state.currentSlide
-            val notesJson = (current?.notes ?: emptyList()).joinToString(prefix = "[", postfix = "]") { n ->
-                "\"${escapeJson(n)}\""
-            }
+            try {
+                if (handleCorsPreflight(exchange)) return
 
-            // Check if current slide has a poll element
-            val pollElement = current?.elements?.filterIsInstance<SlideElement.Poll>()?.firstOrNull()
-            val pollJson = if (pollElement != null) {
-                val votes = state.getVotesForSlide(state.currentSlideIndex)
-                val optionsJson = pollElement.options.mapIndexed { idx, opt ->
-                    val count = votes[idx] ?: 0
-                    """{"index": $idx, "text": "${escapeJson(opt)}", "votes": $count}"""
-                }.joinToString(prefix = "[", postfix = "]")
-                """{"hasPoll": true, "question": "${escapeJson(pollElement.question)}", "options": $optionsJson}"""
-            } else {
-                """{"hasPoll": false}"""
-            }
-
-            val questionsJson = state.audienceQuestions.joinToString(prefix = "[", postfix = "]") { q ->
-                """{"id": "${q.id}", "author": "${escapeJson(q.author)}", "text": "${escapeJson(q.text)}", "upvotes": ${q.upvotes}, "isAnswered": ${q.isAnswered}}"""
-            }
-
-            val title = escapeJson(current?.title ?: "Untitled")
-            val json = """
-                {
-                    "currentSlideIndex": ${state.currentSlideIndex},
-                    "totalSlides": ${state.slides.size},
-                    "title": "$title",
-                    "notes": $notesJson,
-                    "elapsedSeconds": ${state.elapsedSeconds},
-                    "isTimerRunning": ${state.isTimerRunning},
-                    "isBlackout": ${state.isBlackoutActive},
-                    "isWhiteout": ${state.isWhiteoutActive},
-                    "poll": $pollJson,
-                    "questions": $questionsJson
+                val current = state.currentSlide
+                val notesJson = (current?.notes ?: emptyList()).joinToString(prefix = "[", postfix = "]") { n ->
+                    "\"${escapeJson(n)}\""
                 }
-            """.trimIndent()
 
-            sendJsonResponse(exchange, json)
+                // Check if current slide has a poll element
+                val pollElement = current?.elements?.filterIsInstance<SlideElement.Poll>()?.firstOrNull()
+                val pollJson = if (pollElement != null) {
+                    val votes = state.getVotesForSlide(state.currentSlideIndex)
+                    val optionsJson = pollElement.options.mapIndexed { idx, opt ->
+                        val count = votes[idx] ?: 0
+                        """{"index": $idx, "text": "${escapeJson(opt)}", "votes": $count}"""
+                    }.joinToString(prefix = "[", postfix = "]")
+                    """{"hasPoll": true, "slideIndex": ${state.currentSlideIndex}, "question": "${escapeJson(pollElement.question)}", "options": $optionsJson}"""
+                } else {
+                    """{"hasPoll": false}"""
+                }
+
+                // Safe snapshot of audience questions
+                val questionsList = try {
+                    state.audienceQuestions.toList()
+                } catch (_: Exception) {
+                    emptyList()
+                }
+                val questionsJson = questionsList.joinToString(prefix = "[", postfix = "]") { q ->
+                    """{"id": "${q.id}", "author": "${escapeJson(q.author)}", "text": "${escapeJson(q.text)}", "upvotes": ${q.upvotes}, "isAnswered": ${q.isAnswered}}"""
+                }
+
+                val title = escapeJson(current?.title ?: "Untitled Slide")
+                val json = """
+                    {
+                        "currentSlideIndex": ${state.currentSlideIndex},
+                        "totalSlides": ${state.slides.size},
+                        "title": "$title",
+                        "notes": $notesJson,
+                        "elapsedSeconds": ${state.elapsedSeconds},
+                        "isTimerRunning": ${state.isTimerRunning},
+                        "isBlackout": ${state.isBlackoutActive},
+                        "isWhiteout": ${state.isWhiteoutActive},
+                        "poll": $pollJson,
+                        "questions": $questionsJson
+                    }
+                """.trimIndent()
+
+                sendJsonResponse(exchange, json)
+            } catch (t: Throwable) {
+                sendErrorResponse(exchange, "Failed to retrieve presentation state: ${t.message}")
+            }
         }
     }
 
     private class ActionApiHandler(private val state: PresentationState) : HttpHandler {
         override fun handle(exchange: HttpExchange) {
-            val params = parseQueryParams(exchange.requestURI.query)
-            val action = params["action"] ?: params["cmd"]
-            when (action) {
-                "next" -> state.nextSlide()
-                "prev" -> state.previousSlide()
-                "jump" -> (params["index"] ?: params["slideIndex"] ?: params["slide"])?.toIntOrNull()?.let { state.goToSlide(it) }
-                "blackout" -> state.toggleBlackout()
-                "whiteout" -> state.toggleWhiteout()
-                "toggleTimer" -> state.toggleTimer()
-                "resetTimer" -> state.resetTimer()
+            try {
+                if (handleCorsPreflight(exchange)) return
+
+                val params = parseQueryParams(exchange.requestURI.query)
+                val action = params["action"] ?: params["cmd"]
+                when (action) {
+                    "next" -> state.nextSlide()
+                    "prev" -> state.previousSlide()
+                    "jump" -> (params["index"] ?: params["slideIndex"] ?: params["slide"])?.toIntOrNull()?.let { state.goToSlide(it) }
+                    "blackout" -> state.toggleBlackout()
+                    "whiteout" -> state.toggleWhiteout()
+                    "toggleTimer" -> state.toggleTimer()
+                    "resetTimer" -> state.resetTimer()
+                }
+                sendJsonResponse(exchange, """{"status":"ok"}""")
+            } catch (t: Throwable) {
+                sendErrorResponse(exchange, "Action execution failed: ${t.message}")
             }
-            sendJsonResponse(exchange, """{"status":"ok"}""")
         }
     }
 
     private class PollVoteApiHandler(private val state: PresentationState) : HttpHandler {
         override fun handle(exchange: HttpExchange) {
-            val params = parseQueryParams(exchange.requestURI.query)
-            val slideIdx = (params["slideIndex"] ?: params["slide"])?.toIntOrNull() ?: state.currentSlideIndex
-            val optionIdx = (params["optionIndex"] ?: params["option"])?.toIntOrNull()
+            try {
+                if (handleCorsPreflight(exchange)) return
 
-            if (optionIdx != null && optionIdx >= 0) {
-                state.recordVote(slideIdx, optionIdx)
-                sendJsonResponse(exchange, """{"status":"ok", "votedOption": $optionIdx}""")
-            } else {
-                sendJsonResponse(exchange, """{"status":"error", "message":"Invalid option"}""", 400)
+                val params = parseQueryParams(exchange.requestURI.query)
+                val slideIdx = (params["slideIndex"] ?: params["slide"])?.toIntOrNull() ?: state.currentSlideIndex
+                val optionIdx = (params["optionIndex"] ?: params["option"])?.toIntOrNull()
+
+                if (optionIdx != null && optionIdx >= 0) {
+                    state.recordVote(slideIdx, optionIdx)
+                    sendJsonResponse(exchange, """{"status":"ok", "votedSlide": $slideIdx, "votedOption": $optionIdx}""")
+                } else {
+                    sendJsonResponse(exchange, """{"status":"error", "message":"Invalid option"}""", 400)
+                }
+            } catch (t: Throwable) {
+                sendErrorResponse(exchange, "Poll voting failed: ${t.message}")
             }
         }
     }
 
     private class QaSubmitApiHandler(private val state: PresentationState) : HttpHandler {
         override fun handle(exchange: HttpExchange) {
-            val params = parseQueryParams(exchange.requestURI.query)
-            val author = params["author"] ?: "Anonymous"
-            val text = params["text"] ?: ""
+            try {
+                if (handleCorsPreflight(exchange)) return
 
-            if (text.isNotBlank()) {
-                val q = state.submitQuestion(author, text)
-                sendJsonResponse(exchange, """{"status":"ok", "id":"${q.id}"}""")
-            } else {
-                sendJsonResponse(exchange, """{"status":"error", "message":"Empty question"}""", 400)
+                val params = parseQueryParams(exchange.requestURI.query)
+                val author = params["author"]?.trim()?.ifBlank { "Anonymous" } ?: "Anonymous"
+                val text = params["text"]?.trim() ?: ""
+
+                if (text.isNotBlank()) {
+                    val q = state.submitQuestion(author, text)
+                    sendJsonResponse(exchange, """{"status":"ok", "id":"${q.id}"}""")
+                } else {
+                    sendJsonResponse(exchange, """{"status":"error", "message":"Empty question"}""", 400)
+                }
+            } catch (t: Throwable) {
+                sendErrorResponse(exchange, "Q&A submission failed: ${t.message}")
             }
         }
     }
 
     private class QaUpvoteApiHandler(private val state: PresentationState) : HttpHandler {
         override fun handle(exchange: HttpExchange) {
-            val params = parseQueryParams(exchange.requestURI.query)
-            val id = params["id"]
-            if (!id.isNullOrBlank()) {
-                state.upvoteQuestion(id)
-                sendJsonResponse(exchange, """{"status":"ok"}""")
-            } else {
-                sendJsonResponse(exchange, """{"status":"error"}""", 400)
+            try {
+                if (handleCorsPreflight(exchange)) return
+
+                val params = parseQueryParams(exchange.requestURI.query)
+                val id = params["id"]
+                if (!id.isNullOrBlank()) {
+                    state.upvoteQuestion(id)
+                    sendJsonResponse(exchange, """{"status":"ok"}""")
+                } else {
+                    sendJsonResponse(exchange, """{"status":"error", "message":"Missing question id"}""", 400)
+                }
+            } catch (t: Throwable) {
+                sendErrorResponse(exchange, "Upvote failed: ${t.message}")
             }
         }
     }
 
     private class QaDismissApiHandler(private val state: PresentationState) : HttpHandler {
         override fun handle(exchange: HttpExchange) {
-            val params = parseQueryParams(exchange.requestURI.query)
-            val id = params["id"]
-            if (!id.isNullOrBlank()) {
-                state.dismissQuestion(id)
-                sendJsonResponse(exchange, """{"status":"ok"}""")
-            } else {
-                sendJsonResponse(exchange, """{"status":"error"}""", 400)
+            try {
+                if (handleCorsPreflight(exchange)) return
+
+                val params = parseQueryParams(exchange.requestURI.query)
+                val id = params["id"]
+                if (!id.isNullOrBlank()) {
+                    state.dismissQuestion(id)
+                    sendJsonResponse(exchange, """{"status":"ok"}""")
+                } else {
+                    sendJsonResponse(exchange, """{"status":"error", "message":"Missing question id"}""", 400)
+                }
+            } catch (t: Throwable) {
+                sendErrorResponse(exchange, "Dismiss failed: ${t.message}")
             }
         }
+    }
+
+    private class ParkingLotAddApiHandler(private val state: PresentationState) : HttpHandler {
+        override fun handle(exchange: HttpExchange) {
+            try {
+                if (handleCorsPreflight(exchange)) return
+
+                val params = parseQueryParams(exchange.requestURI.query)
+                val text = params["question"] ?: params["text"] ?: ""
+                val author = params["author"]
+                if (text.isNotBlank()) {
+                    state.addFollowUpQuestion(
+                        question = text.trim(),
+                        slideIndex = state.currentSlideIndex,
+                        author = author?.trim()?.ifBlank { null }
+                    )
+                    sendJsonResponse(exchange, """{"status":"ok"}""")
+                } else {
+                    sendJsonResponse(exchange, """{"status":"error", "message":"Empty question"}""", 400)
+                }
+            } catch (t: Throwable) {
+                sendErrorResponse(exchange, "Parking lot addition failed: ${t.message}")
+            }
+        }
+    }
+
+    private fun handleCorsPreflight(exchange: HttpExchange): Boolean {
+        exchange.responseHeaders.set("Access-Control-Allow-Origin", "*")
+        exchange.responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        exchange.responseHeaders.set("Access-Control-Allow-Headers", "*")
+        if (exchange.requestMethod.equals("OPTIONS", ignoreCase = true)) {
+            exchange.sendResponseHeaders(204, -1)
+            exchange.responseBody.close()
+            return true
+        }
+        return false
     }
 
     private fun sendJsonResponse(exchange: HttpExchange, json: String, statusCode: Int = 200) {
         val bytes = json.toByteArray(StandardCharsets.UTF_8)
         exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
         exchange.responseHeaders.set("Access-Control-Allow-Origin", "*")
+        exchange.responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         exchange.sendResponseHeaders(statusCode, bytes.size.toLong())
         exchange.responseBody.use { it.write(bytes) }
+    }
+
+    private fun sendErrorResponse(exchange: HttpExchange, error: String, statusCode: Int = 500) {
+        val json = """{"status":"error", "message":"${escapeJson(error)}"}"""
+        sendJsonResponse(exchange, json, statusCode)
     }
 
     private fun escapeJson(str: String): String {
@@ -263,7 +366,10 @@ object RemoteCompanionServer {
      */
     private class CompanionWebHandler(private val state: PresentationState) : HttpHandler {
         override fun handle(exchange: HttpExchange) {
-            val html = """
+            try {
+                if (handleCorsPreflight(exchange)) return
+
+                val html = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -277,7 +383,7 @@ object RemoteCompanionServer {
         .logo { font-weight: 800; font-size: 1.1rem; color: #38bdf8; display: flex; align-items: center; gap: 6px; }
         .timer-badge { background: #1e293b; padding: 6px 12px; border-radius: 20px; font-family: monospace; font-size: 1.1rem; color: #38bdf8; font-weight: bold; border: 1px solid rgba(56,189,248,0.2); }
         .tabs { display: flex; gap: 8px; margin-top: 12px; }
-        .tab-btn { flex: 1; padding: 10px; background: #131b2e; border: 1px solid #1e293b; border-radius: 10px; color: #94a3b8; font-weight: bold; cursor: pointer; font-size: 0.9rem; }
+        .tab-btn { flex: 1; padding: 10px; background: #131b2e; border: 1px solid #1e293b; border-radius: 10px; color: #94a3b8; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
         .tab-btn.active { background: #0284c7; color: #fff; border-color: #38bdf8; }
         .slide-card { background: #131b2e; border: 1px solid #1e293b; border-radius: 14px; padding: 16px; margin: 12px 0; flex: 1; display: flex; flex-direction: column; }
         .slide-meta { font-size: 0.8rem; color: #38bdf8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
@@ -350,7 +456,7 @@ object RemoteCompanionServer {
 
         async function sendAction(action) {
             try {
-                await fetch('/api/action?action=' + action);
+                await fetch('/api/action?action=' + encodeURIComponent(action));
                 pollState();
             } catch(e) {}
         }
@@ -371,6 +477,7 @@ object RemoteCompanionServer {
         async function pollState() {
             try {
                 const res = await fetch('/api/state');
+                if (!res.ok) return;
                 const data = await res.json();
                 document.getElementById('slide-index').innerText = 'Slide ' + (data.currentSlideIndex + 1) + ' of ' + data.totalSlides;
                 document.getElementById('slide-title').innerText = data.title;
@@ -414,12 +521,14 @@ object RemoteCompanionServer {
     </script>
 </body>
 </html>
-            """.trimIndent()
+                """.trimIndent()
 
-            val bytes = html.toByteArray(StandardCharsets.UTF_8)
-            exchange.responseHeaders.set("Content-Type", "text/html; charset=utf-8")
-            exchange.sendResponseHeaders(200, bytes.size.toLong())
-            exchange.responseBody.use { it.write(bytes) }
+                val bytes = html.toByteArray(StandardCharsets.UTF_8)
+                exchange.responseHeaders.set("Content-Type", "text/html; charset=utf-8")
+                exchange.responseHeaders.set("Access-Control-Allow-Origin", "*")
+                exchange.sendResponseHeaders(200, bytes.size.toLong())
+                exchange.responseBody.use { it.write(bytes) }
+            } catch (_: Exception) {}
         }
     }
 
@@ -428,7 +537,10 @@ object RemoteCompanionServer {
      */
     private class AudienceWebHandler(private val state: PresentationState) : HttpHandler {
         override fun handle(exchange: HttpExchange) {
-            val html = """
+            try {
+                if (handleCorsPreflight(exchange)) return
+
+                val html = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -476,7 +588,7 @@ object RemoteCompanionServer {
     <div class="card">
         <div class="card-title">💬 Ask the Speaker</div>
         <div class="input-group">
-            <input type="text" class="input-text" id="qa-author-input" placeholder="Your Name or Twitter Handle (optional)">
+            <input type="text" class="input-text" id="qa-author-input" placeholder="Your Name or Handle (optional)">
         </div>
         <div class="input-group">
             <textarea class="input-text" id="qa-text-input" rows="3" placeholder="Type your question for the presenter..."></textarea>
@@ -493,12 +605,14 @@ object RemoteCompanionServer {
     </div>
 
     <script>
+        let currentActiveSlide = -1;
         let lastVotedSlide = -1;
         let lastVotedOption = -1;
 
         async function votePoll(optIndex) {
             try {
-                await fetch('/api/poll/vote?optionIndex=' + optIndex);
+                await fetch('/api/poll/vote?slideIndex=' + currentActiveSlide + '&optionIndex=' + optIndex);
+                lastVotedSlide = currentActiveSlide;
                 lastVotedOption = optIndex;
                 document.getElementById('poll-voted-msg').style.display = 'block';
                 pollState();
@@ -527,7 +641,9 @@ object RemoteCompanionServer {
         async function pollState() {
             try {
                 const res = await fetch('/api/state');
+                if (!res.ok) return;
                 const data = await res.json();
+                currentActiveSlide = data.currentSlideIndex;
 
                 // Check poll
                 const pollSec = document.getElementById('poll-section');
@@ -535,9 +651,12 @@ object RemoteCompanionServer {
                     pollSec.style.display = 'block';
                     document.getElementById('poll-question').innerText = data.poll.question;
 
+                    const isVotedOnThisSlide = (lastVotedSlide === currentActiveSlide);
+                    document.getElementById('poll-voted-msg').style.display = isVotedOnThisSlide ? 'block' : 'none';
+
                     const optsContainer = document.getElementById('poll-options');
                     optsContainer.innerHTML = data.poll.options.map(opt => `
-                        <button class="poll-opt-btn ${'$'}{lastVotedOption === opt.index ? 'voted' : ''}" onclick="votePoll(${'$'}{opt.index})">
+                        <button class="poll-opt-btn ${'$'}{(isVotedOnThisSlide && lastVotedOption === opt.index) ? 'voted' : ''}" onclick="votePoll(${'$'}{opt.index})">
                             <span>${'$'}{opt.text}</span>
                             <span style="font-size:0.85rem; color:#94a3b8;">${'$'}{opt.votes} votes</span>
                         </button>
@@ -569,12 +688,14 @@ object RemoteCompanionServer {
     </script>
 </body>
 </html>
-            """.trimIndent()
+                """.trimIndent()
 
-            val bytes = html.toByteArray(StandardCharsets.UTF_8)
-            exchange.responseHeaders.set("Content-Type", "text/html; charset=utf-8")
-            exchange.sendResponseHeaders(200, bytes.size.toLong())
-            exchange.responseBody.use { it.write(bytes) }
+                val bytes = html.toByteArray(StandardCharsets.UTF_8)
+                exchange.responseHeaders.set("Content-Type", "text/html; charset=utf-8")
+                exchange.responseHeaders.set("Access-Control-Allow-Origin", "*")
+                exchange.sendResponseHeaders(200, bytes.size.toLong())
+                exchange.responseBody.use { it.write(bytes) }
+            } catch (_: Exception) {}
         }
     }
 }

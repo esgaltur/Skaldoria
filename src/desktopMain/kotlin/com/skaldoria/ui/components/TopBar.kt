@@ -413,11 +413,38 @@ fun TopBar(
             }
         }
 
-        // Action Buttons: Present & Presenter View
+        // Action Buttons: Parking Lot, Present & Presenter View
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // Parking Lot Aside Toggle Button
+            val openFollowUpsCount = state.followUpQuestions.count { !it.isAnswered }
+            AppTooltip(text = "Toggle Parking Lot & Follow-Up Checklist", theme = state.currentTheme) {
+                Button(
+                    onClick = { state.toggleParkingLotDrawer() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (state.isParkingLotDrawerOpen) state.currentTheme.primary.copy(alpha = 0.2f) else state.currentTheme.surfaceVariant,
+                        contentColor = if (state.isParkingLotDrawerOpen) state.currentTheme.primary else state.currentTheme.textPrimary
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Checklist,
+                        contentDescription = "Parking Lot",
+                        modifier = Modifier.size(15.dp),
+                        tint = if (openFollowUpsCount > 0) state.currentTheme.accent else state.currentTheme.primary
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (openFollowUpsCount > 0) "Parking Lot ($openFollowUpsCount)" else "Parking Lot",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
             // Presenter Mode Button
             AppTooltip(text = "Launch Dual-Screen Presenter Console", theme = state.currentTheme) {
                 Button(

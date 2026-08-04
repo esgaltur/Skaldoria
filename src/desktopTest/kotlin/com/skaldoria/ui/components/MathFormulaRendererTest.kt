@@ -55,4 +55,25 @@ class MathFormulaRendererTest {
         assertTrue(out.contains("≤"))
         assertTrue(out.contains("∞"))
     }
+
+    @Test
+    fun testFindFractionWithNestedSubscripts() {
+        val formula = "\\Delta t = t_{elapsed} - \\left( \\frac{T_{target}}{N_{total}} \\right) \\cdot i_{current}"
+        val frac = findFraction(formula)
+        assertTrue(frac != null, "Fraction should be found with nested subscript braces")
+        assertEquals("T_{target}", frac.numerator)
+        assertEquals("N_{total}", frac.denominator)
+        assertTrue(frac.isEnclosedInParens)
+    }
+
+    @Test
+    fun testInlineMarkdownMathSupport() {
+        val theme = BuiltinThemes.SkaldoriaDark
+        val text = "- **Pacing Delta**: Computes $\\Delta t = t_{elapsed} - t_{target}$ offset"
+        val annotated = inlineMarkdown(text, theme)
+        val rendered = annotated.text
+        assertTrue(rendered.contains("Pacing Delta"))
+        assertTrue(rendered.contains("Δ"))
+        assertTrue(rendered.contains("elapsed"))
+    }
 }

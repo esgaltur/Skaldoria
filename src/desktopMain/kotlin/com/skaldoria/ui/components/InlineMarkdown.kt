@@ -31,6 +31,21 @@ private fun AnnotatedString.Builder.appendInlineMarkdown(text: String, theme: Pr
     while (i < text.length) {
         val c = text[i]
 
+        // Inline Math: $$...$$ or $...$
+        if (c == '$') {
+            val isDouble = i + 1 < text.length && text[i + 1] == '$'
+            val marker = if (isDouble) "$$" else "$"
+            val startIdx = if (isDouble) i + 2 else i + 1
+            val end = text.indexOf(marker, startIdx)
+            if (end > startIdx) {
+                val mathRaw = text.substring(startIdx, end)
+                val mathAnnotated = buildLatexAnnotatedString(mathRaw, theme, baseFontSize = 16)
+                append(mathAnnotated)
+                i = end + marker.length
+                continue
+            }
+        }
+
         // Inline code: literal content between single backticks.
         if (c == '`') {
             val end = text.indexOf('`', i + 1)

@@ -10,6 +10,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.sp
+import com.skaldoria.theme.AdaptiveContrastEnforcer
 import com.skaldoria.theme.PresentationTheme
 
 /**
@@ -17,12 +19,14 @@ import com.skaldoria.theme.PresentationTheme
  * Transforms plain markdown text into rich colored syntax tokens without changing cursor offsets.
  */
 class MarkdownVisualTransformation(
-    private val theme: PresentationTheme
+    private val theme: PresentationTheme,
+    private val searchMatches: List<IntRange> = emptyList(),
+    private val activeMatchIndex: Int = -1
 ) : VisualTransformation {
 
     override fun filter(text: AnnotatedString): TransformedText {
         val raw = text.text
-        val styled = highlightMarkdown(raw, theme)
+        val styled = highlightMarkdown(raw, theme, searchMatches, activeMatchIndex)
         return TransformedText(styled, OffsetMapping.Identity)
     }
 
@@ -33,7 +37,12 @@ class MarkdownVisualTransformation(
             "async", "await", "const", "let", "function", "public", "private", "override"
         )
 
-        fun highlightMarkdown(text: String, theme: PresentationTheme): AnnotatedString {
+        fun highlightMarkdown(
+            text: String,
+            theme: PresentationTheme,
+            searchMatches: List<IntRange> = emptyList(),
+            activeMatchIndex: Int = -1
+        ): AnnotatedString {
             return buildAnnotatedString {
                 append(text)
 
@@ -41,10 +50,15 @@ class MarkdownVisualTransformation(
                 var currentOffset = 0
                 var insideCodeFence = false
 
-                // Safe high-contrast colors regardless of light/dark theme
-                val editorCodeTextColor = if (theme.isDark) theme.codeText else Color(0xFF0F172A)
-                val editorInlineCodeTextColor = if (theme.isDark) theme.codeText else theme.primary
-                val editorInlineCodeBg = if (theme.isDark) theme.codeBackground else theme.surfaceVariant
+                val baseBg = theme.surface
+
+                // Safe mathematically guaranteed high-contrast colors
+                val editorCodeTextColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeText, baseBg, 7.0f)
+                val editorKeywordColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeKeyword, baseBg, 4.5f)
+                val editorStringColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeString, baseBg, 4.5f)
+                val editorCommentColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeComment, baseBg, 4.5f)
+                val editorInlineCodeTextColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeKeyword, theme.surfaceVariant, 4.5f)
+                val editorInlineCodeBg = theme.surfaceVariant
 
                 for (line in lines) {
                     val lineStart = currentOffset
@@ -81,7 +95,7 @@ class MarkdownVisualTransformation(
                         // Highlight comments
                         if (trimmed.startsWith("//") || trimmed.startsWith("#") || trimmed.startsWith("/*")) {
                             addStyle(
-                                SpanStyle(color = theme.codeComment, fontStyle = FontStyle.Italic),
+                                SpanStyle(color = editorCommentColor, fontStyle = FontStyle.Italic),
                                 lineStart,
                                 lineEnd
                             )
@@ -94,8 +108,9 @@ class MarkdownVisualTransformation(
                                     val end = lineStart + match.range.last + 1
                                     addStyle(
                                         SpanStyle(
-                                            color = theme.codeKeyword,
-                                            fontWeight = FontWeight.Bold
+                                            color = editorKeywordColor,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace
                                         ),
                                         start,
                                         end
@@ -103,13 +118,13 @@ class MarkdownVisualTransformation(
                                 }
                             }
 
-                            // String literals
-                            val stringRegex = Regex("\"[^\"]*\"|'[^']*'")
-                            for (match in stringRegex.findAll(line)) {
+                            // Highlight string literals
+                            val strRegex = Regex("\"[^\"]*\"|'[^']*'")
+                            for (match in strRegex.findAll(line)) {
                                 val start = lineStart + match.range.first
                                 val end = lineStart + match.range.last + 1
                                 addStyle(
-                                    SpanStyle(color = theme.codeString),
+                                    SpanStyle(color = editorStringColor, fontFamily = FontFamily.Monospace),
                                     start,
                                     end
                                 )
@@ -120,14 +135,79 @@ class MarkdownVisualTransformation(
                         continue
                     }
 
-                    // Math Equation blocks ($$ ... $$)
+                    // Headers (# Heading)
+                    if (trimmed.startsWith("#")) {
+                        val headerLevel = trimmed.takeWhile { it == '#' }.length
+                        val headerColor = when (headerLevel) {
+                            1 -> theme.primary
+                            2 -> theme.accent
+                            3 -> theme.textPrimary
+                            else -> theme.textSecondary
+                        }
+                        val headerWeight = if (headerLevel <= 2) FontWeight.Bold else FontWeight.SemiBold
+
+                        addStyle(
+                            SpanStyle(
+                                color = headerColor,
+                                fontWeight = headerWeight
+                            ),
+                            lineStart,
+                            lineEnd
+                        )
+                        currentOffset += line.length + 1
+                        continue
+                    }
+
+                    // Directives & Comments (<!-- ... --> or ::: ...)
+                    if (trimmed.startsWith("<!--") || trimmed.startsWith(":::") || trimmed.startsWith("> note:")) {
+                        addStyle(
+                            SpanStyle(
+                                color = editorCommentColor,
+                                fontStyle = FontStyle.Italic
+                            ),
+                            lineStart,
+                            lineEnd
+                        )
+                        currentOffset += line.length + 1
+                        continue
+                    }
+
+                    // Slide Delimiters (---)
+                    if (trimmed == "---" || trimmed.startsWith("--- ")) {
+                        addStyle(
+                            SpanStyle(
+                                color = theme.accent,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 4.sp
+                            ),
+                            lineStart,
+                            lineEnd
+                        )
+                        currentOffset += line.length + 1
+                        continue
+                    }
+
+                    // Blockquotes (> ...)
+                    if (trimmed.startsWith(">")) {
+                        addStyle(
+                            SpanStyle(
+                                color = theme.textSecondary,
+                                fontStyle = FontStyle.Italic
+                            ),
+                            lineStart,
+                            lineEnd
+                        )
+                        currentOffset += line.length + 1
+                        continue
+                    }
+
+                    // Math Formulas ($$...$$)
                     if (trimmed.startsWith("$$") || trimmed.endsWith("$$")) {
                         addStyle(
                             SpanStyle(
                                 color = theme.primary,
-                                fontStyle = FontStyle.Italic,
-                                fontWeight = FontWeight.SemiBold,
-                                fontFamily = FontFamily.Serif
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Medium
                             ),
                             lineStart,
                             lineEnd
@@ -136,77 +216,32 @@ class MarkdownVisualTransformation(
                         continue
                     }
 
-                    // Slide Dividers (---)
-                    if (trimmed == "---" || trimmed.startsWith("--- ")) {
+                    // Table Rows (| ... |)
+                    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+                        addStyle(
+                            SpanStyle(
+                                color = theme.textSecondary,
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            lineStart,
+                            lineEnd
+                        )
+                        currentOffset += line.length + 1
+                        continue
+                    }
+
+                    // Bullet Lists (- or * or + or 1.)
+                    val bulletMatch = Regex("^(\\s*[-*+]|\\s*\\d+\\.)\\s").find(line)
+                    if (bulletMatch != null) {
+                        val bulletEnd = lineStart + bulletMatch.range.last + 1
                         addStyle(
                             SpanStyle(
                                 color = theme.primary,
-                                fontWeight = FontWeight.ExtraBold
+                                fontWeight = FontWeight.Bold
                             ),
                             lineStart,
-                            lineEnd
+                            bulletEnd
                         )
-                        currentOffset += line.length + 1
-                        continue
-                    }
-
-                    // Directives / Comments (<!-- ... -->)
-                    if (trimmed.startsWith("<!--") && trimmed.endsWith("-->")) {
-                        addStyle(
-                            SpanStyle(
-                                color = theme.textMuted,
-                                fontStyle = FontStyle.Italic
-                            ),
-                            lineStart,
-                            lineEnd
-                        )
-                        currentOffset += line.length + 1
-                        continue
-                    }
-
-                    // Headers (#, ##, ###)
-                    if (trimmed.startsWith("#")) {
-                        val headerLevel = trimmed.takeWhile { it == '#' }.length
-                        if (headerLevel in 1..6 && trimmed.getOrNull(headerLevel) == ' ') {
-                            addStyle(
-                                SpanStyle(
-                                    color = if (headerLevel == 1) theme.primary else theme.accent,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                lineStart,
-                                lineEnd
-                            )
-                            currentOffset += line.length + 1
-                            continue
-                        }
-                    }
-
-                    // Blockquotes (>)
-                    if (trimmed.startsWith(">")) {
-                        addStyle(
-                            SpanStyle(
-                                color = theme.accent.copy(alpha = 0.85f),
-                                fontStyle = FontStyle.Italic
-                            ),
-                            lineStart,
-                            lineEnd
-                        )
-                    }
-
-                    // Bullet Lists (-, *, 1.)
-                    if (trimmed.startsWith("- ") || trimmed.startsWith("* ") || Regex("^\\d+\\.\\s").containsMatchIn(trimmed)) {
-                        val bulletMatch = Regex("^(\\s*([-*]|\\d+\\.))\\s").find(line)
-                        if (bulletMatch != null) {
-                            val bulletEnd = lineStart + bulletMatch.range.last
-                            addStyle(
-                                SpanStyle(
-                                    color = theme.primary,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                lineStart,
-                                bulletEnd
-                            )
-                        }
                     }
 
                     // Inline code (`...`)
@@ -246,6 +281,22 @@ class MarkdownVisualTransformation(
                     }
 
                     currentOffset += line.length + 1
+                }
+
+                // Overlay Find & Search Highlight Styles
+                for ((idx, matchRange) in searchMatches.withIndex()) {
+                    if (matchRange.first >= 0 && matchRange.last < text.length && matchRange.first <= matchRange.last) {
+                        val isActive = idx == activeMatchIndex
+                        addStyle(
+                            SpanStyle(
+                                background = if (isActive) Color(0xFFF59E0B) else Color(0x66F59E0B),
+                                color = if (isActive) Color(0xFF000000) else if (theme.isDark) Color(0xFFFEF3C7) else Color(0xFF78350F),
+                                fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Bold
+                            ),
+                            matchRange.first,
+                            matchRange.last + 1
+                        )
+                    }
                 }
             }
         }

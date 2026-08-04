@@ -1,6 +1,6 @@
 ---
 name: markdown-presentation
-description: Expert guide, syntax patterns, and best practices for creating engaging, high-impact presentations using standard Markdown with Skaldoria Presentation Studio. Use this skill whenever authoring slides, converting documents or notes to slide decks, structuring presentation outlines, adding syntax highlights, Mermaid diagrams, LaTeX math equations, live audience polls, moderated Q&A, benchmark tables, quotes, hero metrics, pacing targets, or speaker notes.
+description: Expert guide, syntax patterns, and best practices for creating engaging, high-impact presentations using standard Markdown with Skaldoria Presentation Studio. Use this skill whenever authoring slides, converting documents or notes to slide decks, structuring presentation outlines, adding syntax highlights, Mermaid diagrams, LaTeX math equations, live audience polls, moderated Q&A, parking lot unanswered questions, benchmark tables, quotes, hero metrics, pacing targets, corporate theme tokens, or speaker notes.
 ---
 
 # Markdown Presentation Authoring Guide (Skaldoria Studio)
@@ -15,6 +15,7 @@ When composing slides in Markdown, follow the **One Idea Per Slide** principle:
 - **Scannability**: Audiences should grasp the core takeaway in under 3 seconds.
 - **Visual Rhythm**: Alternate between text/bullets, side-by-side code splits, Mermaid architecture diagrams, LaTeX formulas, live audience polls, hero quotes, data tables, and big metrics.
 - **Zero Proprietary Syntax**: Slides remain 100% valid, readable Markdown anywhere (GitHub, Obsidian, IDEs).
+- **Speaker Workflow Continuity**: Built-in aside for unanswered questions (Parking Lot), real-time algorithmic pacing, and mobile audience interaction.
 
 ---
 
@@ -136,16 +137,17 @@ $$ \Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_
 
 - **Pacing Delta ($\Delta t$)**: Computes exact time offset relative to scheduled slide milestones
 - **Target Allocation**: Automatically balances talk time across all slides in the deck
+- **Live Visual Gauge**: Green (on track), Cyan (ahead), Amber (behind), Red (critical)
 
 <!-- note: Explain how the pacing delta calculates drift per slide. -->
 ```
 - **Trigger**: `$$ ... $$` math block delimiters, ` ```math ```` code fences, or directive `<!-- layout: math -->`.
 - **Supported Math Syntax**:
-  - Fractions: `\frac{numerator}{denominator}`
+  - Fractions: `\frac{numerator}{denominator}` (with recursive bracket matching)
   - Roots: `\sqrt{x}` or `\sqrt[n]{x}`
   - Greek Letters: `\alpha`, `\beta`, `\gamma`, `\delta`, `\Delta`, `\Psi`, `\Omega`, `\Sigma`, `\pi`
-  - Calculus & Operators: `\int`, `\sum`, `\prod`, `\lim`, `\approx`, `\neq`, `\le`, `\ge`, `\to`, `\Rightarrow`
-  - Subscripts & Superscripts: `x_i`, `a_{n-1}`, `x^2`, `e^{-i\pi}`
+  - Calculus & Operators: `\int`, `\sum`, `\prod`, `\lim`, `\approx`, `\neq`, `\le`, `\ge`, `\to`, `\cdot`, `\times`
+  - Subscripts & Superscripts: `t_{elapsed}`, `T_{target}`, `N_{total}`, `x^2`, `e^{-i\pi}`
 
 ---
 
@@ -211,7 +213,33 @@ Side-by-side layout displaying text alongside an architecture diagram or screens
 
 ---
 
-## 4. Speaker Notes Syntax
+## 4. Presentation Parking Lot & Follow-Up Questions (Aside)
+
+Speakers often receive insightful audience questions during a presentation that cannot be answered immediately due to time or technical constraints. Skaldoria includes a built-in **Parking Lot** feature:
+
+### Syntax in Markdown
+Items can be persisted as HTML comment directives or task list items:
+```markdown
+<!-- parking-lot: [ ] What is the maximum throughput per shard? | slide:4 -->
+<!-- parking-lot: [x] Can we run on air-gapped clusters? | Yes, via the offline bundle | slide:2 -->
+```
+
+Or as standard Markdown task lists:
+```markdown
+- [ ] What is the maximum throughput per shard? (Slide 4)
+- [x] Can we run on air-gapped clusters? (Slide 2) — Answer: Yes, via the offline bundle
+```
+
+### UI Features
+- **Editor Workspace Aside**: Slide-out Parking Lot drawer on the right side of the editor.
+- **Presenter Console Tab**: Live Parking Lot tab with 1-click **Park for Later** button on incoming audience Q&A questions.
+- **Interactive Checkboxes**: Mark items answered or pending live during the talk.
+- **Answer Recording**: Type resolution notes directly under any question.
+- **One-Click Export**: Export the entire follow-up checklist as Markdown to the system clipboard.
+
+---
+
+## 5. Speaker Notes Syntax
 
 Notes are extracted automatically for the Presenter View and are never displayed on the projector screen:
 - **HTML Comment Format**:
@@ -225,9 +253,12 @@ Notes are extracted automatically for the Presenter View and are never displayed
 
 ---
 
-## 5. Presenter Pacing Gauge & Rehearsal Optimization
+## 6. Algorithmic Pacing Gauge & Rehearsal Optimization
 
-Skaldoria includes an intelligent Pacing HUD to prevent running overtime:
+Skaldoria uses an algorithmic pacing formula to keep speakers on schedule:
+
+$$ \Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{current} $$
+
 - **Target Presets**: Set target talk duration (`5m`, `10m`, `15m`, `20m`, `30m`, `45m`, or `Off`).
 - **Live Rhythm Drift**: Calculates `idealElapsedSeconds` for the active slide and shows drift offset (e.g. `+30s BEHIND PACE` or `-15s AHEAD OF PACE`).
 - **Visual Status Badges**:
@@ -238,7 +269,15 @@ Skaldoria includes an intelligent Pacing HUD to prevent running overtime:
 
 ---
 
-## 6. Mobile Remote & Live Audience Portal
+## 7. Enterprise Corporate Themes & Access Control
+
+Skaldoria supports corporate enterprise styling (e.g., "Deutsche Börse" theme) with strict access control and WCAG 2.1 color contrast compliance:
+- **Access Code Gate**: Corporate themes are protected behind an unlock code dialog (`DB_CORP_2026`, `deutsche-borse`, `DB2026`).
+- **Adaptive Contrast Enforcer**: Automatically computes relative luminance using WCAG 2.1 standards ($CR \ge 4.5:1$), ensuring all text, keywords, and borders maintain crisp readability on light/white backgrounds.
+
+---
+
+## 8. Mobile Remote & Live Audience Portal
 
 Control presentations wirelessly and interact with your audience from any device:
 1. Open Presenter View (<kbd>P</kbd>) and click **Mobile Remote / Audience**.
@@ -253,7 +292,7 @@ Control presentations wirelessly and interact with your audience from any device
 
 ---
 
-## 7. Live Presenter Controls & Keybindings
+## 9. Live Presenter Controls & Keybindings
 
 | Action | Shortcut |
 | :--- | :--- |
@@ -267,6 +306,7 @@ Control presentations wirelessly and interact with your audience from any device
 | **Whiteout Screen (Brainstorming)** | <kbd>W</kbd> |
 | **Grid Slide Overview / Sorter** | <kbd>G</kbd> |
 | **Spotlight Quick Jump** | <kbd>Ctrl+K</kbd> / <kbd>Ctrl+P</kbd> |
+| **Toggle Parking Lot Aside** | Click **Parking Lot** in Top Bar |
 | **Export to PDF / HTML / Images** | <kbd>Ctrl+E</kbd> |
 | **Theme Studio & Custom Themes** | <kbd>T</kbd> |
 | **Presenter Console (Dual Monitor)**| <kbd>P</kbd> |
@@ -275,7 +315,7 @@ Control presentations wirelessly and interact with your audience from any device
 
 ---
 
-## 8. Multi-File Presentations & Project Manifests (`.skaldoria` / `.mdpres`)
+## 10. Multi-File Presentations & Project Manifests (`.skaldoria` / `.mdpres`)
 
 For large decks (30-100+ slides) or collaborative team presentations, split slides into separate markdown files managed by a project manifest.
 
@@ -311,7 +351,7 @@ my_presentation/
 
 ---
 
-## 9. Export Options
+## 11. Export Options
 
 - **Printable 16:9 PDF**: High-resolution print styling with complete KaTeX and Mermaid runtime rendering.
 - **Standalone HTML Presentation**: Zero-dependency single-file HTML package with built-in dark UI, slide transitions, keyboard controls, and auto-loaded KaTeX/Mermaid assets.
