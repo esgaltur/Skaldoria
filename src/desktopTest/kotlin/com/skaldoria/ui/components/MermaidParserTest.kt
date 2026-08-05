@@ -165,6 +165,56 @@ class MermaidParserTest {
         assertTrue(diagram.edges.any { it.fromId == "A" && it.toId == "N" && it.label == "go" }, "A->N labelled 'go'")
     }
 
+    /**
+     * MMD-11: `<br/>` in a label is an explicit line break, and a surrounding pair of quotes
+     * (`["…"]`) is a delimiter — both are markup that used to render literally in the node.
+     */
+    @Test
+    fun `br tags become newlines and surrounding quotes are stripped`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart LR
+                SELL["SELL · maturing term legs<br/>TL1 + TL2 = €95M"] --> NET{{"Tonight's netting run<br/>(unchanged)"}}
+            """.trimIndent()
+        )
+
+        val sell = diagram.nodes.first { it.id == "SELL" }
+        assertEquals("SELL · maturing term legs\nTL1 + TL2 = €95M", sell.label)
+
+        val net = diagram.nodes.first { it.id == "NET" }
+        assertEquals("Tonight's netting run\n(unchanged)", net.label, "quotes stripped, br split")
+    }
+
+    /** MMD-11: every written form of the break tag is recognised. */
+    @Test
+    fun `all br tag spellings are treated as line breaks`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart LR
+                A["one<br>two<br />three<BR/>four"]
+            """.trimIndent()
+        )
+
+        val a = diagram.nodes.first { it.id == "A" }
+        assertEquals("one\ntwo\nthree\nfour", a.label)
+    }
+
+    /** MMD-11: edge labels are cleaned the same way node labels are. */
+    @Test
+    fun `edge labels also drop br tags`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart LR
+                A[Start] -->|"matched<br/>directly"| B[End]
+            """.trimIndent()
+        )
+
+        assertTrue(
+            diagram.edges.any { it.fromId == "A" && it.toId == "B" && it.label == "matched\ndirectly" },
+            "edge label should strip quotes and split on <br/>"
+        )
+    }
+
     // -----------------------------------------------------------------
     // MMD-10 — subgraphs, and keywords that must never become nodes
     // -----------------------------------------------------------------
