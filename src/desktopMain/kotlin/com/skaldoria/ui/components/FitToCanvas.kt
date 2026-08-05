@@ -35,8 +35,20 @@ import kotlin.math.roundToInt
  * width and get scaled to nothing. Constraining width lets text and `FlowRow` wrap normally,
  * and only genuine vertical overflow drives the scale down.
  *
+ * ## Intrinsically-wide content must opt in
+ *
+ * A child that lays itself out through its own `SubcomposeLayout` (a flowchart, a sequence
+ * diagram) can be genuinely wider than the canvas, yet Compose coerces its reported width to
+ * the bounded width measured here — so the overflow is hidden and never scaled. Set
+ * [discoverNaturalWidth] for those callers to re-measure unbounded and recover the honest
+ * width. It is off by default because reflowing content (bullets, paragraphs) has no honest
+ * "natural" width — unbounded it reports one enormous single line and would scale to nothing.
+ *
  * @param minScale legibility floor; below this the content is left clipped and
  *   [onScaleComputed] reports the overflow rather than shrinking into unreadability.
+ * @param discoverNaturalWidth re-measure the content unbounded to find an intrinsic width the
+ *   bounded pass hid. Enable only for intrinsically-sized content (diagrams); never for text
+ *   or lists, which merely refuse to wrap when unbounded and would then scale to nothing.
  * @param onScaleComputed invoked with the applied scale whenever it changes; use it to
  *   surface an authoring warning. Not invoked on every frame — only on scale change.
  */
@@ -44,11 +56,12 @@ import kotlin.math.roundToInt
 fun FitToCanvas(
     modifier: Modifier = Modifier,
     minScale: Float = SlideCanvasFit.DEFAULT_MIN_SCALE,
+    discoverNaturalWidth: Boolean = false,
     onScaleComputed: ((scale: Float, overflowing: Boolean) -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     SubcomposeLayout(modifier) { constraints ->
-        val fit = measureFitted(constraints, minScale, content)
+        val fit = measureFitted(constraints, minScale, discoverNaturalWidth, content)
         onScaleComputed?.invoke(fit.scale, fit.overflowing)
 
         layout(fit.availableWidth, fit.availableHeight) {
@@ -80,6 +93,7 @@ private class Measured(val placeables: List<Placeable>, val width: Int, val heig
 private fun SubcomposeMeasureScope.measureFitted(
     constraints: Constraints,
     minScale: Float,
+    discoverNaturalWidth: Boolean,
     content: @Composable () -> Unit
 ): FitResult {
     val boundedWidth = constraints.hasBoundedWidth
@@ -87,7 +101,9 @@ private fun SubcomposeMeasureScope.measureFitted(
     val boundedMaxWidth = if (boundedWidth) constraints.maxWidth else Constraints.Infinity
 
     var measured = measureContent("bounded", boundedMaxWidth, content)
-    measured = recoverNaturalWidth(boundedWidth, measured, content)
+    if (discoverNaturalWidth) {
+        measured = recoverNaturalWidth(boundedWidth, measured, content)
+    }
 
     var availableWidth = if (boundedWidth) constraints.maxWidth else measured.width
     var availableHeight = if (boundedHeight) constraints.maxHeight else measured.height
