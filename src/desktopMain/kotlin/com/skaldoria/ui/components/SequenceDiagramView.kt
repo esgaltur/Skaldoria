@@ -48,7 +48,7 @@ import kotlin.math.min
  * bars and block frames share a coordinate system.
  *
  * R-1: the canvas now reports its intrinsic size (not fillMaxSize) so that it can be
- * wrapped in [FitToCanvas] to shrink when it overflows the available height.
+ * wrapped in [FitToCanvas] with [FitMode.Contain] to shrink when it overflows.
  */
 @Composable
 fun SequenceDiagramView(
@@ -58,7 +58,7 @@ fun SequenceDiagramView(
 ) {
     val measurer = rememberTextMeasurer()
 
-    FitToCanvas(modifier = modifier) {
+    FitToCanvas(modifier = modifier, fitMode = FitMode.Contain) {
         if (diagram.participants.isEmpty()) {
             Box(modifier = Modifier.size(400.dp, 300.dp))
         } else {
