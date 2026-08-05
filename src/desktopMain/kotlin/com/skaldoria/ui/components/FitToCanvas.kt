@@ -11,44 +11,47 @@ import com.skaldoria.core.layout.SlideCanvasFit
 import kotlin.math.roundToInt
 
 /**
+ * How [FitToCanvas] discovers the size of the content it has to fit.
+ *
+ * The two strategies are not interchangeable — a caller must pick the one that matches the
+ * *shape* of its content, because measuring content the wrong way yields a nonsense size:
+ *
+ *  - [Height] measures width-bounded so text, `FlowRow` and bullet lists wrap normally, and
+ *    only genuine vertical overflow drives the scale down. Use for reflowing content.
+ *  - [Contain] measures both axes unbounded to read the content's own intrinsic size, then
+ *    scales it to fit inside the available box (the classic "contain" fit). Use **only** for
+ *    content with a fixed intrinsic size — a diagram, a `Modifier.size(...)` box. Reflowing
+ *    content measured this way reports one enormous single line and scales to nothing.
+ */
+enum class FitMode { Height, Contain }
+
+/**
  * Shrinks its content uniformly until it fits, instead of letting it clip.
  *
- * ## Only wrap intrinsically-sized content
+ * ## Never wrap a fill/weight child
  *
- * This measures with `maxHeight = Constraints.Infinity` to discover the content's natural
- * height. Any child that sizes itself with `Modifier.weight(1f)` or `fillMaxHeight()` gets
- * **zero** height under an unbounded main axis, and disappears.
- *
- * That is not hypothetical: wrapping this around the whole slide (OVF-1) blanked every
- * slide in the app, because every layout sizes its content area with `weight(1f)`. Wrap
- * content that measures to its own natural size — a diagram, a list of cards — never a
- * layout designed to fill its parent. `SlideRenderingTest` guards against the regression.
+ * Both strategies measure with `maxHeight = Constraints.Infinity` to read the content's
+ * natural height. A child that sizes itself with `Modifier.weight(1f)` or `fillMaxHeight()`
+ * gets **zero** height under an unbounded main axis and disappears. That is not hypothetical:
+ * wrapping this around a whole slide (OVF-1) blanked every slide, because every layout sizes
+ * its content area with `weight(1f)`. Wrap content that measures to its own natural size — a
+ * diagram, a list of cards — never a layout designed to fill its parent. `SlideRenderingTest`
+ * guards against the regression.
  *
  * Slides are authored against a fixed 1280x720 design canvas (see `SlideSurface`), so
  * available space does *not* grow with the display — a slide with too many bullets, or a
- * diagram with too many nodes, silently ran off the edge on every screen size. This wraps
- * the content once, at the top of the slide tree, so every layout benefits without each
- * one re-solving overflow.
+ * diagram with too many nodes, silently ran off the edge on every screen size. This wraps the
+ * content once so every layout benefits without each one re-solving overflow.
  *
- * Measurement is width-constrained and height-free on purpose. Measuring unbounded in both
- * axes would stop text from ever wrapping, so a paragraph would report an enormous natural
- * width and get scaled to nothing. Constraining width lets text and `FlowRow` wrap normally,
- * and only genuine vertical overflow drives the scale down.
+ * The scale itself is a plain calculation, not a heuristic: [SlideCanvasFit.contentScale]
+ * returns the uniform "contain" ratio for the measured content against the available box.
+ * Getting it right only depends on measuring the content honestly, which is what [FitMode]
+ * selects.
  *
- * ## Intrinsically-wide content must opt in
- *
- * A child that lays itself out through its own `SubcomposeLayout` (a flowchart, a sequence
- * diagram) can be genuinely wider than the canvas, yet Compose coerces its reported width to
- * the bounded width measured here — so the overflow is hidden and never scaled. Set
- * [discoverNaturalWidth] for those callers to re-measure unbounded and recover the honest
- * width. It is off by default because reflowing content (bullets, paragraphs) has no honest
- * "natural" width — unbounded it reports one enormous single line and would scale to nothing.
- *
+ * @param fitMode how to measure the content — see [FitMode]. Defaults to [FitMode.Height],
+ *   the safe choice for reflowing content.
  * @param minScale legibility floor; below this the content is left clipped and
  *   [onScaleComputed] reports the overflow rather than shrinking into unreadability.
- * @param discoverNaturalWidth re-measure the content unbounded to find an intrinsic width the
- *   bounded pass hid. Enable only for intrinsically-sized content (diagrams); never for text
- *   or lists, which merely refuse to wrap when unbounded and would then scale to nothing.
  * @param onScaleComputed invoked with the applied scale whenever it changes; use it to
  *   surface an authoring warning. Not invoked on every frame — only on scale change.
  */
@@ -56,12 +59,12 @@ import kotlin.math.roundToInt
 fun FitToCanvas(
     modifier: Modifier = Modifier,
     minScale: Float = SlideCanvasFit.DEFAULT_MIN_SCALE,
-    discoverNaturalWidth: Boolean = false,
+    fitMode: FitMode = FitMode.Height,
     onScaleComputed: ((scale: Float, overflowing: Boolean) -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     SubcomposeLayout(modifier) { constraints ->
-        val fit = measureFitted(constraints, minScale, discoverNaturalWidth, content)
+        val fit = measureFitted(constraints, minScale, fitMode, content)
         onScaleComputed?.invoke(fit.scale, fit.overflowing)
 
         layout(fit.availableWidth, fit.availableHeight) {
@@ -83,45 +86,41 @@ private class FitResult(
 private class Measured(val placeables: List<Placeable>, val width: Int, val height: Int)
 
 /**
- * Runs the whole fit: measure, recover the honest natural width, re-measure for width, then
- * derive the scale. Split out of [FitToCanvas] so the composable stays trivial and each step
- * of the measurement has a name.
- *
- * An unbounded parent gives nothing to fit against, and passing Infinity to `layout()` throws.
- * Falling back to "no fitting" (scale 1) is correct here — degrading beats crashing mid-talk.
+ * Measures [content] the way [fitMode] dictates, then derives the fit against the available
+ * box. Split out of [FitToCanvas] so the composable stays trivial and each step has a name.
  */
 private fun SubcomposeMeasureScope.measureFitted(
     constraints: Constraints,
     minScale: Float,
-    discoverNaturalWidth: Boolean,
+    fitMode: FitMode,
     content: @Composable () -> Unit
 ): FitResult {
-    val boundedWidth = constraints.hasBoundedWidth
-    val boundedHeight = constraints.hasBoundedHeight
-    val boundedMaxWidth = if (boundedWidth) constraints.maxWidth else Constraints.Infinity
-
-    var measured = measureContent("bounded", boundedMaxWidth, content)
-    if (discoverNaturalWidth) {
-        measured = recoverNaturalWidth(boundedWidth, measured, content)
+    val measured = when (fitMode) {
+        FitMode.Height ->
+            measureContent("bounded", boundedOrInfinite(constraints.hasBoundedWidth, constraints.maxWidth), content)
+        FitMode.Contain ->
+            measureContent("intrinsic", Constraints.Infinity, content)
     }
 
-    val availableWidth = if (boundedWidth) constraints.maxWidth else measured.width
-    var availableHeight = if (boundedHeight) constraints.maxHeight else measured.height
+    val availableWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else measured.width
+    var availableHeight = if (constraints.hasBoundedHeight) constraints.maxHeight else measured.height
 
-    val refined = refineForWidth(boundedWidth, measured, availableWidth, availableHeight, minScale, content)
-    if (refined !== measured) {
-        measured = refined
-        availableHeight = if (boundedHeight) constraints.maxHeight else measured.height
+    var sized = measured
+    if (fitMode == FitMode.Height) {
+        val refined = refineForWidth(constraints.hasBoundedWidth, measured, availableWidth, availableHeight, minScale, content)
+        if (refined !== measured) {
+            sized = refined
+            availableHeight = if (constraints.hasBoundedHeight) constraints.maxHeight else refined.height
+        }
     }
 
-    val scale = SlideCanvasFit.contentScale(
-        measured.width, measured.height, availableWidth, availableHeight, minScale
-    )
-    val overflowing = SlideCanvasFit.isOverflowing(
-        measured.width, measured.height, availableWidth, availableHeight, minScale
-    )
-    return FitResult(measured.placeables, availableWidth, availableHeight, scale, overflowing)
+    val scale = SlideCanvasFit.contentScale(sized.width, sized.height, availableWidth, availableHeight, minScale)
+    val overflowing = SlideCanvasFit.isOverflowing(sized.width, sized.height, availableWidth, availableHeight, minScale)
+    return FitResult(sized.placeables, availableWidth, availableHeight, scale, overflowing)
 }
+
+private fun boundedOrInfinite(bounded: Boolean, maxWidth: Int): Int =
+    if (bounded) maxWidth else Constraints.Infinity
 
 /** Subcomposes and measures [content] at [maxWidth], height-free so text/flow layouts wrap. */
 private fun SubcomposeMeasureScope.measureContent(
@@ -136,36 +135,12 @@ private fun SubcomposeMeasureScope.measureContent(
 }
 
 /**
- * Recovers the true natural width for intrinsic content.
- *
- * A child laid out through its own SubcomposeLayout (a flowchart, a sequence diagram) reports
- * a size that Compose *coerces* to the bounded width — so a diagram wider than the canvas comes
- * back reporting the canvas width, FitToCanvas concludes it already fits, never scales it, and
- * the content overflows and clips. Measuring once more unbounded recovers the honest size.
- *
- * Reflowing text must NOT be treated this way: unbounded it reports an enormous single-line
- * width and would scale to nothing. The two are told apart by height — intrinsic content keeps
- * the same height when given more width, text gets shorter — so the natural measurement is
- * adopted only when the height did not shrink.
- */
-private fun SubcomposeMeasureScope.recoverNaturalWidth(
-    boundedWidth: Boolean,
-    measured: Measured,
-    content: @Composable () -> Unit
-): Measured {
-    if (!boundedWidth || measured.width <= 0) return measured
-    val natural = measureContent("natural", Constraints.Infinity, content)
-    val clamped = natural.width > measured.width && natural.height >= measured.height
-    return if (clamped) natural else measured
-}
-
-/**
- * Re-measures at a wider width when the content overflows.
+ * Re-measures reflowing content at a wider width when it overflows.
  *
  * Uniform scaling shrinks width as well as height, so a full-width list would end up a narrow
- * strip with the sides unused. Laid out wider the content is shorter, and once scaled back down
- * it fills the available width. Intrinsic content re-measures to the same size, so this is a
- * no-op for it — the natural measurement already found is kept.
+ * strip with the sides unused. Laid out wider the content is shorter, and once scaled back
+ * down it fills the available width. Only meaningful for [FitMode.Height]; fixed-size content
+ * re-measures to the same size, so it is never asked to.
  */
 private fun SubcomposeMeasureScope.refineForWidth(
     boundedWidth: Boolean,

@@ -514,10 +514,10 @@ fun MermaidDiagramCanvas(
                         )
                     } else {
                         // MMD-1: laid out from the graph, not from parse order.
-                        // FitToCanvas is safe here — FlowchartGraphView measures its nodes
-                        // at intrinsic size and reports its own natural bounds, so there is
-                        // no weight/fill child to collapse under unbounded height.
-                        FitToCanvas(modifier = Modifier.fillMaxSize()) {
+                        // FitMode.Contain: FlowchartGraphView reports its own intrinsic
+                        // scene size, which can exceed the canvas — contain-fit scales it
+                        // down deterministically instead of letting it clip.
+                        FitToCanvas(modifier = Modifier.fillMaxSize(), fitMode = FitMode.Contain) {
                             FlowchartGraphView(diagram, theme)
                         }
                     }

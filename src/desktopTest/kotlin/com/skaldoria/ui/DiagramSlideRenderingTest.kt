@@ -13,6 +13,7 @@ import com.skaldoria.core.models.SlideLayoutType
 import com.skaldoria.core.parser.MarkdownSlideParser
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.ui.components.FitToCanvas
+import com.skaldoria.ui.components.FitMode
 import com.skaldoria.ui.components.SlideSurface
 import java.awt.image.BufferedImage
 import kotlin.test.Test
@@ -126,7 +127,7 @@ class DiagramSlideRenderingTest {
         var captured = 1f
         val scene = ImageComposeScene(width = 600, height = 400, density = Density(1f)) {
             Box(Modifier.size(500.dp, 300.dp)) {
-                FitToCanvas(onScaleComputed = { s, _ -> captured = s }) {
+                FitToCanvas(fitMode = FitMode.Contain, onScaleComputed = { s, _ -> captured = s }) {
                     Layout(content = {}) { _, _ -> layout(2000, 100) {} }
                 }
             }
@@ -149,7 +150,7 @@ class DiagramSlideRenderingTest {
         var captured = 0f
         val scene = ImageComposeScene(width = 600, height = 400, density = Density(1f)) {
             Box(Modifier.size(500.dp, 300.dp)) {
-                FitToCanvas(onScaleComputed = { s, _ -> captured = s }) {
+                FitToCanvas(fitMode = FitMode.Contain, onScaleComputed = { s, _ -> captured = s }) {
                     Layout(content = {}) { _, _ -> layout(200, 100) {} }
                 }
             }
