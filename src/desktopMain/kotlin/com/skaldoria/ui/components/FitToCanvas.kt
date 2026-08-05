@@ -105,7 +105,7 @@ private fun SubcomposeMeasureScope.measureFitted(
         measured = recoverNaturalWidth(boundedWidth, measured, content)
     }
 
-    var availableWidth = if (boundedWidth) constraints.maxWidth else measured.width
+    val availableWidth = if (boundedWidth) constraints.maxWidth else measured.width
     var availableHeight = if (boundedHeight) constraints.maxHeight else measured.height
 
     val refined = refineForWidth(boundedWidth, measured, availableWidth, availableHeight, minScale, content)
