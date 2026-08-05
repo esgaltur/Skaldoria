@@ -279,6 +279,112 @@ class MermaidParserTest {
         assertTrue(diagram.groups.isEmpty(), "an empty group would draw an empty box")
     }
 
+    /**
+     * Bidirectional arrows (`<-->`, `<==>`, `<-.->`) were unsupported: the arrow scanner
+     * failed on the leading `<`, so the edge chain broke *before* reading the second node.
+     * In `B1[Buyer] <--> S1[Seller]` the target `S1` was never registered — the "no S1
+     * defined" symptom — and every downstream node on the line was lost too.
+     */
+    @Test
+    fun `bidirectional arrows register both endpoints and preserve labels`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart LR
+                subgraph Before[Before - bilateral]
+                    B1[Buyer] <--> S1[Seller]
+                end
+                subgraph After[After - two cleared trades]
+                    B2[Buyer] <--> CCP{{Eurex Clearing AG}} <--> S2[Seller]
+                end
+                S1 ==>|novation| CCP
+            """.trimIndent()
+        )
+
+        assertEquals(
+            setOf("B1", "S1", "B2", "CCP", "S2"),
+            diagram.nodes.map { it.id }.toSet(),
+            "every endpoint of a bidirectional link must be registered"
+        )
+        assertEquals("Seller", diagram.nodes.first { it.id == "S1" }.label, "label after `<-->` must survive")
+        assertEquals("Eurex Clearing AG", diagram.nodes.first { it.id == "CCP" }.label)
+        assertEquals("Seller", diagram.nodes.first { it.id == "S2" }.label)
+
+        assertTrue(diagram.edges.any { it.fromId == "B1" && it.toId == "S1" }, "B1 <--> S1")
+        assertTrue(diagram.edges.any { it.fromId == "B2" && it.toId == "CCP" }, "B2 <--> CCP")
+        assertTrue(diagram.edges.any { it.fromId == "CCP" && it.toId == "S2" }, "CCP <--> S2")
+        assertTrue(
+            diagram.edges.any { it.fromId == "S1" && it.toId == "CCP" && it.label == "novation" },
+            "cross-subgraph novation edge S1 ==>|novation| CCP"
+        )
+
+        assertTrue("S1" in diagram.groups.first { it.id == "Before" }.nodeIds, "S1 belongs to Before")
+        assertTrue(
+            setOf("B2", "CCP", "S2").all { it in diagram.groups.first { g -> g.id == "After" }.nodeIds },
+            "the After panel must contain all three of its members"
+        )
+    }
+
+    /** Thick (`<==>`) and dashed (`<-.->`) bidirectional variants must parse too. */
+    @Test
+    fun `bidirectional thick and dashed arrows are supported`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart LR
+                A[A] <==> B[B]
+                C[C] <-.-> D[D]
+            """.trimIndent()
+        )
+
+        assertEquals(setOf("A", "B", "C", "D"), diagram.nodes.map { it.id }.toSet())
+        assertTrue(diagram.edges.any { it.fromId == "A" && it.toId == "B" }, "A <==> B")
+        val dashed = diagram.edges.first { it.fromId == "C" && it.toId == "D" }
+        assertTrue(dashed.isDashed, "`<-.->` is a dashed bidirectional link")
+    }
+
+    /**
+     * The novation deck slide. Linking the subgraph *ids* (`Before ==> After`) used to spawn
+     * phantom `Before`/`After` boxes, so the arrow is anchored to an inner node (`S1 ==> B2`).
+     * This asserts the panel members are grouped, the novation edge is kept, and no phantom
+     * node named after a subgraph leaks into the graph.
+     */
+    @Test
+    fun `novation slide keeps panels and routes novation between inner nodes`() {
+        val diagram = MermaidParser.parse(
+            """
+            flowchart TB
+                subgraph Before[Before - bilateral]
+                    B1[Buyer] --- S1[Seller]
+                end
+                subgraph After[After - Eurex Clearing is the CCP]
+                    B2[Buyer] --> CCP{{Eurex Clearing AG}} --> S2[Seller]
+                end
+                S1 ==>|novation| B2
+            """.trimIndent()
+        )
+
+        assertEquals(
+            setOf("B1", "S1", "B2", "CCP", "S2"),
+            diagram.nodes.map { it.id }.toSet(),
+            "exactly the five real nodes — no phantom `Before`/`After` boxes"
+        )
+        assertTrue("Before" !in diagram.nodes.map { it.id }, "subgraph id must not become a node")
+        assertTrue("After" !in diagram.nodes.map { it.id }, "subgraph id must not become a node")
+
+        assertTrue(diagram.edges.any { it.fromId == "B1" && it.toId == "S1" }, "bilateral B1 --- S1")
+        assertTrue(diagram.edges.any { it.fromId == "B2" && it.toId == "CCP" }, "B2 --> CCP")
+        assertTrue(diagram.edges.any { it.fromId == "CCP" && it.toId == "S2" }, "CCP --> S2")
+        assertTrue(
+            diagram.edges.any { it.fromId == "S1" && it.toId == "B2" && it.label == "novation" },
+            "novation routed from the seller side into the After panel"
+        )
+
+        assertTrue("S1" in diagram.groups.first { it.id == "Before" }.nodeIds, "S1 in Before panel")
+        assertTrue(
+            setOf("B2", "CCP", "S2").all { it in diagram.groups.first { g -> g.id == "After" }.nodeIds },
+            "the After panel holds all three cleared-trade nodes"
+        )
+    }
+
     /** MMD-9: `[(cylinder)]` must win over `[rect]`, or the label keeps its parens. */
     @Test
     fun `cylinder nodes parse with a clean label and datastore shape`() {

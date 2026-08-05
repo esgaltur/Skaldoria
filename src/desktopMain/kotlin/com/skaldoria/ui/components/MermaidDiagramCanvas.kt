@@ -137,8 +137,10 @@ object MermaidParser {
     private val NODE_TOKEN =
         Regex("""\s*([A-Za-z0-9_]+)\s*(?:\[\((.*?)\)\]|\[(.*?)\]|\(\((.*?)\)\)|\((.*?)\)|\{\{(.*?)\}\}|\{(.*?)\})?""")
 
-    /** An arrow with a trailing `|label|`, e.g. `A -->|yes| B`. Dashed/thick variants included. */
-    private val ARROW_TOKEN = Regex("""\s*(-\.->|===>|==>|-{2,}>|-{3,}|-->)(?:\|(.*?)\|)?""")
+    /** An arrow with a trailing `|label|`, e.g. `A -->|yes| B`. Dashed/thick variants included.
+     *  A leading `<` (`<-->`, `<==>`, `<-.->`) marks a *bidirectional* link; it is accepted so
+     *  the scanner does not stall on the `<` and silently drop the second node of the pair. */
+    private val ARROW_TOKEN = Regex("""\s*(<?-\.->|<?===>|<?==>|<?-{2,}>|-{3,}|<?-->)(?:\|(.*?)\|)?""")
 
     /**
      * Mermaid's *mid-link* label form, where the text sits between the dashes rather than in
@@ -149,7 +151,7 @@ object MermaidParser {
      * Groups: 1=opener (`--`/`==`/`-.`), 2=label, 3=closer (`-->`/`==>`/`.->`/`---`).
      */
     private val ARROW_MIDLABEL_TOKEN =
-        Regex("""\s*(--|==|-\.)\s*(.+?)\s*(-\.->|===>|==>|-{2,}>|\.->)""")
+        Regex("""\s*(<?--|<?==|<?-\.)\s*(.+?)\s*(-\.->|===>|==>|-{2,}>|\.->)""")
 
     /**
      * `subgraph Backend`, `subgraph id [Title]`, or `subgraph "Quoted Title"`.

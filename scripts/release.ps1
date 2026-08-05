@@ -10,5 +10,5 @@ param(
     [switch]$SkipTests
 )
 
-$scriptPath = Join-Path $PSScriptRoot "scripts\package_release.ps1"
+$scriptPath = Join-Path $PSScriptRoot "package_release.ps1"
 & $scriptPath -Version $Version -PublishGitHub:$PublishGitHub -Draft:$Draft -Prerelease:$Prerelease -SkipTests:$SkipTests
