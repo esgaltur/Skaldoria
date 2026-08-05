@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.skaldoria.core.diagram.SequenceDiagram
 import com.skaldoria.core.diagram.SequenceDiagramParser
 import com.skaldoria.theme.PresentationTheme
 
@@ -115,50 +116,70 @@ object MermaidParser {
     private fun cleanLabel(raw: String): String =
         BR_TAG.replace(raw.trim().removeSurrounding("\""), "\n").trim()
 
-    /** Node shape implied by which bracket form matched. */
-    private fun shapeOf(
-        match: MatchResult,
-        circleGroup: Int,
-        roundGroup: Int,
-        diamondGroup: Int,
-        hexagonGroup: Int = -1,
-        cylinderGroup: Int = -1
-    ): NodeShape = when {
-        cylinderGroup >= 0 && match.groupValues.getOrElse(cylinderGroup) { "" }.isNotBlank() -> NodeShape.DATABASE
-        match.groupValues.getOrElse(diamondGroup) { "" }.isNotBlank() -> NodeShape.DIAMOND
-        // `{{hexagon}}` has no dedicated shape yet; the diamond rendering is the closest
-        // visually-distinct match, and it keeps the label clean instead of mangling it.
-        hexagonGroup >= 0 && match.groupValues.getOrElse(hexagonGroup) { "" }.isNotBlank() -> NodeShape.DIAMOND
-        match.groupValues.getOrElse(circleGroup) { "" }.isNotBlank() -> NodeShape.CIRCLE
-        match.groupValues.getOrElse(roundGroup) { "" }.isNotBlank() -> NodeShape.ROUNDED_RECT
-        else -> NodeShape.ROUNDED_RECT
-    }
+    /**
+     * The bracket forms a node label can wear, each paired with the shape it implies.
+     *
+     * Order is significant and load-bearing: a two-character delimiter must come *before* the
+     * one-character delimiter it starts with, because regex alternation is ordered. If `[rect]`
+     * were tried before `[(cylinder)]`, `DB[(Database)]` would match the square-bracket branch,
+     * capture `(Database`, and leave the parens in the label (MMD-9); the same reasoning fixed
+     * `((circle))` vs `(round)` (MMD-6) and `{{hexagon}}` vs `{diamond}` (MMD-7).
+     *
+     * Keeping the pairs as data — rather than one hand-written mega-alternation — lets
+     * [NODE_TOKEN] be assembled from them and [shapeOf] read the shape back by position, so the
+     * open/close/shape triples can never drift out of step. Each pair keeps its *own* closing
+     * bracket, which is what lets a label hold inner parens (`EA["EA (MT527)"]`) without the
+     * lazy body stopping at the first stray `)`.
+     *
+     * `{{hexagon}}` has no dedicated shape; diamond is the closest visually-distinct match.
+     */
+    private data class NodeBracket(val open: String, val close: String, val shape: NodeShape)
+
+    private val NODE_BRACKETS = listOf(
+        NodeBracket("""\[\(""", """\)\]""", NodeShape.DATABASE),      // [( cylinder )]
+        NodeBracket("""\[""", """\]""", NodeShape.ROUNDED_RECT),      // [ rect ]
+        NodeBracket("""\(\(""", """\)\)""", NodeShape.CIRCLE),        // (( circle ))
+        NodeBracket("""\(""", """\)""", NodeShape.ROUNDED_RECT),      // ( round )
+        NodeBracket("""\{\{""", """\}\}""", NodeShape.DIAMOND),       // {{ hexagon }}
+        NodeBracket("""\{""", """\}""", NodeShape.DIAMOND)            // { diamond }
+    )
+
+    /** The 1-based capture group carrying the label for [NODE_BRACKETS]`[index]`. */
+    private fun labelGroupOf(index: Int) = index + 2
 
     /**
-     * A node reference: an id plus an optional bracketed label.
-     *
-     * MMD-6: `((circle))` is tried BEFORE `(round)`. Regex alternation is ordered, so with
-     * the single-paren branch first, `A((Round))` matched it and captured `(Round` — which
-     * made [NodeShape.CIRCLE] unreachable and left a stray paren in every circle label.
-     *
-     * MMD-7: `{{hexagon}}` is tried BEFORE `{diamond}` for the same reason — otherwise
-     * `N{{Netting}}` matched the single-brace branch, captured `{Netting`, and left a stray
-     * `}` that broke the rest of the line.
-     *
-     * MMD-9: `[(cylinder)]` is tried BEFORE `[rect]` for the same reason — otherwise
-     * `DB[(Database)]` matched the square-bracket branch and captured `(Database`, leaving the
-     * parens in the visible label.
-     *
-     * Groups: 1=id, 2=`[(cylinder)]`, 3=`[rect]`, 4=`((circle))`, 5=`(round)`,
-     * 6=`{{hexagon}}`, 7=`{diamond}`.
+     * A node reference: an id (group 1) and an optional bracketed label, one capture group per
+     * entry in [NODE_BRACKETS] (groups 2..). Built from the table so it can never disagree with
+     * [shapeOf]; see [NodeBracket] for why the order matters.
      */
-    private val NODE_TOKEN =
-        Regex("""\s*([A-Za-z0-9_]+)\s*(?:\[\((.*?)\)\]|\[(.*?)\]|\(\((.*?)\)\)|\((.*?)\)|\{\{(.*?)\}\}|\{(.*?)\})?""")
+    private val NODE_TOKEN = Regex(
+        """\s*(\w+)\s*(?:""" +
+            NODE_BRACKETS.joinToString("|") { "${it.open}(.*?)${it.close}" } +
+            ")?"
+    )
+
+    /** Node shape implied by whichever [NODE_BRACKETS] label group actually matched. */
+    private fun shapeOf(match: MatchResult): NodeShape {
+        NODE_BRACKETS.forEachIndexed { index, bracket ->
+            if (match.groupValues.getOrElse(labelGroupOf(index)) { "" }.isNotBlank()) return bracket.shape
+        }
+        return NodeShape.ROUNDED_RECT
+    }
+
+    /** The label captured by whichever [NODE_BRACKETS] form matched, cleaned, or null. */
+    private fun labelOf(match: MatchResult): String? =
+        NODE_BRACKETS.indices
+            .firstNotNullOfOrNull { match.groupValues.getOrElse(labelGroupOf(it)) { "" }.ifBlank { null } }
+            ?.let(::cleanLabel)
 
     /** An arrow with a trailing `|label|`, e.g. `A -->|yes| B`. Dashed/thick variants included.
      *  A leading `<` (`<-->`, `<==>`, `<-.->`) marks a *bidirectional* link; it is accepted so
-     *  the scanner does not stall on the `<` and silently drop the second node of the pair. */
-    private val ARROW_TOKEN = Regex("""\s*(<?-\.->|<?===>|<?==>|<?-{2,}>|-{3,}|<?-->)(?:\|(.*?)\|)?""")
+     *  the scanner does not stall on the `<` and silently drop the second node of the pair.
+     *
+     *  The `<?` prefix is factored out of the arrowhead forms, and `={2,}>`/`-{2,}>` fold the
+     *  two/three-symbol variants (`==>`/`===>`, `-->`/`--->`) into one branch each — same
+     *  language, lower regex complexity. `-{3,}` is the plain (headless) link `---`. */
+    private val ARROW_TOKEN = Regex("""\s*(<?(?:-\.->|={2,}>|-{2,}>)|-{3,})(?:\|(.*?)\|)?""")
 
     /**
      * Mermaid's *mid-link* label form, where the text sits between the dashes rather than in
@@ -177,7 +198,7 @@ object MermaidParser {
      * Groups: 1=id, 2=`[Title]`, 3=`"Title"`.
      */
     private val SUBGRAPH_START =
-        Regex("""^\s*subgraph\s+([A-Za-z0-9_]*)\s*(?:\[(.*?)\]|"(.*?)")?\s*$""", RegexOption.IGNORE_CASE)
+        Regex("""^\s*subgraph\s+(\w*)\s*(?:\[(.*?)\]|"(.*?)")?\s*$""", RegexOption.IGNORE_CASE)
 
     /** Closes a `subgraph` block. */
     private val BLOCK_END = Regex("""^end$""", RegexOption.IGNORE_CASE)
@@ -236,12 +257,8 @@ object MermaidParser {
             val id = match.groupValues[1]
             if (id.isBlank()) return null
             mentioned.add(id)
-            val label = firstNonBlank(match, 2, 3, 4, 5, 6, 7)?.let(::cleanLabel) ?: id
-            val shape = shapeOf(
-                match,
-                circleGroup = 4, roundGroup = 5, diamondGroup = 7,
-                hexagonGroup = 6, cylinderGroup = 2
-            )
+            val label = labelOf(match) ?: id
+            val shape = shapeOf(match)
             // First declaration wins, so a later bare reference cannot erase a label.
             nodesMap.getOrPut(id) { DiagramNode(id, label, shape) }
             position = match.range.last + 1
@@ -271,6 +288,107 @@ object MermaidParser {
         return linked
     }
 
+    /** Strips everything but word chars, spaces and dashes for the last-resort node fallback. */
+    private val FALLBACK_STRIP = Regex("""[^\w -]""")
+
+    /**
+     * Accumulates a flowchart's nodes, edges and subgraphs as body lines are fed in.
+     *
+     * Pulling the mutable state and the per-line decisions into one object keeps [parse] a
+     * short orchestrator and gives each rule (open a subgraph, close one, scan nodes, assign
+     * membership) a single named home, instead of one long loop juggling five collections.
+     */
+    private class FlowchartBuilder {
+        private val nodes = mutableMapOf<String, DiagramNode>()
+        private val edges = mutableListOf<DiagramEdge>()
+        private val groups = mutableListOf<DiagramGroup>()
+        private val openGroups = ArrayDeque<MutableGroup>()
+        private val assigned = mutableSetOf<String>()
+
+        /**
+         * Feeds one body line through a fixed precedence. Keyword lines are consumed *before*
+         * node scanning because [parseEdgeChain] registers an id the moment it matches, so
+         * `subgraph …`, `end` and `classDef …` would otherwise each become a phantom node.
+         */
+        fun consume(line: String) {
+            if (tryOpenSubgraph(line)) return
+            if (tryCloseSubgraph(line)) return
+            if (IGNORED_DIRECTIVE.containsMatchIn(line)) return
+            assignToOpenGroup(scanNodesAndEdges(line))
+        }
+
+        /** Finalises the diagram: close any unterminated subgraphs, then fall back if empty. */
+        fun build(bodyLines: List<String>, isHorizontal: Boolean): ParsedDiagram {
+            drainOpenSubgraphs()
+            if (nodes.isEmpty()) fillFallback(bodyLines)
+            return ParsedDiagram("flowchart", isHorizontal, nodes.values.toList(), edges, groups)
+        }
+
+        private fun tryOpenSubgraph(line: String): Boolean {
+            val match = SUBGRAPH_START.find(line) ?: return false
+            val rawId = match.groupValues[1].trim()
+            val bracketTitle = firstNonBlank(match, 2, 3)
+            openGroups.addLast(
+                MutableGroup(
+                    id = rawId.ifBlank { "group_${groups.size + openGroups.size}" },
+                    title = (bracketTitle ?: rawId).trim().trim('"')
+                )
+            )
+            return true
+        }
+
+        private fun tryCloseSubgraph(line: String): Boolean {
+            if (!BLOCK_END.matches(line.trim())) return false
+            closeGroup(openGroups.removeLastOrNull())
+            return true
+        }
+
+        /** Scans a line as an edge chain, or failing that a standalone node; returns mentions. */
+        private fun scanNodesAndEdges(line: String): List<String> {
+            val mentioned = mutableListOf<String>()
+            if (!parseEdgeChain(line, nodes, edges, mentioned)) {
+                val nodeMatch = NODE_TOKEN.find(line)
+                if (nodeMatch != null && nodeMatch.groupValues[1].isNotBlank()) {
+                    val id = nodeMatch.groupValues[1]
+                    mentioned.add(id)
+                    nodes[id] = DiagramNode(id, labelOf(nodeMatch) ?: id, shapeOf(nodeMatch))
+                }
+            }
+            return mentioned
+        }
+
+        /**
+         * Membership follows *mention*, not creation — a subgraph body usually just lists ids
+         * declared earlier. The first open group to mention a node owns it, matching Mermaid.
+         */
+        private fun assignToOpenGroup(mentioned: List<String>) {
+            val current = openGroups.lastOrNull() ?: return
+            mentioned.forEach { id ->
+                if (id in nodes && assigned.add(id)) current.nodeIds.add(id)
+            }
+        }
+
+        /** Unterminated subgraphs still render, rather than being discarded on a typo. */
+        private fun drainOpenSubgraphs() {
+            while (openGroups.isNotEmpty()) closeGroup(openGroups.removeLast())
+        }
+
+        /** Records a finished subgraph, dropping empty ones so no blank frame is drawn. */
+        private fun closeGroup(finished: MutableGroup?) {
+            if (finished != null && finished.nodeIds.isNotEmpty()) {
+                groups.add(DiagramGroup(finished.id, finished.title, finished.nodeIds.toList()))
+            }
+        }
+
+        /** Last resort when nothing parsed: turn each non-blank body line into a plain node. */
+        private fun fillFallback(bodyLines: List<String>) {
+            for ((idx, line) in bodyLines.withIndex()) {
+                val clean = line.replace(FALLBACK_STRIP, " ").trim()
+                if (clean.isNotBlank()) nodes["node_$idx"] = DiagramNode("node_$idx", clean)
+            }
+        }
+    }
+
     fun parse(code: String): ParsedDiagram {
         val lines = code.lines().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("%%") }
         if (lines.isEmpty()) {
@@ -278,120 +396,26 @@ object MermaidParser {
         }
 
         val firstLine = lines.first().lowercase()
-        val isHorizontal = firstLine.contains("lr") || firstLine.contains("right")
-        val isSequence = firstLine.startsWith("sequence") || firstLine.contains("sequencediagram")
-
-        val nodesMap = mutableMapOf<String, DiagramNode>()
-        val edges = mutableListOf<DiagramEdge>()
-
-        if (isSequence) {
+        if (firstLine.startsWith("sequence") || firstLine.contains("sequencediagram")) {
             return parseSequenceDiagram(lines)
         }
+        val isHorizontal = firstLine.contains("lr") || firstLine.contains("right")
 
-        // Flowchart parsing
-        val groups = mutableListOf<DiagramGroup>()
-        val openGroups = ArrayDeque<MutableGroup>()
-        val assignedToGroup = mutableSetOf<String>()
-
-        for (line in lines.drop(1)) {
-            // MMD-10: keyword lines must be consumed *before* node scanning. `readNode`
-            // registers an id as soon as it matches, so `subgraph Backend`, `end`,
-            // `classDef …` and `class …` were each creating a phantom node — a diagram using
-            // subgraphs rendered four boxes that do not exist in the source.
-            val subgraphMatch = SUBGRAPH_START.find(line)
-            if (subgraphMatch != null) {
-                val rawId = subgraphMatch.groupValues[1].trim()
-                val bracketTitle = firstNonBlank(subgraphMatch, 2, 3)
-                openGroups.addLast(
-                    MutableGroup(
-                        id = rawId.ifBlank { "group_${groups.size + openGroups.size}" },
-                        title = (bracketTitle ?: rawId).trim().trim('"')
-                    )
-                )
-                continue
-            }
-
-            if (BLOCK_END.matches(line.trim())) {
-                openGroups.removeLastOrNull()?.let { finished ->
-                    // Empty subgraphs would draw an empty frame, so they are dropped.
-                    if (finished.nodeIds.isNotEmpty()) {
-                        groups.add(DiagramGroup(finished.id, finished.title, finished.nodeIds.toList()))
-                    }
-                }
-                continue
-            }
-
-            // Styling and interaction directives carry no geometry; skipping them is what
-            // stops `classDef`/`class`/`style`/`click` becoming nodes.
-            if (IGNORED_DIRECTIVE.containsMatchIn(line)) continue
-
-            val mentioned = mutableListOf<String>()
-
-            if (!parseEdgeChain(line, nodesMap, edges, mentioned)) {
-                // Standalone node: A[Label] or B(Text) — same alternation order as NODE_TOKEN.
-                val nodeMatch = NODE_TOKEN.find(line)
-                if (nodeMatch != null && nodeMatch.groupValues[1].isNotBlank()) {
-                    val id = nodeMatch.groupValues[1]
-                    mentioned.add(id)
-                    val label = firstNonBlank(nodeMatch, 2, 3, 4, 5, 6, 7)?.let(::cleanLabel) ?: id
-                    val shape = shapeOf(
-                        nodeMatch,
-                        circleGroup = 4, roundGroup = 5, diamondGroup = 7,
-                        hexagonGroup = 6, cylinderGroup = 2
-                    )
-                    nodesMap[id] = DiagramNode(id, label, shape)
-                }
-            }
-
-            // Membership follows *mention*, not creation. A subgraph body most often just
-            // lists ids that were declared earlier (`A1` on its own line, or `A1 --> A2`);
-            // capturing only newly-created nodes meant those groups came out empty and were
-            // dropped, so the subgraph disappeared entirely.
-            //
-            // First group to mention a node wins, matching Mermaid: a node belongs to the
-            // subgraph it is declared in, and a later reference does not move it.
-            openGroups.lastOrNull()?.let { current ->
-                mentioned.forEach { id ->
-                    if (id in nodesMap && assignedToGroup.add(id)) current.nodeIds.add(id)
-                }
-            }
-        }
-
-        // Unterminated subgraphs still render, rather than being discarded on a typo.
-        while (openGroups.isNotEmpty()) {
-            openGroups.removeLast().let { finished ->
-                if (finished.nodeIds.isNotEmpty()) {
-                    groups.add(DiagramGroup(finished.id, finished.title, finished.nodeIds.toList()))
-                }
-            }
-        }
-
-        // Fallback: If no nodes parsed, generate nodes from lines
-        if (nodesMap.isEmpty()) {
-            for ((idx, l) in lines.drop(1).withIndex()) {
-                val clean = l.replace(Regex("[^a-zA-Z0-9 _-]"), " ").trim()
-                if (clean.isNotBlank()) {
-                    nodesMap["node_$idx"] = DiagramNode("node_$idx", clean)
-                }
-            }
-        }
-
-        return ParsedDiagram(
-            type = "flowchart",
-            isHorizontal = isHorizontal,
-            nodes = nodesMap.values.toList(),
-            edges = edges,
-            groups = groups
-        )
+        val bodyLines = lines.drop(1)
+        val builder = FlowchartBuilder()
+        bodyLines.forEach(builder::consume)
+        return builder.build(bodyLines, isHorizontal)
     }
+
+    /** A sequence-diagram message line: `A ->> B : text`, dashed/plain arrows included. */
+    private val SEQ_MESSAGE = Regex("""(\w+)\s*(->>|-->>|->|-->)\s*(\w+)\s*:\s*(.+)""")
 
     private fun parseSequenceDiagram(lines: List<String>): ParsedDiagram {
         val actors = mutableSetOf<String>()
         val edges = mutableListOf<DiagramEdge>()
 
         for (line in lines.drop(1)) {
-            val seqRegex = Regex("""([A-Za-z0-9_]+)\s*(->>|-->>|->|-->)\s*([A-Za-z0-9_]+)\s*:\s*(.+)""")
-            val match = seqRegex.find(line)
+            val match = SEQ_MESSAGE.find(line)
             if (match != null) {
                 val from = match.groupValues[1]
                 val arrow = match.groupValues[2]
@@ -455,92 +479,133 @@ fun MermaidDiagramCanvas(
         color = theme.surface
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Header Bar with Switcher
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp)
-                    .background(theme.surfaceVariant.copy(alpha = 0.5f))
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AccountTree,
-                        contentDescription = "Mermaid Diagram",
-                        tint = theme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = diagramTypeLabel,
-                        color = theme.primary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.sp
-                    )
-                }
-
-                IconButton(
-                    onClick = { showRawCode = !showRawCode },
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Code,
-                        contentDescription = "Toggle Raw Mermaid Code",
-                        tint = if (showRawCode) theme.primary else theme.textMuted
-                    )
-                }
-            }
+            DiagramHeaderBar(
+                typeLabel = diagramTypeLabel,
+                showRawCode = showRawCode,
+                theme = theme,
+                onToggleRawCode = { showRawCode = !showRawCode }
+            )
 
             if (showRawCode) {
-                // Raw Code View
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFF0F131C))
-                        .padding(20.dp)
-                ) {
-                    Text(
-                        text = code,
-                        color = Color(0xFFE2E8F0),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 14.sp,
-                        lineHeight = 22.sp
-                    )
-                }
+                RawCodeView(code = code)
             } else {
-                // Interactive Visual Diagram Canvas
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (sequence != null && !sequence.isEmpty) {
-                        SequenceDiagramView(sequence, theme, Modifier.fillMaxSize())
-                    } else if (diagram.nodes.isEmpty()) {
-                        Text(
-                            text = code,
-                            color = theme.textMuted,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp
-                        )
-                    } else {
-                        // MMD-1: laid out from the graph, not from parse order.
-                        // FitMode.Contain: FlowchartGraphView reports its own intrinsic
-                        // scene size, which can exceed the canvas — contain-fit scales it
-                        // down deterministically instead of letting it clip.
-                        FitToCanvas(modifier = Modifier.fillMaxSize(), fitMode = FitMode.Contain) {
-                            FlowchartGraphView(diagram, theme)
-                        }
-                    }
-                }
+                DiagramContent(
+                    diagram = diagram,
+                    sequence = sequence,
+                    code = code,
+                    theme = theme
+                )
             }
+        }
+    }
+}
+
+/** Top bar: diagram-type label on the left, raw-code toggle on the right. */
+@Composable
+private fun DiagramHeaderBar(
+    typeLabel: String,
+    showRawCode: Boolean,
+    theme: PresentationTheme,
+    onToggleRawCode: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .background(theme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.AccountTree,
+                contentDescription = "Mermaid Diagram",
+                tint = theme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = typeLabel,
+                color = theme.primary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.sp
+            )
+        }
+
+        IconButton(
+            onClick = onToggleRawCode,
+            modifier = Modifier.size(28.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Code,
+                contentDescription = "Toggle Raw Mermaid Code",
+                tint = if (showRawCode) theme.primary else theme.textMuted
+            )
+        }
+    }
+}
+
+/** Raw Mermaid source, monospaced on a dark background. */
+@Composable
+private fun RawCodeView(code: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0F131C))
+            .padding(20.dp)
+    ) {
+        Text(
+            text = code,
+            color = Color(0xFFE2E8F0),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 14.sp,
+            lineHeight = 22.sp
+        )
+    }
+}
+
+/**
+ * The rendered diagram: a sequence view, a flowchart, or the raw code fallback
+ * when nothing parsed. Each branch is mutually exclusive, keeping this flat.
+ */
+@Composable
+private fun DiagramContent(
+    diagram: ParsedDiagram,
+    sequence: SequenceDiagram?,
+    code: String,
+    theme: PresentationTheme
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        when {
+            sequence != null && !sequence.isEmpty ->
+                SequenceDiagramView(sequence, theme, Modifier.fillMaxSize())
+
+            diagram.nodes.isEmpty() ->
+                Text(
+                    text = code,
+                    color = theme.textMuted,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp
+                )
+
+            else ->
+                // MMD-1: laid out from the graph, not from parse order.
+                // FitMode.Contain: FlowchartGraphView reports its own intrinsic
+                // scene size, which can exceed the canvas — contain-fit scales it
+                // down deterministically instead of letting it clip.
+                FitToCanvas(modifier = Modifier.fillMaxSize(), fitMode = FitMode.Contain) {
+                    FlowchartGraphView(diagram, theme)
+                }
         }
     }
 }
