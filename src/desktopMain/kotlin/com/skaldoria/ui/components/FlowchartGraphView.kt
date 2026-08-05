@@ -185,7 +185,11 @@ private fun DrawScope.drawSubgraphFrames(
 /**
  * Draws all edges from a flowchart scene.
  *
- * Extracted to reduce cognitive complexity of the main composable.
+ * Connectors and arrowheads for every edge are drawn first, then every label on top. Drawing
+ * a label immediately after its own edge is not enough: a *later* edge's connector would then
+ * be painted over an *earlier* edge's label, and the line struck straight through the text
+ * (e.g. two edges leaving the same node share a horizontal run at the source's centre line).
+ * Deferring all labels to a second pass guarantees no connector is ever drawn over a label.
  */
 private fun DrawScope.drawFlowchartEdges(
     scene: FlowchartScene,
@@ -193,21 +197,12 @@ private fun DrawScope.drawFlowchartEdges(
     measurer: TextMeasurer
 ) {
     for (edge in scene.edges) {
-        drawFlowchartEdge(edge, theme, measurer)
+        drawEdgePath(edge, theme)
+        drawEdgeArrowHead(edge, theme)
     }
-}
-
-/**
- * Draws a single edge with its path, arrowhead, and label.
- */
-private fun DrawScope.drawFlowchartEdge(
-    edge: FlowchartScene.EdgePlacement,
-    theme: PresentationTheme,
-    measurer: TextMeasurer
-) {
-    drawEdgePath(edge, theme)
-    drawEdgeArrowHead(edge, theme)
-    drawEdgeLabel(edge, theme, measurer)
+    for (edge in scene.edges) {
+        drawEdgeLabel(edge, theme, measurer)
+    }
 }
 
 /**
@@ -255,6 +250,19 @@ private fun DrawScope.drawEdgeLabel(edge: FlowchartScene.EdgePlacement, theme: P
         maxLines = 1
     )
     val labelCenter = edge.labelBox.center
+
+    // Mask the edge line behind the text. Without this the connector runs straight through
+    // the label and reads as a strike-through — the label and the line are on the same
+    // canvas, drawn in that order, so the line is otherwise visible in the gaps of the glyphs.
+    val boxWidth = layoutResult.size.width + LABEL_BACKGROUND_PADDING_X
+    val boxHeight = layoutResult.size.height + LABEL_BACKGROUND_PADDING_Y
+    drawRoundRect(
+        color = theme.surface,
+        topLeft = Offset(labelCenter.x - boxWidth / 2f, labelCenter.y - boxHeight / 2f),
+        size = androidx.compose.ui.geometry.Size(boxWidth, boxHeight),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f)
+    )
+
     drawText(
         textLayoutResult = layoutResult,
         topLeft = Offset(
@@ -264,4 +272,8 @@ private fun DrawScope.drawEdgeLabel(edge: FlowchartScene.EdgePlacement, theme: P
         color = theme.primary
     )
 }
+
+/** Padding of the label's background mask around its text, so the connector is fully hidden. */
+private const val LABEL_BACKGROUND_PADDING_X = 8f
+private const val LABEL_BACKGROUND_PADDING_Y = 2f
 

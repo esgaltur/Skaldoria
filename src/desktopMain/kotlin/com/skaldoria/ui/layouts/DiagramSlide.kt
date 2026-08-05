@@ -12,6 +12,7 @@ import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideElement
 import com.skaldoria.theme.PresentationTheme
 import com.skaldoria.ui.components.MermaidDiagramCanvas
+import com.skaldoria.ui.components.inlineMarkdown
 
 @Composable
 fun DiagramSlide(
@@ -61,7 +62,7 @@ fun DiagramSlide(
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (t in otherText) {
                     Text(
-                        text = t.content,
+                        text = inlineMarkdown(t.content, theme),
                         color = theme.textSecondary,
                         fontSize = 14.sp
                     )
