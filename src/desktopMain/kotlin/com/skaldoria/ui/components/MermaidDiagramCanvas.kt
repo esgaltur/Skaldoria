@@ -97,6 +97,24 @@ object MermaidParser {
             .map { match.groupValues.getOrElse(it) { "" } }
             .firstOrNull { it.isNotBlank() }
 
+    /** Matches a Mermaid `<br>` line break in any of its written forms: `<br>`, `<br/>`, `<br />`. */
+    private val BR_TAG = Regex("""<\s*br\s*/?\s*>""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Normalises a captured label into what should actually be drawn.
+     *
+     * Two things authors write are markup, not text, and must not survive into the node:
+     *  - a surrounding pair of quotes (`["…"]`), Mermaid's way of allowing special characters
+     *    in a label — the quotes delimit, they are not part of the text;
+     *  - `<br/>` (and `<br>` / `<br />`), an explicit line break — rendered literally it read
+     *    as the tag itself instead of splitting the label across lines.
+     *
+     * Centralised here so every capture site — node labels and edge labels alike — cleans a
+     * label the same way, rather than each re-deriving it.
+     */
+    private fun cleanLabel(raw: String): String =
+        BR_TAG.replace(raw.trim().removeSurrounding("\""), "\n").trim()
+
     /** Node shape implied by which bracket form matched. */
     private fun shapeOf(
         match: MatchResult,
@@ -183,7 +201,7 @@ object MermaidParser {
     private fun matchArrow(line: String, position: Int): ArrowMatch? {
         ARROW_TOKEN.matchAt(line, position)?.let { m ->
             return ArrowMatch(
-                label = m.groupValues[2].ifBlank { null },
+                label = m.groupValues[2].ifBlank { null }?.let(::cleanLabel),
                 isDashed = m.groupValues[1].contains("."),
                 end = m.range.last + 1
             )
@@ -192,7 +210,7 @@ object MermaidParser {
             val opener = m.groupValues[1]
             val closer = m.groupValues[3]
             return ArrowMatch(
-                label = m.groupValues[2].ifBlank { null },
+                label = m.groupValues[2].ifBlank { null }?.let(::cleanLabel),
                 isDashed = opener.contains(".") || closer.contains("."),
                 end = m.range.last + 1
             )
@@ -218,7 +236,7 @@ object MermaidParser {
             val id = match.groupValues[1]
             if (id.isBlank()) return null
             mentioned.add(id)
-            val label = firstNonBlank(match, 2, 3, 4, 5, 6, 7) ?: id
+            val label = firstNonBlank(match, 2, 3, 4, 5, 6, 7)?.let(::cleanLabel) ?: id
             val shape = shapeOf(
                 match,
                 circleGroup = 4, roundGroup = 5, diamondGroup = 7,
@@ -315,7 +333,7 @@ object MermaidParser {
                 if (nodeMatch != null && nodeMatch.groupValues[1].isNotBlank()) {
                     val id = nodeMatch.groupValues[1]
                     mentioned.add(id)
-                    val label = firstNonBlank(nodeMatch, 2, 3, 4, 5, 6, 7) ?: id
+                    val label = firstNonBlank(nodeMatch, 2, 3, 4, 5, 6, 7)?.let(::cleanLabel) ?: id
                     val shape = shapeOf(
                         nodeMatch,
                         circleGroup = 4, roundGroup = 5, diamondGroup = 7,
