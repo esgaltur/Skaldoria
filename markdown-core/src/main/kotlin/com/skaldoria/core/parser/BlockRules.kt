@@ -130,9 +130,22 @@ internal object NoteQuoteRule : BlockRule {
 // Fenced blocks
 // ---------------------------------------------------------------------------
 
-/** A ``` line: closes an open fence, or opens a new one. */
+/**
+ * A fence line: closes the open fence, or opens a new one.
+ *
+ * Both questions go through [FenceRules], so backtick and tilde fences behave identically and a
+ * fence can only be closed by a matching terminator. A ` ```js ` *inside* an open block is
+ * therefore code, not an accidental close — which is what the old `startsWith("```")` made it.
+ */
 internal object CodeFenceRule : BlockRule {
-    override fun matches(line: String, context: SectionContext) = line.startsWith("```")
+    override fun matches(line: String, context: SectionContext): Boolean {
+        val open = context.openFence
+        return if (open != null) {
+            FenceRules.closes(line, open)
+        } else {
+            FenceRules.openingFence(line) != null
+        }
+    }
 
     override fun consume(line: String, raw: String, context: SectionContext) {
         if (context.inCodeBlock) {
@@ -143,10 +156,11 @@ internal object CodeFenceRule : BlockRule {
         context.flushPending()
         context.flushMath()
 
-        val fence = MarkdownSlideParser.CODE_FENCE_START.find(line)
+        val fence = FenceRules.openingFence(line) ?: return
         context.openCodeBlock(
-            language = fence?.groupValues?.getOrNull(1) ?: "",
-            highlights = MarkdownSlideParser.parseLineHighlights(fence?.groupValues?.getOrNull(2))
+            language = fence.language,
+            highlights = fence.highlights,
+            fence = fence
         )
     }
 
