@@ -304,7 +304,37 @@ object MarkdownSlideParser {
         )
     }
 
+    /**
+     * Whether [markdown] can possibly yield a follow-up item, decided by character scan.
+     *
+     * PRF-6: this runs on **every deck change** via `ParkingLotStore.reconcile`, and it was 24%
+     * of the per-keystroke budget on documents that contain no follow-up items at all — which is
+     * most of them, including every deck that has never used the feature.
+     *
+     * **The guard has to cover both extraction paths, and that is the trap.** A
+     * `parking-lot:`-only check looks obvious and silently drops every checkbox-derived item:
+     *
+     *  1. directive comments — `<!-- parking-lot: … -->` and its aliases, all requiring `<!--`
+     *  2. task lists — `CHECKBOX_LINE_REGEX`, `^-\s*\[`, on the *trimmed* line
+     *
+     * Deliberately a superset of what those two can match: no allocation, no regex, and it
+     * cannot exclude anything the real scan would have found.
+     */
+    private fun mayContainFollowUps(markdown: String): Boolean {
+        if (markdown.contains("<!--")) return true
+
+        for (i in markdown.indices) {
+            if (markdown[i] != '-') continue
+            var j = i + 1
+            while (j < markdown.length && (markdown[j] == ' ' || markdown[j] == '\t')) j++
+            if (j < markdown.length && markdown[j] == '[') return true
+        }
+        return false
+    }
+
     fun extractFollowUpQuestions(markdown: String): List<FollowUpQuestion> {
+        if (!mayContainFollowUps(markdown)) return emptyList()
+
         val result = mutableListOf<FollowUpQuestion>()
         val lines = markdown.lines()
 
