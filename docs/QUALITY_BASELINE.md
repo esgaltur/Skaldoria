@@ -1,6 +1,6 @@
 # Quality Baseline
 
-**Version:** 1.2.0 · **Last reviewed:** 2026-08-06 · **Suite:** 541 tests, 0 failures
+**Version:** 1.3.0 · **Last reviewed:** 2026-08-06 · **Suite:** 575 tests, 0 failures
 
 This document is the reference for the invariants this codebase holds, established during a
 systematic pre-release review of `src/desktopMain`. Every entry has a stable identifier, and
@@ -118,6 +118,12 @@ Entries without a **Rationale** are self-evident and need none.
 | LNK-1 | Companion | The advertised address is one the *client* can reach; the default route is a hint, not the authority | `LinkRankingTest` |
 | LNK-2 | Companion | An interface is judged by whether it carries a usable address, not by its name | `LinkRankingTest` |
 | OUT-1 | Export | An exported deck renders with no network access | `OfflineHtmlExportTest` |
+| EDT-1 | Editor | The editor's text is derived from the deck; only *selection* is editor-owned state | `EditorRevealTest` |
+| EDT-2 | Editor | A reveal request is published by explicit navigation only, never by caret movement | `EditorRevealTest` |
+| EDT-3 | Editor | Slide ⇄ offset mapping derives from `Slide.sourceLineRange`; nothing re-derives boundaries (extends COR-1) | `SlideSourceLocatorTest` |
+| EDT-4 | Editor | Every match-navigation action scrolls its match into view — asserted on the **rendered** pane, not on the index | `EditorWorkspaceRenderingTest` |
+| EDT-5 | Editor | Selection is clamped to the new text length before it reaches the field | `EditorRevealTest` |
+| CLK-1 | Presentation | The key codes an off-the-shelf presenter clicker emits reach a deck command | `PresenterClickerTest` |
 
 ---
 

@@ -1,5 +1,6 @@
 package com.skaldoria.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -7,30 +8,32 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.unit.sp
 import com.skaldoria.core.models.SlideLayoutType
 import com.skaldoria.state.PresentationState
-import com.skaldoria.ui.components.AppTooltip
-import com.skaldoria.ui.components.CommandPalette
-import com.skaldoria.ui.components.ParkingLotView
-import com.skaldoria.ui.components.SlideSurface
-import com.skaldoria.ui.components.TopBar
+import com.skaldoria.ui.components.*
 import com.skaldoria.ui.editor.MarkdownVisualTransformation
 import kotlinx.coroutines.launch
 
@@ -138,6 +141,29 @@ fun EditorWorkspace(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
+                            // Phase 5: the escape hatch for the caret→slide direction. Off means
+                            // the preview stops following where you are typing.
+                            AppTooltip(
+                                text = if (state.isFollowCaretEnabled) {
+                                    "Following the caret — the preview tracks the slide you are editing"
+                                } else {
+                                    "Not following the caret — the preview stays where you left it"
+                                },
+                                theme = state.currentTheme
+                            ) {
+                                IconButton(
+                                    onClick = { state.isFollowCaretEnabled = !state.isFollowCaretEnabled },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (state.isFollowCaretEnabled) Icons.Default.Link else Icons.Default.LinkOff,
+                                        contentDescription = "Follow Caret",
+                                        tint = if (state.isFollowCaretEnabled) state.currentTheme.primary else state.currentTheme.textSecondary,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                            }
+
                             AppTooltip(text = if (state.isFindOpen) "Close Find (Esc)" else "Find & Replace in Editor", theme = state.currentTheme, shortcut = "Ctrl+F") {
                                 IconButton(
                                     onClick = { state.toggleFind() },
@@ -206,33 +232,9 @@ fun EditorWorkspace(
                         )
                     }
 
-                    // TextField with Syntax Highlighting VisualTransformation & Search Highlights
-                    TextField(
-                        value = state.currentEditorText,
-                        onValueChange = { state.updateEditorContent(it) },
-                        visualTransformation = MarkdownVisualTransformation(
-                            theme = state.currentTheme,
-                            searchMatches = if (state.isFindOpen) state.findMatches else emptyList(),
-                            activeMatchIndex = if (state.isFindOpen) state.currentMatchIndex else -1
-                        ),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Transparent),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = state.currentTheme.surfaceVariant.copy(alpha = 0.4f),
-                            unfocusedContainerColor = state.currentTheme.surfaceVariant.copy(alpha = 0.2f),
-                            focusedTextColor = state.currentTheme.textPrimary,
-                            unfocusedTextColor = state.currentTheme.textPrimary,
-                            cursorColor = state.currentTheme.primary,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        textStyle = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = state.editorFontSize.sp,
-                            lineHeight = (state.editorFontSize * 1.5).sp
-                        ),
-                        shape = RoundedCornerShape(8.dp)
+                    MarkdownSourceField(
+                        state = state,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
 
@@ -584,6 +586,104 @@ fun EditorWorkspace(
         }
     }
 }
+
+/**
+ * The markdown source pane.
+ *
+ * **EDT-1 — text derived, selection stored.** [androidx.compose.ui.text.input.TextFieldValue]
+ * is rebuilt from scratch on every composition out of `state.currentEditorText` and the stored
+ * selection. It is deliberately *not* held in a `remember`: a remembered value re-seeded from
+ * the deck text is what makes the caret jump to the end of the document on every keystroke,
+ * and ADR-004 splits ownership precisely to prevent it.
+ *
+ * **Option B, not Option A.** ADR-004's alternatives table chose the Material `TextField` plus
+ * its built-in cursor-following scroll, with Option B — an explicit [ScrollState] and
+ * `onTextLayout` — as the escalation if that proved imprecise. Option B is taken here, because
+ * the reveal that matters most is a search hit, and the find bar holds focus while it fires;
+ * a field's built-in cursor-following scroll is not specified to run for an unfocused field.
+ * Scrolling explicitly also places the revealed line near the top of the viewport rather than
+ * merely somewhere inside it, which is the "technically correct and feels wrong" case the ADR
+ * anticipated. The cost is reproducing the Material container, which is the `Box` below.
+ */
+@Composable
+private fun MarkdownSourceField(
+    state: PresentationState,
+    modifier: Modifier = Modifier
+) {
+    val theme = state.currentTheme
+    val text = state.currentEditorText
+
+    val scrollState = rememberScrollState()
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var handledRevealToken by remember { mutableStateOf(-1L) }
+    var isFocused by remember { mutableStateOf(false) }
+
+    // EDT-5: clamped here, so a slide-file swap to a shorter document cannot construct an
+    // out-of-bounds TextFieldValue no matter which of text or selection changed first.
+    val value = TextFieldValue(text = text, selection = state.editorSelectionWithin(text.length))
+
+    // EDT-4: keyed on the reveal token *and* the layout, because a reveal published by a
+    // slide-file swap arrives before the new text has been measured. `handledRevealToken`
+    // stops the re-run that a later layout change would otherwise cause from scrolling the
+    // user back to a match they have already moved on from.
+    LaunchedEffect(state.editorRevealToken, layout) {
+        val token = state.editorRevealToken
+        if (token == handledRevealToken) return@LaunchedEffect
+        val measured = layout ?: return@LaunchedEffect
+        val target = state.editorRevealTargetWithin(text.length) ?: return@LaunchedEffect
+
+        handledRevealToken = token
+
+        val lineTop = measured.getLineTop(measured.getLineForOffset(target.min))
+        // A quarter of the viewport of lead-in, so the revealed line has context above it
+        // instead of sitting flush against the top edge.
+        val leadIn = scrollState.viewportSize * REVEAL_LEAD_IN_FRACTION
+        scrollState.animateScrollTo((lineTop - leadIn).toInt().coerceIn(0, scrollState.maxValue))
+    }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (isFocused) theme.surfaceVariant.copy(alpha = 0.4f)
+                else theme.surfaceVariant.copy(alpha = 0.2f)
+            )
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = { updated ->
+                // Text first: the reverse sync below maps an offset against the deck, and the
+                // deck has to be the one the offset came from.
+                if (updated.text != text) state.updateEditorContent(updated.text)
+                state.onEditorSelectionChanged(updated.selection)
+            },
+            onTextLayout = { layout = it },
+            visualTransformation = MarkdownVisualTransformation(
+                theme = theme,
+                searchMatches = if (state.isFindOpen) state.findMatches else emptyList(),
+                activeMatchIndex = if (state.isFindOpen) state.currentMatchIndex else -1
+            ),
+            textStyle = TextStyle(
+                color = theme.textPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = state.editorFontSize.sp,
+                lineHeight = (state.editorFontSize * 1.5).sp
+            ),
+            cursorBrush = SolidColor(theme.primary),
+            modifier = Modifier
+                .fillMaxSize()
+                .onFocusChanged { isFocused = it.isFocused }
+                // Unbounded height for the field, scrolled by this modifier rather than by the
+                // field's own internal scroller — which is what makes `getLineTop` above
+                // address the whole document instead of just the visible window.
+                .verticalScroll(scrollState)
+                .padding(16.dp)
+        )
+    }
+}
+
+/** How far down the viewport a revealed line lands. */
+private const val REVEAL_LEAD_IN_FRACTION = 0.25f
 
 @Composable
 private fun FilmstripScrollButton(

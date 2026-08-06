@@ -2,26 +2,38 @@
 ## ADR-004: Editor Caret Model, Slide Synchronisation, and Presentation HUD Visibility
 
 ### Status
-**Partially implemented** (2026-08-06)
+**Implemented** (2026-08-06) — Phases 1–5. Phase 6 remains deferred.
 
 | Phase | Item | State |
 | :--- | :--- | :--- |
 | 1 | HUD visibility (`DEL-02`, HUD-1/2/3) | ✅ **Shipped** — `HudVisibility`, `H` binding, idle fade, persisted (DED-2) |
-| 2 | Caret foundation (`AUT-05`, EDT-1/EDT-5) | ⬜ Not started — **the blocker for everything below** |
-| 3 | Find reveal (`AUT-03`, EDT-4) | ⬜ Not started |
-| 4 | Slide → editor sync (`AUT-02`, EDT-3) | ⬜ Not started |
-| 5 | Editor → slide sync (EDT-2) | ⬜ Not started |
-| 6 | Deck-wide search | ⬜ Deferred |
+| 2 | Caret foundation (`AUT-05`, EDT-1/EDT-5) | ✅ **Shipped** — `EditorSession`, `TextFieldValue`, clamped selection |
+| 3 | Find reveal (`AUT-03`, EDT-4) | ✅ **Shipped** — reveal token, focus return, scope stated in the bar |
+| 4 | Slide → editor sync (`AUT-02`, EDT-3) | ✅ **Shipped** — `SlideSourceLocator`, reveal from `goToSlide`/`next`/`prev` |
+| 5 | Editor → slide sync (EDT-2) | ✅ **Shipped** — `slideIndexAtOffset`, follow-caret toggle (default on) |
+| 6 | Deck-wide search | ⬜ Deferred — unchanged, and still not a commitment |
 
-> Phase 1 was independent and shipped first, as planned. **Phases 2–5 remain open**, and the
-> analysis below is unchanged and still accurate: the source pane is still the `String`
-> overload of `TextField`, `FindReplaceController.findNext()` still only advances an index, and
-> the find buttons still look dead on any deck longer than one screen.
+> **What changed against the plan, and why.**
 >
-> Phase 2 has been deferred deliberately, not forgotten. Its failure mode — a caret that jumps
-> to the end of the document on every keystroke — lands in the control the user types into all
-> day, and `PresentationState` has been under concurrent modification by the god-object
-> decomposition (ADR-003). Land it alone, on a quiet tree.
+> **The composable took Option B, not Option A.** The alternatives table below chose the
+> Material `TextField` and its built-in cursor-following scroll, with Option B — an explicit
+> `ScrollState` plus `onTextLayout` — as the escalation if that proved imprecise. Option B was
+> taken directly, because the reveal that matters most is a search hit and *the find bar holds
+> focus while it fires*: a field's built-in cursor-following scroll is not specified to run for
+> an unfocused field, so Option A risked shipping the original defect under a new mechanism.
+> Scrolling explicitly also places the revealed line a quarter of the way down the viewport
+> rather than merely somewhere inside it, which settles the "technically correct and feels
+> wrong" risk recorded below. The cost is reproducing the Material container by hand, which is
+> a `Box` in `EditorWorkspace.kt` and touches nothing in `core/` or `PresentationState`.
+>
+> **Ownership is exactly as specified.** Text derived, selection stored, `TextFieldValue`
+> rebuilt every composition and never remembered. That half of the decision is what prevents
+> the caret-jump regression and it was not varied.
+>
+> **One gap the plan did not anticipate.** Revealing a search match moved the source pane and
+> left the preview and filmstrip behind, so the editor and the deck disagreed about where the
+> user was. `revealCurrentMatch()` now selects the match's slide as well — through
+> `SlideNavigator` directly, so it cannot publish a further reveal and EDT-2 still holds.
 
 > This ADR records three reported defects,
 > establishes that **two of the three share a single root cause**, and proposes the structure
@@ -349,14 +361,24 @@ The project's rule is that a regression test must **fail before the fix**. Each 
 written against the user-visible behaviour, not the internal index — that is the whole lesson
 of Problem B.
 
-| Invariant | Guard | Fails today because |
+| Invariant | Guard | Confirmed to fail before the fix by |
 | :--- | :--- | :--- |
-| EDT-3 | `SlideSourceLocatorTest` — round-trip offset ↔ slide index across `---`-delimited, `#`/`##` heading-split, and `----` rule decks (the three shapes COR-1 identified as divergent). | The unit does not exist. |
-| EDT-4 | `EditorRevealTest` — `findNext()` must publish a reveal target equal to `findMatches[currentMatchIndex].first`. | `findNext()` publishes nothing. |
-| EDT-2 | `EditorRevealTest` — moving the caret must **not** change the reveal token; `goToSlide` must. | No reveal token exists. |
-| EDT-5 | `EditorRevealTest` — switching to a shorter slide file with a far-out selection must clamp, not throw. | No selection state exists. |
-| HUD-2 | A headless `ImageComposeScene` render, in the style of `SlideRenderingTest`: the slide's rendered content pixels must be **identical** with the HUD shown and hidden. | HUD visibility is not modelled. |
-| HUD-1 | `FullscreenDeckKeyTest` — `H` cycles visibility from every state back to a visible one. | No binding exists. |
+| EDT-3 | `SlideSourceLocatorTest` — round-trip offset ↔ slide index across `---`-delimited, `#`/`##` heading-split, and `----` rule decks (the three shapes COR-1 identified as divergent). | The unit not existing. |
+| EDT-4 | `EditorRevealTest` — `findNext()`/`findPrevious()` must publish a reveal target equal to the active match, and a *second* reveal of the same match must still fire. | Emptying `revealCurrentMatch()`: 9 of 14 tests fail. |
+| EDT-2 | `EditorRevealTest` — moving the caret must **not** change the reveal token; `goToSlide`/`next`/`prev` must. | Making `EditorSession.moveCaret` publish a reveal: the two loop-guard tests fail. |
+| EDT-1 | `EditorRevealTest` — typing mid-document leaves the caret where it was typed, and a whole-deck replacement is reflected in the editor. | — (a state-level floor; the field itself is checked by hand, see the manual script) |
+| EDT-5 | `EditorRevealTest` — switching to a shorter document with a far-out selection must clamp, not throw. | Selection state not existing. |
+| EDT-4 | `EditorWorkspaceRenderingTest` — the **rendered** source pane must differ after jumping to slide 40, and after finding a match on the last slide. | The pane being pixel-identical in both renders before Phase 4. |
+| HUD-2 | A headless `ImageComposeScene` render, in the style of `SlideRenderingTest`: the slide's rendered content pixels must be **identical** with the HUD shown and hidden. | HUD visibility not being modelled. |
+| HUD-1 | `HudVisibilityTest` — `H` cycles visibility from every state back to a visible one. | No binding existing. |
+
+`EditorWorkspaceRenderingTest` is the guard that matters most, and it is the one the plan did
+not ask for. Every state-level test in `EditorRevealTest` would pass against a composable that
+published reveal requests into a void — which is a more sophisticated version of the exact
+defect this ADR was written about. Only a render shows that the pane in front of the user
+moved. It renders 30 frames with an advancing clock, because a single frame composes and runs
+effects but never lets the scroll animation start, and so can only ever show the pane *before*
+the reveal.
 
 `EditorFindAndReplaceTest` stays as is — it correctly guards the matching model, which is not
 what is broken. It should gain a comment pointing at `EditorRevealTest`, so the next reader

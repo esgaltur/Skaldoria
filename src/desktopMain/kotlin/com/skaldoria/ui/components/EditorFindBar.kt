@@ -38,12 +38,16 @@ fun EditorFindBar(
 ) {
     val searchFocusRequester = remember { FocusRequester() }
 
+    // Requesting focus on a requester that is not attached throws, which is a normal race
+    // while the bar is appearing rather than an error worth surfacing.
+    fun refocusQuery() {
+        try {
+            searchFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+
     LaunchedEffect(state.isFindOpen) {
-        if (state.isFindOpen) {
-            try {
-                searchFocusRequester.requestFocus()
-            } catch (_: Exception) {}
-        }
+        if (state.isFindOpen) refocusQuery()
     }
 
     val matches = state.findMatches
@@ -105,10 +109,9 @@ fun EditorFindBar(
 
                 BasicTextField(
                     value = state.findQuery,
-                    onValueChange = {
-                        state.findQuery = it
-                        state.currentMatchIndex = 0
-                    },
+                    // Routed through the state so the "first match at or after the caret" rule
+                    // and the reveal live in one place rather than being reset to 0 here.
+                    onValueChange = { state.updateFindQuery(it) },
                     modifier = Modifier
                         .weight(1f)
                         .focusRequester(searchFocusRequester)
@@ -142,7 +145,7 @@ fun EditorFindBar(
                         Box(contentAlignment = Alignment.CenterStart) {
                             if (state.findQuery.isEmpty()) {
                                 Text(
-                                    text = "Find in slide source...",
+                                    text = "Find in ${state.findScopeLabel}...",
                                     color = state.currentTheme.textMuted,
                                     fontSize = 13.sp,
                                     fontFamily = FontFamily.SansSerif
@@ -160,10 +163,7 @@ fun EditorFindBar(
                         tint = state.currentTheme.textSecondary,
                         modifier = Modifier
                             .size(14.dp)
-                            .clickable {
-                                state.findQuery = ""
-                                state.currentMatchIndex = 0
-                            }
+                            .clickable { state.updateFindQuery("") }
                     )
                 }
             }
@@ -204,7 +204,10 @@ fun EditorFindBar(
             // Previous Match (Shift+Enter)
             AppTooltip(text = "Previous Match", theme = state.currentTheme, shortcut = "Shift+Enter") {
                 IconButton(
-                    onClick = { state.findPrevious() },
+                    // ADR-004 Problem B, secondary defect 2: clicking here moved focus out of
+                    // the query field, so the Enter / Shift+Enter handlers above stopped firing
+                    // until the user clicked back — which compounded "the buttons do nothing".
+                    onClick = { state.findPrevious(); refocusQuery() },
                     enabled = matchCount > 0,
                     modifier = Modifier.size(28.dp)
                 ) {
@@ -220,7 +223,7 @@ fun EditorFindBar(
             // Next Match (Enter)
             AppTooltip(text = "Next Match", theme = state.currentTheme, shortcut = "Enter") {
                 IconButton(
-                    onClick = { state.findNext() },
+                    onClick = { state.findNext(); refocusQuery() },
                     enabled = matchCount > 0,
                     modifier = Modifier.size(28.dp)
                 ) {
@@ -306,6 +309,25 @@ fun EditorFindBar(
                         fontFamily = FontFamily.Monospace
                     )
                 }
+            }
+
+            // Scope statement. `No matches` is an honest answer only when the user knows what
+            // was searched: in project + per-slide mode that is one file, not the deck.
+            AppTooltip(
+                text = "Search covers ${state.findScopeLabel}. Switch the editor to Full Deck to search across slide files.",
+                theme = state.currentTheme
+            ) {
+                Text(
+                    text = "in ${state.findScopeLabel}",
+                    color = state.currentTheme.textMuted,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(state.currentTheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                )
             }
 
             // Close Find Bar (Esc)

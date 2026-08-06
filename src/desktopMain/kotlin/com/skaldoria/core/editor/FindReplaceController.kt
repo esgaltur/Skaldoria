@@ -105,6 +105,24 @@ class FindReplaceController(
         if (found.isNotEmpty()) currentMatchIndex = (currentMatchIndex + 1) % found.size
     }
 
+    /**
+     * Selects the first match at or after [offset], or the first match in the document when
+     * every match is behind the caret.
+     *
+     * Opening the bar with the caret on slide 30 used to jump to match 0 on slide 1, so the
+     * first thing search did was throw away where you were. ADR-004 Problem B, secondary
+     * defect 3.
+     *
+     * @return true when a match was selected.
+     */
+    fun focusFrom(offset: Int): Boolean {
+        val found = matches
+        if (found.isEmpty()) return false
+        val ahead = found.indexOfFirst { it.first >= offset }
+        currentMatchIndex = if (ahead >= 0) ahead else 0
+        return true
+    }
+
     fun findPrevious() {
         val found = matches
         if (found.isNotEmpty()) currentMatchIndex = (currentMatchIndex - 1 + found.size) % found.size

@@ -1,13 +1,18 @@
 # Improvement Plan — Editor Synchronisation, Find Reveal, and HUD Visibility
 
-**Version:** 1.2.0 · **Drafted:** 2026-08-06 · **Status:** Phase 1 shipped, Phases 2–6 open · **Suite:** 235 → 541 tests, 0 failures
+**Version:** 1.3.0 · **Drafted:** 2026-08-06 · **Status:** Phases 1–5 shipped, Phase 6 deferred · **Suite:** 235 → 575 tests, 0 failures
 
-> **Phase 1 (HUD visibility) is done** and went further than planned — it is persisted across
-> launches, which the original plan listed as out of reach. Phases 2–6 are unchanged and still
-> accurate.
+> **Phases 1–5 are done.** Phase 1 (HUD visibility) went further than planned — it is persisted
+> across launches, which the original plan listed as out of reach. Phases 2–5 landed together
+> rather than as five commits; the sequencing argument below still holds and is kept because it
+> is *why* the work is safe, not merely how it was scheduled.
 >
-> **Start at Phase 2.** Everything else waits on it, and it must land on a quiet tree: its
-> failure mode is a caret that jumps to the end of the document on every keystroke.
+> Two things differ from the plan and are recorded in
+> [ADR-004 § Status](./ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md#status): the composable took
+> **Option B** (explicit `ScrollState` + `onTextLayout`) rather than Option A, and revealing a
+> search match now also selects the match's slide.
+>
+> **Phase 6 (deck-wide search) remains deferred** and is still not a commitment.
 
 Companion to [ADR-004](./ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md). The ADR records *why*; this
 document is the *what, in what order, and how we know it worked*. Where the two disagree, the
@@ -241,14 +246,26 @@ The project's rule is that a regression test **must fail before the fix**. Every
 written against user-visible behaviour, not an internal index — which is the entire lesson of
 defect 3.
 
-| Guard | Asserts | Fails today because |
+| Guard | Asserts | Verified to fail before the fix by |
 | :--- | :--- | :--- |
-| `SlideSourceLocatorTest` | Round-trip offset ↔ slide index across `---`, `#`/`##`, and `----` decks — the three shapes COR-1 identified as divergent. | The unit does not exist. |
-| `EditorRevealTest` · reveal on find | `findNext()` publishes a reveal equal to `findMatches[currentMatchIndex].first`. | `findNext()` publishes nothing. |
-| `EditorRevealTest` · no loop | Caret movement does **not** change the reveal token; `goToSlide` does. | No reveal token exists. |
-| `EditorRevealTest` · clamp | Switching to a shorter slide file with a far-out selection clamps rather than throwing. | No selection state exists. |
-| `FullscreenDeckKeyTest` | `H` cycles visibility from every state back to a visible one. | No binding exists. |
-| HUD-2 render guard | Headless `ImageComposeScene` render, in the style of `SlideRenderingTest`: slide content pixels are **identical** with the HUD shown and hidden. | HUD visibility is not modelled. |
+| `SlideSourceLocatorTest` | Round-trip offset ↔ slide index across `---`, `#`/`##`, and `----` decks — the three shapes COR-1 identified as divergent. Plus CRLF source, where summing line lengths drifts one character per line. | The unit not existing. |
+| `EditorRevealTest` · reveal on find | `findNext()`/`findPrevious()` publish a reveal equal to the active match; a repeat reveal of the same match still fires. | Emptying `revealCurrentMatch()` — 9 of 14 fail. |
+| `EditorRevealTest` · no loop | Caret movement does **not** change the reveal token; `goToSlide`/`next`/`prev` do. | Making `moveCaret` publish a reveal — both loop guards fail. |
+| `EditorRevealTest` · caret jump | Typing mid-document leaves the caret where it was typed, not at the end. | — (state-level floor; see the manual script) |
+| `EditorRevealTest` · clamp | Switching to a shorter document with a far-out selection clamps rather than throwing. | Selection state not existing. |
+| **`EditorWorkspaceRenderingTest`** | The **rendered** source pane draws at all, differs after jumping to slide 40, and differs after finding a match on the last slide. | The pane being pixel-identical in both renders. |
+| `HudVisibilityTest` | `H` cycles visibility from every state back to a visible one. | No binding existing. |
+| HUD-2 render guard | Headless `ImageComposeScene` render, in the style of `SlideRenderingTest`: slide content pixels are **identical** with the HUD shown and hidden. | HUD visibility not being modelled. |
+
+### Why the render guard was added
+
+It is not in the original plan, and it is the one that would have caught a plausible bad
+outcome. Every assertion in `EditorRevealTest` passes against a composable that publishes
+reveal requests nothing consumes — a more sophisticated version of the defect this whole
+document is about. `EditorWorkspaceRenderingTest` renders the studio window over 30 frames with
+an advancing clock (one frame composes and runs effects but never lets the scroll animation
+start) and compares the source pane's pixels. The rendered PNGs land in `build/render-check/`
+and **were looked at**, per `RENDERING_STATUS.md`'s rule.
 
 ### Existing tests
 

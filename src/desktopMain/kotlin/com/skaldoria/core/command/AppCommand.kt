@@ -28,7 +28,9 @@ data class Shortcut(
             "Spacebar" to "Space",
             "Escape" to "Esc",
             "Equals" to "+",
-            "Minus" to "-"
+            "Minus" to "-",
+            "Period" to ".",
+            "Comma" to ","
         )
     }
 }
@@ -95,8 +97,12 @@ object AppCommands {
     val LAST_SLIDE = AppCommand("deck.last", "Jump to Last Slide", setOf(CommandScope.DECK), listOf(Shortcut("MoveEnd")))
     val CYCLE_THEME = AppCommand("deck.theme", "Cycle Color Themes", setOf(CommandScope.DECK), listOf(Shortcut("T")))
     val TOGGLE_HUD = AppCommand("deck.hud", "Show/Hide Toolbar", setOf(CommandScope.DECK), listOf(Shortcut("H")))
-    val BLACKOUT = AppCommand("deck.blackout", "Blackout Screen", setOf(CommandScope.DECK), listOf(Shortcut("B")))
-    val WHITEOUT = AppCommand("deck.whiteout", "Whiteout Screen", setOf(CommandScope.DECK), listOf(Shortcut("W")))
+    // AUD-08: `.` and `,` are the codes a presenter clicker's blank-screen button emits — the
+    // PowerPoint convention the hardware is built against. `B` and `W` are the same commands
+    // for a human at a keyboard. Without the punctuation the button did nothing, which is the
+    // one gap the clicker survey found; forward and back already worked.
+    val BLACKOUT = AppCommand("deck.blackout", "Blackout Screen", setOf(CommandScope.DECK), listOf(Shortcut("B"), Shortcut("Period")))
+    val WHITEOUT = AppCommand("deck.whiteout", "Whiteout Screen", setOf(CommandScope.DECK), listOf(Shortcut("W"), Shortcut("Comma")))
     val GRID_OVERVIEW = AppCommand("deck.grid", "Grid Overview", setOf(CommandScope.DECK), listOf(Shortcut("G")))
     val LASER_POINTER = AppCommand("deck.laser", "Toggle Laser Pointer", setOf(CommandScope.DECK), listOf(Shortcut("L")))
     val PEN_DRAWING = AppCommand("deck.pen", "Toggle Pen Annotation", setOf(CommandScope.DECK), listOf(Shortcut("P")))

@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextRange
 import com.skaldoria.config.ConfigManager
 import com.skaldoria.core.annotation.AnnotationLayer
 import com.skaldoria.core.audience.AudienceSession
@@ -15,6 +16,7 @@ import com.skaldoria.core.deck.SlideTemplates
 import com.skaldoria.core.deck.SlideNavigator
 import com.skaldoria.core.document.DeckHistory
 import com.skaldoria.core.document.SlideDocument
+import com.skaldoria.core.document.SlideSourceLocator
 import com.skaldoria.core.editor.FindReplaceController
 import com.skaldoria.core.models.*
 import com.skaldoria.core.pacing.Pacing
@@ -72,6 +74,76 @@ class PresentationState(
 
     override val currentSlideIndex: Int
         get() = navigator.currentIndex
+
+    // ------------------------------------------------------------------
+    // Editor caret and reveal — delegated to [EditorSession] (AUT-05 / ADR-004 Phase 2).
+    //
+    // EDT-1: the session owns *selection only*. Text stays derived from the deck, so there is
+    // never a second authority for content.
+    // ------------------------------------------------------------------
+
+    private val editor = EditorSession()
+
+    val editorSelection: TextRange get() = editor.selection
+
+    val editorRevealToken: Long get() = editor.revealToken
+
+    /** EDT-5: clamped for a document of [length] characters before it reaches the field. */
+    fun editorSelectionWithin(length: Int): TextRange = editor.selectionWithin(length)
+
+    fun editorRevealTargetWithin(length: Int): TextRange? = editor.revealTargetWithin(length)
+
+    /** Whether moving the caret selects the slide it sits in. */
+    var isFollowCaretEnabled: Boolean
+        get() = editor.followCaret
+        set(value) { editor.followCaret = value }
+
+    /**
+     * The user moved the caret or changed the selection.
+     *
+     * EDT-2: this publishes **no** reveal request. Forward sync moves the caret; if caret
+     * movement also published a reveal, the two directions would drive each other and the
+     * viewport would fight the user's cursor.
+     */
+    fun onEditorSelectionChanged(range: TextRange) {
+        editor.moveCaret(range)
+        syncSlideToCaret()
+    }
+
+    /**
+     * Selects the slide the caret is sitting in.
+     *
+     * EDT-2: moves the cursor through [SlideNavigator] directly rather than through
+     * [goToSlide], so it cannot publish a reveal request. That asymmetry is the loop guard —
+     * forward sync moves the caret, and this must not answer by moving the caret again.
+     */
+    private fun syncSlideToCaret() {
+        if (!editor.followCaret) return
+
+        // In per-slide project mode the editor already shows one file, and the caret's offset
+        // is an offset into *that file* — mapping it against the combined deck would select an
+        // unrelated slide. The file swap is the synchronisation in that mode.
+        if (isProjectMode && isPerSlideEditorMode) return
+
+        navigator.goTo(SlideSourceLocator.slideIndexAtOffset(markdownText, slides, editor.selection.min))
+    }
+
+    /**
+     * EDT-3: puts the editor on the current slide's source, via [SlideSourceLocator].
+     *
+     * Published by explicit navigation only — [goToSlide], [nextSlide], [previousSlide] — which
+     * is the other half of EDT-2.
+     */
+    private fun revealCurrentSlideInEditor() {
+        val offset = if (isProjectMode && isPerSlideEditorMode) {
+            // The file swap has already changed what the editor shows; there is no meaningful
+            // offset to scroll to, and the previous file's caret would be out of bounds.
+            0
+        } else {
+            SlideSourceLocator.offsetOfSlideIndex(markdownText, slides, currentSlideIndex)
+        }
+        editor.requestReveal(TextRange(offset))
+    }
 
     var currentTheme by mutableStateOf<PresentationTheme>(BuiltinThemes.SkaldoriaDark)
 
@@ -278,19 +350,71 @@ class PresentationState(
     val findMatches: List<IntRange>
         get() = findReplace.matches
 
+    /**
+     * What the find bar is actually searching, so it can say so.
+     *
+     * ADR-004 Problem B, secondary defect 1: in project + per-slide mode search covers the
+     * open file only, and the sole hint was placeholder text. A user searching a fifty-slide
+     * deck got `No matches` and concluded the feature was broken.
+     */
+    val findScopeLabel: String
+        get() = if (isProjectMode && isPerSlideEditorMode) {
+            currentSlideFile?.relativePath ?: "this slide file"
+        } else {
+            "the whole deck"
+        }
+
     fun closeFind() = findReplace.close()
 
     fun toggleReplaceRow() = findReplace.toggleReplaceRow()
 
-    fun toggleFind(withReplace: Boolean = false) = findReplace.toggle(withReplace)
+    fun toggleFind(withReplace: Boolean = false) {
+        findReplace.toggle(withReplace)
+        // Opening with an existing query should resume from the caret, not restart at match 0.
+        if (findReplace.isOpen && findReplace.focusFrom(editor.selection.min)) revealCurrentMatch()
+    }
 
-    fun findNext() = findReplace.findNext()
+    /**
+     * Applies a new search query and re-targets from the caret.
+     *
+     * The find bar used to reset `currentMatchIndex` to 0 itself. Routing it here keeps the
+     * "first match at or after the caret" rule in one place and makes incremental search
+     * reveal as you type.
+     */
+    fun updateFindQuery(newQuery: String) {
+        findReplace.query = newQuery
+        if (findReplace.focusFrom(editor.selection.min)) revealCurrentMatch() else findReplace.currentMatchIndex = 0
+    }
 
-    fun findPrevious() = findReplace.findPrevious()
+    fun findNext() {
+        findReplace.findNext()
+        revealCurrentMatch()
+    }
+
+    fun findPrevious() {
+        findReplace.findPrevious()
+        revealCurrentMatch()
+    }
 
     fun replaceCurrent() = findReplace.replaceCurrent()
 
     fun replaceAll() = findReplace.replaceAll()
+
+    /**
+     * EDT-4: every match-navigation action scrolls its match into view.
+     *
+     * Advancing the index without this is the defect ADR-004 records as Problem B — the
+     * transformation restyles a match that is off screen, so the button looks dead.
+     */
+    private fun revealCurrentMatch() {
+        val match = findMatches.getOrNull(currentMatchIndex) ?: return
+        editor.requestReveal(TextRange(match.first, match.last + 1))
+
+        // The preview follows the match too. Without this, searching a fifty-slide deck
+        // scrolled the source to slide 41 and left the preview and filmstrip on slide 1 —
+        // the editor and the deck disagreeing about where the user is.
+        syncSlideToCaret()
+    }
 
     // ------------------------------------------------------------------
     // Talk clock and pacing — delegated.
@@ -567,7 +691,9 @@ class PresentationState(
     val hasPrev: Boolean get() = navigator.hasPrevious
 
     override fun nextSlide() {
-        if (navigator.next()) clearScreenBlanking()
+        if (!navigator.next()) return
+        clearScreenBlanking()
+        revealCurrentSlideInEditor()
     }
 
     /**
@@ -580,7 +706,9 @@ class PresentationState(
     }
 
     override fun previousSlide() {
-        if (navigator.previous()) clearScreenBlanking()
+        if (!navigator.previous()) return
+        clearScreenBlanking()
+        revealCurrentSlideInEditor()
     }
 
     fun next() = nextSlide()
@@ -618,6 +746,9 @@ class PresentationState(
         clearScreenBlanking()
         // A jump is how the grid overview is used, so landing dismisses it.
         isGridOverviewOpen = false
+        // AUT-02: the filmstrip, the grid overview and the command palette all route through
+        // here, so all three move the source pane by inheriting this one line.
+        revealCurrentSlideInEditor()
     }
 
     fun addStroke(stroke: AnnotationStroke) = annotationLayer.add(currentSlideIndex, stroke)

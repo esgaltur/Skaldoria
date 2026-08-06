@@ -84,7 +84,10 @@ class AppCommandsTest {
     fun `shortcut labels read the way the docs write them`() {
         assertEquals("Ctrl+Shift+S", AppCommands.SAVE_AS.shortcutLabel)
         assertEquals("Ctrl+S", AppCommands.SAVE.shortcutLabel)
-        assertEquals("B", AppCommands.BLACKOUT.shortcutLabel)
+        // AUD-08 added the clicker's punctuation chord; it is shown, not hidden, because a
+        // tooltip that lists only `B` would leave the hardware binding undiscoverable.
+        assertEquals("B / .", AppCommands.BLACKOUT.shortcutLabel)
+        assertEquals("W / ,", AppCommands.WHITEOUT.shortcutLabel)
         assertEquals("Esc / F11", AppCommands.EXIT_FULLSCREEN.shortcutLabel)
         assertTrue(AppCommands.NEXT_SLIDE.shortcutLabel.startsWith("Right Arrow / Space"))
     }
