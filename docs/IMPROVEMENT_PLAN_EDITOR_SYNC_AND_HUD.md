@@ -1,6 +1,6 @@
 # Improvement Plan — Editor Synchronisation, Find Reveal, and HUD Visibility
 
-**Version:** 1.2.0 · **Drafted:** 2026-08-06 · **Status:** Phase 1 shipped, Phases 2–6 open · **Suite:** 235 → 472 tests, 0 failures
+**Version:** 1.2.0 · **Drafted:** 2026-08-06 · **Status:** Phase 1 shipped, Phases 2–6 open · **Suite:** 235 → 541 tests, 0 failures
 
 > **Phase 1 (HUD visibility) is done** and went further than planned — it is persisted across
 > launches, which the original plan listed as out of reach. Phases 2–6 are unchanged and still

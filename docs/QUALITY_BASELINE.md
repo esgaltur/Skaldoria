@@ -1,6 +1,6 @@
 # Quality Baseline
 
-**Version:** 1.2.0 · **Last reviewed:** 2026-08-06 · **Suite:** 472 tests, 0 failures
+**Version:** 1.2.0 · **Last reviewed:** 2026-08-06 · **Suite:** 541 tests, 0 failures
 
 This document is the reference for the invariants this codebase holds, established during a
 systematic pre-release review of `src/desktopMain`. Every entry has a stable identifier, and
@@ -76,7 +76,7 @@ Entries without a **Rationale** are self-evident and need none.
 | COR-3 | Editing | Slide-to-file mapping is derived, not positional | `CompanionDeckTest` |
 | COR-4 | Parsing | A metric requires a unit | `CharacterizationTest` |
 | COR-5 | Parsing | Heading markers never reach rendered text | `CharacterizationTest` |
-| COR-6 | State | Audience question identifiers are collision-free | — |
+| COR-6 | State | Audience question identifiers are collision-free | `AudienceSessionTest` |
 | COR-7 | Projects | Manifest values are JSON-escaped | `DeckProjectManagerTest` |
 | COR-8 | Config | Configuration writes are atomic | — |
 | COR-9 | Projects | Slide files sort in natural order | `DeckProjectManagerTest` |
@@ -95,7 +95,7 @@ Entries without a **Rationale** are self-evident and need none.
 | PRF-3 | Performance | Search results are cached | `EditorFindAndReplaceTest` |
 | PRF-4 | State | Elapsed time derives from a monotonic clock | `PresentationStateTest` |
 | PRF-5 | Performance | Export work runs off the UI thread | — |
-| DED-1 | Config | The autosave draft is recoverable | — |
+| DED-1 | Config | The autosave draft is recoverable | `DraftRecoveryTest` |
 | DED-2 | Config | UI preferences persist across launches | — |
 | DED-3 | Projects | One implementation of slide-file creation | — |
 | DED-4 | Diagrams | A shape exists only if the parser can emit it | `MermaidParserTest` |

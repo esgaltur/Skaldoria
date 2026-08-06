@@ -146,7 +146,7 @@ spends in it. It is a single `TextField` with a syntax-highlighting `VisualTrans
 | **AUT-05** | Caret & selection model | 📋 | M | — | ADR-004 Phase 2. Unblocks AUT-02/03/06/07. |
 | **AUT-06** | Line-number gutter with slide-boundary markers | 📋 | M | AUT-05 | Makes deck structure legible in a long single-file deck. |
 | **AUT-07** | Outline panel — navigate by heading | 📋 | M | AUT-05 | Complements the filmstrip for text-heavy decks. |
-| **AUT-08** | Directive autocomplete | 📋 | M | AUT-05 | The directive language (`> note:`, `:::poll`, `layout:`, `transition:`, mermaid fences) is rich and entirely undiscoverable while typing. |
+| **AUT-08** | Directive autocomplete | 📋 | M | AUT-05 | The directive language (`<!-- note: -->`, `> note:`, `<!-- poll: -->`, `layout:`, `transition:`, mermaid fences) is rich and entirely undiscoverable while typing. |
 | **AUT-09** | Inline diagnostics | 📋 | L | AUT-08 | Unparseable mermaid, unresolvable image paths and malformed polls currently surface only as rendered output. COR-10 already produces a *reason* for image failures — surface it at the source line. |
 | **AUT-10** | Drag-and-drop slide reordering | 📋 | M | — | Filmstrip today offers ◀ ▶ buttons only; reordering slide 40 to position 2 is 38 clicks. |
 | **AUT-11** | Formatting shortcuts (`Ctrl+B`, `Ctrl+I`, `Ctrl+K` link) | 📋 | S | AUT-05 | Needs selection, hence the dependency. |

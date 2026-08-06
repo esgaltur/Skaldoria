@@ -140,9 +140,9 @@ Write diagrams directly in a fenced block:
   print-ready page breaks.
 - One-click print-to-PDF ready — via headless Chrome/Edge when one is installed, otherwise by
   opening the HTML and printing.
-- **Math and diagrams need a network connection to render.** KaTeX and Mermaid are loaded from a
-  CDN rather than inlined, so a deck exported for an offline room shows the raw formula and
-  diagram source. Everything else — text, code, tables, images, polls, theming — renders offline.
+- **Fully offline.** Maths and diagrams are rendered by the app itself at export time and embedded
+  as `data:` URIs, so the file needs no network and no CDN. The source is kept as `alt` text and in
+  a `<details>` fallback.
 
 ### 9. 🎨 10+ Intelligent Slide Layouts
 - Automatic heuristic classification detects:
@@ -190,7 +190,7 @@ cd skaldoria
 | Shortcut                                                        | Action                                                                                                 |
 |:----------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------|
 | <kbd>F5</kbd>                                                   | Launch Fullscreen Presentation Mode                                                                    |
-| <kbd>P</kbd>                                                    | Launch Presenter Console & Notes Window                                                                |
+| <kbd>P</kbd> | Toggle Pen Annotation *(presentation window)*; the Presenter Console opens from the toolbar |
 | <kbd>Ctrl</kbd> + <kbd>K</kbd>                                  | Open Spotlight Command Palette                                                                         |
 | <kbd>Ctrl</kbd> + <kbd>F</kbd> | Find in Slide Source Editor |
 | <kbd>Ctrl</kbd> + <kbd>H</kbd> | Find & Replace in Slide Source Editor |
