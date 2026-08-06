@@ -57,6 +57,34 @@ class DocumentedShortcutsTest {
     }
 
     /**
+     * Every ✅ feature in `FEATURE_INDEX.md` that ships a keyboard binding.
+     *
+     * The same conversion that dropped AUT-01 also dropped these, and the feature index went
+     * on claiming all of them shipped. A ✅ that nothing can reach is worse than a 📋.
+     */
+    @Test
+    fun `shipped features keep their bindings`() {
+        val byId = AppCommands.ALL.associateBy { it.id }
+        listOf(
+            "deck.hud" to "DEL-02 HUD show/hide",
+            "studio.undo" to "AUT-04 undo",
+            "studio.redo" to "AUT-04 redo",
+            "deck.theme" to "AUT-01 cycle theme",
+            "studio.export" to "AUT-01 export"
+        ).forEach { (id, feature) ->
+            assertTrue(id in byId, "$feature has no command: '$id' is not in the registry")
+        }
+    }
+
+    /** AUT-04 documents two redo chords; both must survive. */
+    @Test
+    fun `redo answers to both of its documented chords`() {
+        val labels = AppCommands.REDO.shortcuts.map { it.label }.toSet()
+        assertTrue("Ctrl+Shift+Z" in labels, "actual: $labels")
+        assertTrue("Ctrl+Y" in labels, "actual: $labels")
+    }
+
+    /**
      * The README table is the source the above checks against, so a missing table would make
      * them vacuously pass.
      */

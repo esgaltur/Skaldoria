@@ -85,17 +85,28 @@ reading the code rather than the README, and all small once found.
 | **AUT-01** shortcuts | The README documented `Ctrl+E`, `T`, `Home`/`End`, `Backspace`. None was bound — there was no `Key.E`, `Key.T`, `Key.MoveHome`, `Key.MoveEnd` or `Key.Backspace` anywhere in `src/desktopMain`. | All five bound, now guarded by `DocumentedShortcutsTest` |
 | **AUT-03** find reveal | `findNext()` advanced an index; nothing scrolled to the match. The buttons looked dead. **Still open** — it needs the caret foundation (`AUT-05`). | ADR-004 Phase 3 |
 
-### It reopened once, which is the point
+### It reopened once, and took three other features with it
 
 Converting both key handlers to the `AppCommands` registry enumerated the commands by *reading*
-the old `when` blocks, and dropped four of these five again — `T`, `Home`, `End`, `Backspace`.
-The registry's own test stayed green throughout, because it asserts the table is
-*self-consistent* (no duplicate chords, no shadowing), which remained true while four
-documented shortcuts did nothing.
+the old `when` blocks. An audit of this document against the source found that it dropped:
 
-`DocumentedShortcutsTest` now checks the registry against the **README table** — the
-user-visible contract — rather than against itself. It was verified to fail on the broken code
-before being kept.
+| Lost | Feature it broke |
+| :--- | :--- |
+| `T`, `Home`, `End`, `Backspace` | **AUT-01** — reopened |
+| `H` | **DEL-02** — the HUD could not be toggled |
+| digits + `Enter` | **DEL-08** — `SlideNumberEntry` still *rendered its overlay*, and nothing could populate it |
+| `Ctrl+Z`, `Ctrl+Shift+Z`, `Ctrl+Y` in the studio window | **AUT-04** — structural undo/redo unreachable by keyboard |
+
+Four ✅ rows in this document described features the user could no longer reach. The registry's
+own test stayed green throughout, because it asserts the table is *self-consistent* — no
+duplicate chords, no shadowing — which remained true the entire time.
+
+**A ✅ that nothing can reach is worse than a 📋**, because it stops anyone looking.
+
+`DocumentedShortcutsTest` now checks the registry against the **README table** and against the
+shipped-feature list, rather than against itself, and was verified to fail on the broken code
+before being kept. Digit entry is handled *ahead of* the registry in `FullscreenDeck`, because
+typing `27` is a mode rather than a chord and the registry structurally cannot express it.
 
 ### How this class of defect survives
 
@@ -265,7 +276,7 @@ A design proposal already exists:
 
 | ID | Feature | Status | Size | Depends | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **PLT-01** | **CI pipeline** | ✅ | S | — | `.github/workflows/ci.yml` — compile + test on Linux/Windows/macOS (Xvfb for the headless render guards), test reports and rendered PNGs uploaded, plus a job that **fails the build on any Kotlin warning**, which is what makes the zero-warning NFR a policy rather than a wish. Never executed here — needs a first push to verify. |
+| **PLT-01** | **CI pipeline** | 🟡 | S | — | `.github/workflows/ci.yml` — compile + test on Linux/Windows/macOS (Xvfb for the headless render guards), with test reports and rendered PNGs uploaded. **The zero-warning job is present but currently vacuous:** this toolchain emits no Kotlin warnings at all — verified by planting an unused local *and* an unused private function and seeing zero `w:` lines, with and without `allWarningsAsErrors`. The gate cannot fire until that is understood. Never executed on a runner. |
 | **PLT-02** | Verify macOS and Linux packaging | 📋 | M | PLT-01 | `.dmg`, `.pkg`, `.deb`, `.rpm` targets are declared and unproven. |
 | **PLT-03** | UI localisation | 🕓 | L | — | Every string is inline today. |
 | **PLT-04** | Screen-reader semantics and keyboard-only operation | 📋 | M | — | The project holds itself to WCAG 2.1 AA for *contrast* and has real machinery for it. Contrast is one clause of one guideline; navigability is untested. |

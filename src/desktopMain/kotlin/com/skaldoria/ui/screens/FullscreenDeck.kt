@@ -142,14 +142,32 @@ fun FullscreenDeck(
                 }
             }
             .onKeyEvent { event ->
-                // F-19: bindings come from AppCommands, so this window and the studio window
-                // cannot drift apart, and the tooltips quote the same table.
+                // DEL-08: digits accumulate into a slide number and Enter commits it.
+                //
+                // This is checked *before* the command registry, and cannot live in it: the
+                // registry maps chords to commands, whereas typing "27" is a mode. Resolving
+                // shortcuts first would let a bare letter swallow a digit mid-entry, which is
+                // the ordering the original handler documented.
+                if (event.type == KeyEventType.KeyDown) {
+                    val typed = event.utf16CodePoint.toChar()
+                    if (typed.isDigit()) {
+                        numberEntry = numberEntry.withDigit(typed)
+                        return@onKeyEvent true
+                    }
+                    if (event.key == Key.Enter) {
+                        numberEntry.targetIndex(state.slides.size)?.let { state.goToSlide(it) }
+                        numberEntry = numberEntry.cleared()
+                        return@onKeyEvent true
+                    }
+                }
+
                 when (KeyBindings.resolve(event, CommandScope.DECK)) {
                     AppCommands.NEXT_SLIDE -> state.next()
                     AppCommands.PREVIOUS_SLIDE -> state.prev()
                     AppCommands.FIRST_SLIDE -> state.goToSlide(0)
                     AppCommands.LAST_SLIDE -> state.goToSlide((state.slides.size - 1).coerceAtLeast(0))
                     AppCommands.CYCLE_THEME -> state.cycleTheme()
+                    AppCommands.TOGGLE_HUD -> state.cycleHudVisibility()
                     AppCommands.BLACKOUT -> state.toggleBlackout()
                     AppCommands.WHITEOUT -> state.toggleWhiteout()
                     AppCommands.GRID_OVERVIEW -> state.toggleGridOverview()
@@ -161,6 +179,7 @@ fun FullscreenDeck(
                     // Escape unwinds the innermost thing that is open, so it never drops the
                     // speaker out of fullscreen while a dialog is still covering the deck.
                     AppCommands.EXIT_FULLSCREEN -> when {
+                        !numberEntry.isEmpty -> numberEntry = numberEntry.cleared()
                         state.isCommandPaletteOpen -> state.isCommandPaletteOpen = false
                         state.isGridOverviewOpen -> state.isGridOverviewOpen = false
                         else -> state.isFullscreen = false
