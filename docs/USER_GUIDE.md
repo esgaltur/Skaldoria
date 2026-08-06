@@ -15,7 +15,7 @@
    - [Code Blocks with Step-by-Step Line Highlighting](#code-blocks-with-step-by-step-line-highlighting)
    - [Mermaid JS Architecture & Flow Diagrams](#mermaid-js-architecture--flow-diagrams)
    - [LaTeX Mathematical Formula Rendering](#latex-mathematical-formula-rendering)
-   - [Speaker Notes (`::: notes`)](#speaker-notes--notes)
+   - [Speaker Notes (`<!-- note: … -->`)](#speaker-notes)
    - [Live In-Slide Audience Polls (`<!-- poll: ... -->`)](#live-in-slide-audience-polls---poll--)
 4. [In-Editor Find & Replace (<kbd>Ctrl+F</kbd> / <kbd>Ctrl+H</kbd>)](#4-in-editor-find--replace)
 5. [Presentation Parking Lot & Unanswered Questions](#5-presentation-parking-lot--unanswered-questions)
@@ -23,12 +23,12 @@
    - [Live Capture in Presenter View](#live-capture-in-presenter-view)
    - [Converting Incoming Audience Q&A to Parking Lot](#converting-incoming-audience-qa-to-parking-lot)
    - [Markdown Persistence Format](#markdown-persistence-format)
-6. [Dual-Screen Presenter Console (<kbd>P</kbd>)](#6-dual-screen-presenter-console)
+6. [Dual-Screen Presenter Console](#6-dual-screen-presenter-console)
    - [HUD Layout & Upcoming Slide Preview](#hud-layout--upcoming-slide-preview)
    - [Algorithmic Speaker Rhythm & Pacing Ribbon](#algorithmic-speaker-rhythm--pacing-ribbon)
    - [Slide Grid Overview (<kbd>G</kbd>)](#slide-grid-overview-kbdgkbd)
    - [Presentation Blackout (<kbd>B</kbd>) & Whiteout (<kbd>W</kbd>)](#presentation-blackout-kbdbkbd--whiteout-kbdwkbd)
-7. [Live Screen Annotations & Pen Tool (<kbd>Ctrl+D</kbd>)](#7-live-screen-annotations--pen-tool)
+7. [Live Screen Annotations & Pen Tool (<kbd>P</kbd>)](#7-live-screen-annotations--pen-tool)
 8. [Wireless Mobile Companion & Audience Server](#8-wireless-mobile-companion--audience-server)
    - [Instant QR Code Pairing](#instant-qr-code-pairing)
    - [Speaker Mobile Remote (`/remote`)](#speaker-mobile-remote-remote)
@@ -61,11 +61,11 @@ When you launch Skaldoria, you are greeted with the three-column workspace:
 3. **Right Preview / Parking Lot Aside**: Live, 120 FPS interactive slide preview and slide-out Parking Lot drawer.
 
 ### Basic Commands
-* **New Presentation**: Click the `+` button in the top bar or press <kbd>Ctrl+N</kbd>.
+* **New Presentation**: Click **New Presentation** on the welcome screen, or `+ Template` in the filmstrip.
 * **Open File**: Click `Open` or press <kbd>Ctrl+O</kbd> (`.md` or `.markdown`).
 * **Save File**: Click `Save` or press <kbd>Ctrl+S</kbd>.
 * **Start Presentation**: Press <kbd>F5</kbd>.
-* **Start Presenter View**: Press <kbd>P</kbd>.
+* **Start Presenter View**: Click **Presenter View** in the toolbar.
 
 ---
 
@@ -164,20 +164,25 @@ Where:
 
 ---
 
-### Speaker Notes (`::: notes`)
+### Speaker Notes
 
-Add private presenter notes at the bottom of any slide. Notes are visible only on the **Presenter View (<kbd>P</kbd>)** and the **Mobile Companion (`/remote`)**:
+Add private presenter notes to any slide. Notes appear only in the **Presenter Console** and on
+the **speaker's** mobile remote (`/remote`) — SEC-2 keeps them out of the audience portal.
+
+Two spellings are accepted, an HTML comment or a `> note:` blockquote line:
 
 ```markdown
 # Architecture Overview
 Microservices communicate via high-throughput gRPC streams.
 
-::: notes
-- Emphasize sub-millisecond serialization latency
-- Mention protobuf backward compatibility
-- Check time before moving to benchmarks
-:::
+<!-- note: Emphasize sub-millisecond serialization latency -->
+<!-- note: Mention protobuf backward compatibility -->
+
+> note: Check time before moving to benchmarks
 ```
+
+Each directive is one note. They may sit anywhere in the slide; a comment is invisible in the
+rendered deck either way.
 
 ---
 
@@ -227,7 +232,7 @@ During technical talks, audience members often ask questions that cannot be answ
 * Click **Copy Markdown** to copy the formatted task list to your clipboard for Slack, email, or GitHub issues.
 
 ### Live Capture in Presenter View
-* In the Presenter View (<kbd>P</kbd>), click the **Parking Lot** tab on the right console.
+* In the Presenter Console, click the **Parking Lot** tab on the right.
 * Type questions directly into the input bar while presenting.
 
 ### Converting Incoming Audience Q&A to Parking Lot
@@ -244,9 +249,9 @@ Parking lot items are persisted directly inside your presentation's Markdown fil
 
 ---
 
-## 6. Dual-Screen Presenter Console (<kbd>P</kbd>)
+## 6. Dual-Screen Presenter Console
 
-Press <kbd>P</kbd> or click **Presenter View** to open the dual-screen speaker HUD:
+Click **Presenter View** in the toolbar to open the dual-screen speaker HUD:
 
 ```
 +-----------------------------------------------------------------------------------+
@@ -282,10 +287,10 @@ Press <kbd>G</kbd> in either Presentation Mode or Presenter View to bring up a v
 
 ---
 
-## 7. Live Screen Annotations & Pen Tool (<kbd>Ctrl+D</kbd>)
+## 7. Live Screen Annotations & Pen Tool (<kbd>P</kbd>)
 
 Draw directly over slides during a live talk:
-* Press <kbd>Ctrl+D</kbd> or click the **Pen Tool** in the bottom presenter bar.
+* Press <kbd>P</kbd> in the presentation window, or click the **Pen Tool** in the HUD.
 * **Pen Colors**: Red, Yellow, Cyan, Green, White.
 * **Stroke Width**: Fine, Medium, Bold.
 * **Laser Pointer Mode**: Point at key elements with an animated glowing reticle.
@@ -383,12 +388,10 @@ All themes pass through the `AdaptiveContrastEnforcer` and `ColorScience` mathem
 ### Standalone HTML Export
 Click **Export -> HTML** or press <kbd>Ctrl+E</kbd>:
 * Generates a single `.html` file holding all slide content, your theme and print page breaks.
-* Uses KaTeX for math and Mermaid for diagrams.
-* ⚠️ **Not fully offline.** KaTeX and Mermaid are referenced from a CDN, not inlined, so a
-  machine with no internet access renders the raw `$$…$$` and `mermaid` source instead of the
-  typeset output. Text, code, tables, images, polls and theming all render offline. If you are
-  presenting from an exported file in a room with no network, export the **PNG image bundle**
-  instead, or keep the deck in Skaldoria, which renders both natively.
+* **Fully offline (OUT-01).** Maths and diagrams are rendered by Skaldoria at export time and
+  embedded as `data:` URIs — there is no CDN and no network dependency. The original source is
+  preserved as `alt` text and in a `<details>` block, so the markup stays readable and
+  searchable.
 
 ### Print to PDF
 * Open the exported standalone HTML file in Chrome, Edge, or Safari and select **Print -> Save as PDF** (<kbd>Ctrl+P</kbd>).
@@ -400,7 +403,7 @@ Click **Export -> HTML** or press <kbd>Ctrl+E</kbd>:
 | Shortcut | Action | Scope |
 | :--- | :--- | :--- |
 | <kbd>F5</kbd> | Start Fullscreen Presentation | Global |
-| <kbd>P</kbd> | Start Dual-Screen Presenter View | Global |
+| <kbd>P</kbd> | Toggle Pen & Drawing Tool | Presentation Mode |
 | <kbd>Esc</kbd> | Exit Presentation / Close Dialogs | Global |
 | <kbd>Space</kbd> / <kbd>→</kbd> / <kbd>PageDown</kbd> | Next Slide / Next Code Highlight Step | Presentation Mode |
 | <kbd>Backspace</kbd> / <kbd>←</kbd> / <kbd>PageUp</kbd> | Previous Slide | Presentation Mode |
@@ -408,12 +411,10 @@ Click **Export -> HTML** or press <kbd>Ctrl+E</kbd>:
 | <kbd>G</kbd> | Toggle Slide Grid Overview | Presentation Mode |
 | <kbd>B</kbd> | Blackout Presentation Screen | Presentation Mode |
 | <kbd>W</kbd> | Whiteout Presentation Screen | Presentation Mode |
-| <kbd>Ctrl+D</kbd> | Toggle Pen & Drawing Tool | Presentation Mode |
 | <kbd>Ctrl+F</kbd> | Open Find Bar | Editor |
 | <kbd>Ctrl+H</kbd> | Open Find & Replace Bar | Editor |
 | <kbd>Enter</kbd> (in Find) | Find Next Match | Editor |
 | <kbd>Shift+Enter</kbd> (in Find)| Find Previous Match | Editor |
-| <kbd>Ctrl+N</kbd> | Create New Presentation | Editor |
 | <kbd>Ctrl+O</kbd> | Open Markdown File | Editor |
 | <kbd>Ctrl+S</kbd> | Save Markdown File | Editor |
 | <kbd>Ctrl+E</kbd> | Export Standalone HTML | Editor |

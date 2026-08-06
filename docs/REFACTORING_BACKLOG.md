@@ -4,7 +4,7 @@ Companion to [ADR-003](./ADR_GOD_OBJECT_DECOMPOSITION.md). The ADR argues *why*;
 the actionable list — one row per fix, ordered by **risk reduction per unit of change**.
 
 **Status — 2026-08-06.** **All 24 items are done**, every one implemented test-first.
-The suite went from **235 to 529 tests, 0 failures**.
+The suite went from **235 to 541 tests, 0 failures**.
 
 | | Item | Outcome |
 | :--- | :--- | :--- |
