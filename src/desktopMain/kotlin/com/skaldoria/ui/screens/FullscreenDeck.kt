@@ -49,6 +49,7 @@ import com.skaldoria.core.presentation.TransitionResolver
 import com.skaldoria.core.command.AppCommands
 import com.skaldoria.core.command.CommandScope
 import com.skaldoria.state.PresentationState
+import com.skaldoria.ui.DeckKeyHandler
 import com.skaldoria.ui.KeyBindings
 import kotlinx.coroutines.delay
 import com.skaldoria.ui.components.AppTooltip
@@ -161,32 +162,18 @@ fun FullscreenDeck(
                     }
                 }
 
-                when (KeyBindings.resolve(event, CommandScope.DECK)) {
-                    AppCommands.NEXT_SLIDE -> state.next()
-                    AppCommands.PREVIOUS_SLIDE -> state.prev()
-                    AppCommands.FIRST_SLIDE -> state.goToSlide(0)
-                    AppCommands.LAST_SLIDE -> state.goToSlide((state.slides.size - 1).coerceAtLeast(0))
-                    AppCommands.CYCLE_THEME -> state.cycleTheme()
-                    AppCommands.TOGGLE_HUD -> state.cycleHudVisibility()
-                    AppCommands.BLACKOUT -> state.toggleBlackout()
-                    AppCommands.WHITEOUT -> state.toggleWhiteout()
-                    AppCommands.GRID_OVERVIEW -> state.toggleGridOverview()
-                    AppCommands.LASER_POINTER -> state.toggleLaserPointer()
-                    AppCommands.PEN_DRAWING -> state.togglePenDrawing()
-                    AppCommands.CLEAR_ANNOTATIONS -> state.clearAnnotations()
-                    AppCommands.UNDO_STROKE -> state.undoStroke()
-                    AppCommands.COMMAND_PALETTE -> state.isCommandPaletteOpen = true
+                // KEY-1: the dispatch itself lives in DeckKeyHandler, shared with the speaker
+                // console — which had no key handling at all until this was extracted.
+                DeckKeyHandler.handle(event, state) {
                     // Escape unwinds the innermost thing that is open, so it never drops the
                     // speaker out of fullscreen while a dialog is still covering the deck.
-                    AppCommands.EXIT_FULLSCREEN -> when {
+                    when {
                         !numberEntry.isEmpty -> numberEntry = numberEntry.cleared()
                         state.isCommandPaletteOpen -> state.isCommandPaletteOpen = false
                         state.isGridOverviewOpen -> state.isGridOverviewOpen = false
                         else -> state.isFullscreen = false
                     }
-                    else -> return@onKeyEvent false
                 }
-                true
             },
         contentAlignment = Alignment.Center
     ) {

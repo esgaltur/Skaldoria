@@ -9,13 +9,11 @@ import androidx.compose.ui.text.TextRange
 import com.skaldoria.config.ConfigManager
 import com.skaldoria.core.annotation.AnnotationLayer
 import com.skaldoria.core.audience.AudienceSession
-import com.skaldoria.core.deck.SampleDecks
 import com.skaldoria.core.deck.DeckDocument
-import com.skaldoria.core.deck.ProjectSlideMap
-import com.skaldoria.core.deck.SlideTemplates
+import com.skaldoria.core.deck.SampleDecks
 import com.skaldoria.core.deck.SlideNavigator
+import com.skaldoria.core.deck.SlideTemplates
 import com.skaldoria.core.document.DeckHistory
-import com.skaldoria.core.document.SlideDocument
 import com.skaldoria.core.document.SlideSourceLocator
 import com.skaldoria.core.editor.FindReplaceController
 import com.skaldoria.core.models.*
@@ -23,7 +21,6 @@ import com.skaldoria.core.pacing.Pacing
 import com.skaldoria.core.pacing.PacingCalculator
 import com.skaldoria.core.pacing.TalkTimer
 import com.skaldoria.core.parkinglot.ParkingLotStore
-import com.skaldoria.core.parser.MarkdownSlideParser
 import com.skaldoria.core.ports.*
 import com.skaldoria.core.presentation.HudVisibility
 import com.skaldoria.remote.DeckControl
