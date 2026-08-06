@@ -16,7 +16,18 @@ object MarkdownSlideParser {
 
     internal val HR_REGEX = Regex("""^(\*{3,}|-{3,}|_{3,})\s*$""")
     internal val HEADING_1_2_REGEX = Regex("""^(#{1,2})\s+(.+)$""")
-    internal val CODE_FENCE_START = Regex("""^```([a-zA-Z0-9_-]*)(?:\s*\[([0-9,\-|]+)\])?\s*$""")
+    /**
+     * Public, deliberately: this is the seam between the parser and the editor's highlighter.
+     *
+     * It went from `internal` to public when `:markdown-core` was extracted, because
+     * `FenceLexerDivergenceTest` lives in the app module — it has to reach both this and the
+     * Compose-dependent `MarkdownVisualTransformation` to assert the two agree.
+     *
+     * Phase B replaces it with a shared `FenceRules` primitive that both callers use, at which
+     * point fence recognition becomes a real public API of this module rather than a regex the
+     * highlighter happens to be allowed to see. See `docs/MARKDOWN_UNIFICATION_PLAN.md`.
+     */
+    val CODE_FENCE_START = Regex("""^```([a-zA-Z0-9_-]*)(?:\s*\[([0-9,\-|]+)\])?\s*$""")
     internal val IMAGE_REGEX = Regex("""!\[(.*?)\]\((.*?)\)""")
     internal val NOTE_COMMENT_REGEX = Regex("""<!--\s*(?:note|speaker):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
     internal val NOTE_QUOTE_REGEX = Regex("""^>\s*note:\s*(.+)$""", RegexOption.IGNORE_CASE)

@@ -2,6 +2,8 @@ plugins {
     kotlin("multiplatform") version "2.2.0"
     id("org.jetbrains.compose") version "1.7.3"
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.0"
+    // Declared here so `:markdown-core` can apply it without restating the version.
+    kotlin("jvm") version "2.2.0" apply false
 }
 
 group = "com.skaldoria"
@@ -74,6 +76,9 @@ kotlin {
             kotlin.srcDir(generateBuildInfo)
 
             dependencies {
+                // The markdown engine, Compose-free by construction. See markdown-core/build.gradle.kts.
+                implementation(project(":markdown-core"))
+
                 implementation(compose.desktop.currentOs)
                 implementation(compose.material3)
                 implementation(compose.materialIconsExtended)

@@ -1,5 +1,11 @@
 rootProject.name = "Skaldoria"
 
+/**
+ * The markdown engine, extracted so it can be compiled, tested and benchmarked without Compose
+ * on the classpath. See `docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase A.
+ */
+include(":markdown-core")
+
 pluginManagement {
     repositories {
         google()

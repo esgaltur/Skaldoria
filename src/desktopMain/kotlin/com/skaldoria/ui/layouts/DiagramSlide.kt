@@ -39,7 +39,7 @@ fun DiagramSlide(
             if (slide.subtitle != null) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = slide.subtitle,
+                    text = slide.subtitle.orEmpty(),
                     color = theme.textMuted,
                     fontSize = 16.sp
                 )

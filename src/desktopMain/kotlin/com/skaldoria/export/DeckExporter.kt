@@ -230,10 +230,11 @@ object DeckExporter {
         g.drawString(truncateToWidth(g, slide.title, 1720), 100, 160)
 
         // Subtitle
-        if (slide.subtitle != null) {
+        val subtitle = slide.subtitle
+        if (subtitle != null) {
             g.color = textMutedColor
             g.font = Font("SansSerif", Font.PLAIN, 28)
-            g.drawString(truncateToWidth(g, slide.subtitle, 1720), 100, 215)
+            g.drawString(truncateToWidth(g, subtitle, 1720), 100, 215)
         }
 
         // Slide Elements
@@ -405,7 +406,7 @@ object DeckExporter {
                 when (el) {
                     is SlideElement.BulletList -> "<ul>" + el.items.joinToString("") { "<li>${escapeHtml(it)}</li>" } + "</ul>"
                     is SlideElement.Text -> "<p>${escapeHtml(el.content)}</p>"
-                    is SlideElement.Quote -> "<blockquote>${escapeHtml(el.quote)}${if (el.author != null) "<footer>— ${escapeHtml(el.author)}</footer>" else ""}</blockquote>"
+                    is SlideElement.Quote -> "<blockquote>${escapeHtml(el.quote)}${el.author?.let { "<footer>— ${escapeHtml(it)}</footer>" } ?: ""}</blockquote>"
                     is SlideElement.Metric -> "<div class='metric'><span class='metric-val'>${escapeHtml(el.value)}</span><span class='metric-lbl'>${escapeHtml(el.label)}</span></div>"
                     is SlideElement.CodeBlock -> "<pre><code>${escapeHtml(el.code)}</code></pre>"
                     is SlideElement.Table -> "<table><thead><tr>" + el.headers.joinToString("") { "<th>${escapeHtml(it)}</th>" } + "</tr></thead><tbody>" + el.rows.joinToString("") { r -> "<tr>" + r.joinToString("") { "<td>${escapeHtml(it)}</td>" } + "</tr>" } + "</tbody></table>"
@@ -439,7 +440,7 @@ object DeckExporter {
             <div class="slide">
                 <div class="slide-content">
                     <h1>${escapeHtml(slide.title)}</h1>
-                    ${if (slide.subtitle != null) "<h3>${escapeHtml(slide.subtitle)}</h3>" else ""}
+                    ${slide.subtitle?.let { "<h3>${escapeHtml(it)}</h3>" } ?: ""}
                     $elementsHtml
                 </div>
                 <div class="slide-footer">

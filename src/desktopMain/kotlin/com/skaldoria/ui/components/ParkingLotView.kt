@@ -305,14 +305,15 @@ private fun FollowUpQuestionCard(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(top = 4.dp)
                     ) {
-                        if (item.slideIndex != null) {
+                        val slideIndex = item.slideIndex
+                        if (slideIndex != null) {
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
                                 color = theme.primary.copy(alpha = 0.15f),
-                                modifier = Modifier.clickable { onGoToSlide(item.slideIndex) }
+                                modifier = Modifier.clickable { onGoToSlide(slideIndex) }
                             ) {
                                 Text(
-                                    text = "Slide ${item.slideIndex + 1}",
+                                    text = "Slide ${slideIndex + 1}",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = theme.primary,

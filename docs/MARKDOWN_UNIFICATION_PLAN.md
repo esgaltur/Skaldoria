@@ -1,6 +1,6 @@
 # Markdown Core — Extraction, Convergence, and Speed
 
-**Opened:** 2026-08-06 · **Status:** Phases 0–1 complete · **Baseline:** `2e40c02`
+**Opened:** 2026-08-06 · **Status:** Phases 0–1, A complete; B next · **Baseline:** `2e40c02`
 
 ## Decision summary — read this first
 
@@ -105,20 +105,44 @@ pinned deliberately, so a fix must update them rather than change behaviour sile
 
 # The revised plan
 
-## Phase A — Extract `:markdown-core` (1–2 days)
+## Phase A — Extract `:markdown-core` ✅ *complete*
 
-Gate-independent; this was always going to happen.
+- [x] New Gradle module (`kotlin("jvm")`, declared `apply false` in the root plugins block)
+- [x] Moved with `git mv` so history follows: `MarkdownSlideParser`, `BlockRules`,
+      `SectionContext`, `SmartLayoutClassifier`, `SlideModels`, `FollowUpQuestion`
+- [x] Moved six pure parser tests in with them — the module tests itself rather than relying on
+      the app's suite to cover it
+- [x] **Verified Compose-free:** `:markdown-core:dependencies --configuration compileClasspath`
+      matches **zero** Compose/Skiko artifacts
 
-- [ ] New Gradle module, no `compose.desktop` dependency
-- [ ] Move `MarkdownSlideParser`, `BlockRules`, `SectionContext`, `SmartLayoutClassifier`,
-      `SlideModels`, and the highlighter's lexing (not its Compose styling)
-- [ ] **Known snag:** `SlideModels.kt` imports `androidx.compose.ui.graphics.Color` and
-      `androidx.compose.ui.geometry.Offset` (`AnnotationStroke`, theme colours). Either lift those
-      types out of core, or depend on `compose.ui.graphics` *only* — never `compose.desktop`. Take
-      the second unless the IntelliJ-plugin route becomes real.
+**Result:** 6 test classes in `:markdown-core`, 70 in the app — 76 total, exactly the
+pre-extraction count. No performance regression (`parse` 1.30 ms, `highlight` 538 µs,
+`extractFollowUpQuestions` 534 µs — all within noise of the baseline).
 
-**Why it matters beyond tidiness:** it is the precondition for Phase B. Three lexers cannot share
-a primitive while they live in three layers that do not depend on each other.
+### Three things the extraction surfaced
+
+**1. The Compose coupling was one type, not a layer.** `AnnotationStroke` — `Offset`, `Color` —
+was the only thing in `SlideModels.kt` needing Compose, and it is a *drawing* concern, not a
+parsing one. Lifted to `core/models/AnnotationStroke.kt` in the app module. No
+`compose.ui.graphics` fallback dependency was needed after all.
+
+**2. A module boundary breaks smart casts, and that is not a bug.** 11 compile errors of the form
+*"Smart cast to 'String' is impossible, because 'subtitle' is a public API property declared in
+different module"* — Kotlin will not smart-cast a nullable `val` across modules, because another
+module could in principle change it. Fixed with local captures (`DeckExporter`, `ParkingLotView`)
+and `.orEmpty()` in the six slide layouts, where the surrounding guard already proves non-null.
+Expect this on any future extraction; it is mechanical, but it is not zero.
+
+**3. `CODE_FENCE_START` had to become public — and that is Phase B arriving early.**
+`FenceLexerDivergenceTest` must reach both the parser's fence regex and the Compose-dependent
+`MarkdownVisualTransformation`, so it cannot move into the module. Making the regex public is the
+honest fix, and it is exactly the seam Phase B formalises into a shared `FenceRules`. The module
+boundary made the missing abstraction visible by refusing to compile without it.
+
+### Follow-up, deliberately not done
+
+`DocumentedSyntaxTest` stayed in the app module: it reads files from `docs/` and its paths resolve
+against the root project directory. Moving it needs a path fix, not just a `git mv`.
 
 ## Phase B — One shared fence primitive (1 day)
 
