@@ -126,6 +126,20 @@ fun main() = application {
                         com.skaldoria.export.DeckExporter.exportPdf(state) {}
                         true
                     }
+                    // AUT-04: undo/redo for structural slide edits. Shift+Ctrl+Z and Ctrl+Y
+                    // are both accepted because both conventions are in wide use.
+                    isCtrl && event.isShiftPressed && event.key == androidx.compose.ui.input.key.Key.Z -> {
+                        state.redo()
+                        true
+                    }
+                    isCtrl && event.key == androidx.compose.ui.input.key.Key.Z -> {
+                        state.undo()
+                        true
+                    }
+                    isCtrl && event.key == androidx.compose.ui.input.key.Key.Y -> {
+                        state.redo()
+                        true
+                    }
                     isCtrl && event.key == androidx.compose.ui.input.key.Key.S -> {
                         state.saveFile()
                         true

@@ -10,6 +10,7 @@ import com.skaldoria.config.ConfigManager
 import com.skaldoria.core.annotation.AnnotationLayer
 import com.skaldoria.core.audience.AudienceSession
 import com.skaldoria.core.deck.SampleDecks
+import com.skaldoria.core.document.DeckHistory
 import com.skaldoria.core.document.SlideDocument
 import com.skaldoria.core.editor.FindReplaceController
 import com.skaldoria.core.models.*
@@ -500,6 +501,9 @@ class PresentationState(
 
     /** Makes [proj] the active deck. Shared by every project entry point. */
     private fun adoptProject(proj: DeckProject) {
+        // AUT-04: undoing across a deck boundary would restore one deck's content over
+        // another's.
+        history.clear()
         activeProject = proj
         currentFilePath = proj.rootDir
         val combined = proj.compileCombinedMarkdown()
@@ -512,6 +516,7 @@ class PresentationState(
     }
 
     fun loadMarkdownFromFile(path: String, content: String) {
+        history.clear()
         currentFilePath = path
         activeProject = null
         updateMarkdown(content)
@@ -795,6 +800,65 @@ class PresentationState(
     // owning file.
     // ------------------------------------------------------------------
 
+    // ------------------------------------------------------------------
+    // AUT-04: undo/redo for structural slide edits.
+    //
+    // Deleting a slide is one click on the filmstrip and rewrites the deck. Before this the
+    // only undo in the application was `undoStroke()` for annotation strokes.
+    // ------------------------------------------------------------------
+
+    /**
+     * Everything a structural edit can change.
+     *
+     * Project mode edits per-file content and can add or remove whole files, so restoring
+     * `markdownText` alone would leave `activeProject` holding the pre-edit files and the next
+     * recompile would undo the undo. The file list is therefore part of the snapshot.
+     */
+    private data class DeckSnapshot(
+        val markdown: String,
+        val slideIndex: Int,
+        val slideFiles: List<SlideFileEntry>?
+    )
+
+    private val history = DeckHistory<DeckSnapshot>()
+
+    val canUndo: Boolean get() = history.canUndo
+    val canRedo: Boolean get() = history.canRedo
+
+    private fun snapshot(): DeckSnapshot = DeckSnapshot(
+        markdown = markdownText,
+        slideIndex = currentSlideIndex,
+        slideFiles = activeProject?.slideFiles?.toList()
+    )
+
+    /** Records the current state before a structural edit. */
+    private fun rememberForUndo() = history.record(snapshot())
+
+    private fun restore(snapshot: DeckSnapshot) {
+        val proj = activeProject
+        if (proj != null && snapshot.slideFiles != null) {
+            val restored = proj.copy(slideFiles = snapshot.slideFiles.toMutableList())
+            activeProject = restored
+            val combined = restored.compileCombinedMarkdown()
+            markdownText = combined
+            slides = MarkdownSlideParser.parse(combined)
+            scheduleDraftSave(combined)
+        } else {
+            updateMarkdown(snapshot.markdown)
+        }
+        currentSlideIndex = snapshot.slideIndex.coerceIn(0, (slides.size - 1).coerceAtLeast(0))
+    }
+
+    fun undo() {
+        val previous = history.undo(snapshot()) ?: return
+        restore(previous)
+    }
+
+    fun redo() {
+        val next = history.redo(snapshot()) ?: return
+        restore(next)
+    }
+
     private fun document(): SlideDocument = SlideDocument.of(markdownText)
 
     /** Index of the project file that produced the slide at [slideIndex], or null. */
@@ -843,6 +907,7 @@ class PresentationState(
     }
 
     fun moveSlide(fromIndex: Int, toIndex: Int) {
+        rememberForUndo()
         if (isProjectMode) {
             // Reordering slides across files means reordering the files themselves; that
             // is only well defined when each file holds exactly one slide.
@@ -876,6 +941,7 @@ class PresentationState(
     }
 
     fun duplicateSlide(index: Int) {
+        rememberForUndo()
         if (isProjectMode) {
             if (editOwningFile(index) { doc, local -> doc.duplicate(local) }) {
                 currentSlideIndex = index + 1
@@ -889,6 +955,7 @@ class PresentationState(
     }
 
     fun deleteSlide(index: Int) {
+        rememberForUndo()
         if (isProjectMode) {
             val proj = activeProject ?: return
             val fileIndex = ownerFileIndex(index) ?: return
@@ -918,6 +985,7 @@ class PresentationState(
     }
 
     fun insertSlide(afterIndex: Int, layout: SlideLayoutType) {
+        rememberForUndo()
         val template = when (layout) {
             SlideLayoutType.HERO_TITLE -> "<!-- layout: hero -->\n# New Hero Title\n### Compelling Subtitle Here\n"
             SlideLayoutType.SECTION_HEADER -> "<!-- layout: section -->\n# Section Header\n### Chapter Overview\n"
