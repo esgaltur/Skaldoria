@@ -80,6 +80,21 @@ kotlin {
     }
 }
 
+/**
+ * COR-11: redirects `ConfigManager` at its `skaldoria.configDir` injection point so the test
+ * suite persists under `build/` instead of the developer's real `~/.skaldoria`.
+ *
+ * `PresentationState` autosaves through `ConfigManager`, and that class is constructed in 20+
+ * test cases, so before this the suite wrote a real draft and config on every run. Setting it
+ * on the task makes every test hermetic without each one having to remember to redirect.
+ */
+tasks.withType<Test>().configureEach {
+    systemProperty(
+        "skaldoria.configDir",
+        layout.buildDirectory.dir("test-config").get().asFile.absolutePath
+    )
+}
+
 compose.desktop {
     application {
         mainClass = "com.skaldoria.MainKt"
