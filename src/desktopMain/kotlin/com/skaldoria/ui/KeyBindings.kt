@@ -56,6 +56,9 @@ object KeyBindings {
         "DirectionUp" to Key.DirectionUp,
         "DirectionDown" to Key.DirectionDown,
         "Spacebar" to Key.Spacebar,
+        "Backspace" to Key.Backspace,
+        "MoveHome" to Key.MoveHome,
+        "MoveEnd" to Key.MoveEnd,
         "PageUp" to Key.PageUp,
         "PageDown" to Key.PageDown,
         "Escape" to Key.Escape,
@@ -79,6 +82,7 @@ object KeyBindings {
         "O" to Key.O,
         "P" to Key.P,
         "S" to Key.S,
+        "T" to Key.T,
         "W" to Key.W,
         "Z" to Key.Z
     )
