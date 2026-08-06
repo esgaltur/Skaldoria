@@ -111,7 +111,7 @@ class SlideSourceRangeTest {
         for (slide in slides) {
             val sliced = lines.subList(slide.sourceLineRange.first, slide.sourceLineRange.last + 1)
                 .joinToString("\n")
-            val title = slide.title ?: continue
+            val title = slide.title
             assertTrue(
                 sliced.contains(title),
                 "slide titled '$title' has range ${slide.sourceLineRange}, which slices to text " +

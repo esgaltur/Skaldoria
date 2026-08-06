@@ -165,7 +165,7 @@ class SlideDirectivesTest {
     fun `a directive comment never renders as slide text`() {
         val slide = parseOne("## Heading\n<!-- layout: quote -->\n> Quoted line")
         assertTrue(
-            slide.elements.none { it is SlideElement.Text && (it as SlideElement.Text).content.contains("<!--") },
+            slide.elements.none { it is SlideElement.Text && it.content.contains("<!--") },
             "directive markup leaked into rendered content"
         )
     }
