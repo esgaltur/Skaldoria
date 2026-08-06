@@ -24,7 +24,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.skaldoria.core.models.SlideElement
+import com.skaldoria.core.search.SlideSearch
 import com.skaldoria.state.PresentationState
 
 @Composable
@@ -38,28 +38,11 @@ fun CommandPalette(
     val focusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
 
+    // COR-13: matching lives in SlideSearch, where it is exhaustive over SlideElement and
+    // unit-tested. Inline here it ended in `else -> false`, so polls, diagrams, formulas
+    // and images were silently unsearchable.
     val filteredSlides = remember(searchQuery, state.slides) {
-        if (searchQuery.isBlank()) {
-            state.slides
-        } else {
-            val q = searchQuery.trim().lowercase()
-            state.slides.filter { slide ->
-                slide.title.lowercase().contains(q) ||
-                        (slide.subtitle?.lowercase()?.contains(q) == true) ||
-                        slide.notes.any { it.lowercase().contains(q) } ||
-                        slide.elements.any { elem ->
-                            when (elem) {
-                                is SlideElement.Text -> elem.content.lowercase().contains(q)
-                                is SlideElement.BulletList -> elem.items.any { it.lowercase().contains(q) }
-                                is SlideElement.CodeBlock -> elem.code.lowercase().contains(q)
-                                is SlideElement.Quote -> elem.quote.lowercase().contains(q)
-                                is SlideElement.Metric -> elem.label.lowercase().contains(q) || elem.value.lowercase().contains(q)
-                                is SlideElement.Table -> elem.headers.any { it.lowercase().contains(q) } || elem.rows.any { row -> row.any { it.lowercase().contains(q) } }
-                                else -> false
-                            }
-                        }
-            }
-        }
+        SlideSearch.filter(state.slides, searchQuery)
     }
 
     LaunchedEffect(Unit) {

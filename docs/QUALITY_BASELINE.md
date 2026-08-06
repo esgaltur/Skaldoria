@@ -1,6 +1,6 @@
 # Quality Baseline
 
-**Version:** 1.2.0 · **Last reviewed:** 2026-08-05 · **Suite:** 221 tests
+**Version:** 1.2.0 · **Last reviewed:** 2026-08-06 · **Suite:** 302 tests, 0 failures
 
 This document is the reference for the invariants this codebase holds, established during a
 systematic pre-release review of `src/desktopMain`. Every entry has a stable identifier, and
@@ -80,6 +80,9 @@ Entries without a **Rationale** are self-evident and need none.
 | COR-8 | Config | Configuration writes are atomic | — |
 | COR-9 | Projects | Slide files sort in natural order | `DeckProjectManagerTest` |
 | COR-10 | Rendering | Images are resolved, loaded and drawn | `ImageResolverTest` |
+| COR-11 | Config | Persistence has one injection point; the suite never writes to the real home | `ConfigStorageLocationTest` |
+| COR-12 | Companion | JSON string encoding escapes the whole C0 range | `JsonEscapingTest` |
+| COR-13 | Search | Slide search covers every `SlideElement` variant | `SlideSearchTest` |
 | EXP-1 | Export | Exported colours match the source theme | `CharacterizationTest` |
 | EXP-2 | Export | Exported HTML cannot be broken out of by content | `CharacterizationTest` |
 | EXP-3 | Export | Every slide element reaches the image export | — |
@@ -96,6 +99,8 @@ Entries without a **Rationale** are self-evident and need none.
 | DED-3 | Projects | One implementation of slide-file creation | — |
 | DED-4 | Diagrams | A shape exists only if the parser can emit it | `MermaidParserTest` |
 | DED-5 | State | `remoteServerUrl` is display-only | — |
+| DED-6 | State | Application errors and companion errors use separate channels | `ErrorChannelTest` |
+| SEC-8 | Companion | Every route declares its method and scope; policy is derived from them | `RouteTableSecurityTest` |
 | R-1 | Diagrams | Sequence diagrams scale to fit | `SlideRenderingTest` |
 | R-2 | Diagrams | The diagram header reflects the parsed type | — |
 
@@ -153,6 +158,43 @@ emitted.
 allows any page the presenter visits to issue authenticated cross-origin requests, so removing it
 is a control rather than a regression. If cross-origin access is ever required, allow-list
 explicit origins; do not reintroduce a wildcard.
+
+### SEC-8 — Access control is declared, not remembered
+
+**Invariant.** Every route declares its HTTP method and its [RouteScope]; SEC-2, SEC-3 and SEC-5
+are *derived* from that declaration. A route cannot exist without one.
+
+**Implementation.** `RemoteCompanionServer.routes` is a `List<Route>`; `routeRequest` reads
+`route.method`, `route.mutating` and `route.requiresToken` rather than consulting any set.
+
+**Rationale.** The policy previously lived in two `Set<String>` literals checked against a third
+`when (path)` dispatch. Adding an endpoint took three coordinated edits, and omitting one **failed
+silently**: a write endpoint missing from `WRITE_ENDPOINTS` was exempt from both POST-only and
+rate limiting; missing from `PRESENTER_ENDPOINTS` it was unauthenticated. Three load-bearing
+invariants rested on a human remembering two lists. `AUDIENCE` scope exists to name the case the
+two-set arrangement could not express — *mutates state, deliberately without a token* — because
+that is the case an omission silently produces.
+
+**Guard.** `RouteTableSecurityTest` iterates the table: every presenter route rejects a missing
+token and accepts a valid one, every mutating route refuses `GET`, every declared route is
+reachable, and no path is declared twice. A new route is covered the moment it is declared.
+
+### COR-12 — JSON encoding is complete and single-sourced
+
+**Invariant.** All JSON string encoding goes through `core/json/Json`, which escapes the entire
+C0 range (`U+0000`–`U+001F`).
+
+**Rationale.** The server's local `escapeJson` handled `\`, `"`, `\n`, `\r` and `\t` only. Audience
+text arrives URL-decoded, so `%01` produced a raw `0x01` that survived `trim()` and `take()` and
+reached `/api/state` verbatim — reproduced, not theorised. Because both portals poll that endpoint
+sub-second and swallow parse failures in `catch(e){}`, one crafted submission stopped **every**
+connected device from updating until the question was dismissed. Twelve hand-built JSON strings
+were twelve chances to make this mistake; there is now one encoder. Do not reintroduce a local
+escape routine. The old routine also *dropped* `\r` rather than escaping it, silently altering
+text the speaker was shown.
+
+**Guard.** `JsonEscapingTest` — the whole C0 range at the unit level, plus an end-to-end
+submission proving no raw control character reaches the state feed.
 
 ### SEC-5 — Ballot integrity
 
@@ -393,11 +435,65 @@ around a list copy.
 
 ### PRF-4 — Monotonic timing
 
-**Invariant.** Elapsed talk time derives from `System.nanoTime()` plus banked paused duration.
+**Invariant.** Elapsed talk time derives from an injected monotonic source plus banked paused
+duration. The publishing ticker lives only as long as the timer runs.
+
+**Implementation.** `core/pacing/TalkTimer`. `currentElapsedSeconds()` is the authority; the
+coroutine only publishes a snapshot of it, so a late or coalesced tick cannot affect the value.
 
 **Rationale.** Counting `delay(1000)` iterations accumulates scheduling jitter and drifts over a
 talk. `startPresenting` routes through `toggleTimer` rather than setting the flag directly, which
-would leave the start timestamp unset and freeze the clock.
+would leave the start timestamp unset and freeze the clock. The clock is injected because with
+`System.nanoTime()` called inline this invariant was verifiable only by reading it. The ticker was
+previously started unconditionally in `PresentationState.init` and cancelled only by `dispose()`,
+which no test called — so a suite run leaked one live coroutine per constructed state object, and
+a paused timer woke the CPU five times a second for nothing.
+
+**Guard.** `TalkTimerTest` — pause/resume accumulation, a 3600 s jump reported in full, twenty
+pause cycles without drift, and the ticker's lifetime.
+
+### COR-13 — Slide search is exhaustive
+
+**Invariant.** `SlideSearch` matches over **every** `SlideElement` variant. The `when` has no
+`else`.
+
+**Rationale.** The matcher lived inline in `CommandPalette` and ended in `else -> false` over a
+*sealed* hierarchy, so polls, diagrams, formulas and images were silently unsearchable — a speaker
+could not jump to a slide by its poll option. Kotlin already gives the Visitor guarantee for a
+sealed hierarchy (a missing branch is a compile error) but only while nobody writes `else`. This
+is the same habit that let EXP-3 ship, where tables, images and polls vanished from PNG export.
+**Never write `else` on a `when` over `SlideElement`.**
+
+**Guard.** `SlideSearchTest` — one case per variant, including the four the `else` swallowed.
+
+### DED-6 — An error channel means what its name says
+
+**Invariant.** `remoteServerError` carries companion-server failures only. Everything else the
+user should see goes to `lastError`.
+
+**Rationale.** `addNewSlideFile` reported a *slide-file creation* failure by assigning to
+`remoteServerError` — the property named for, and rendered by, the pairing dialog. A speaker
+trying to pair a phone would have been shown a file-system error. This is what a class holding
+sixty properties does to error handling: the nearest field wins. Adding a channel is cheaper than
+the confusion of a shared one.
+
+**Guard.** `ErrorChannelTest` — a project whose `slides` path is a regular file fails to create a
+slide, and the failure must land on `lastError` with `remoteServerError` untouched.
+
+### COR-11 — One place decides where configuration is written
+
+**Invariant.** `ConfigManager.rootDir` is the sole location authority, overridable at startup via
+the `skaldoria.configDir` system property.
+
+**Rationale.** It was a `by lazy` resolving `user.home` with no way in. `PresentationState`
+autosaves through this object and is constructed in 20+ test cases, so `./gradlew desktopTest`
+wrote a real `autosave_draft.md` and `config.json` into the developer's home — capable of
+clobbering a draft recovered from a genuinely crashed session. The Gradle test task now points the
+property at `build/test-config`, which makes the whole suite hermetic without each test having to
+remember to redirect.
+
+**Guard.** `ConfigStorageLocationTest` — asserts the suite's root is not the real home, and that
+writes follow the configured root.
 
 ---
 

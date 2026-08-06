@@ -1,5 +1,6 @@
 package com.skaldoria.remote
 
+import com.skaldoria.core.json.Json
 import com.skaldoria.core.models.SlideElement
 import com.skaldoria.state.PresentationState
 import java.io.OutputStream
@@ -44,9 +45,6 @@ object RemoteCompanionServer {
      */
     @Volatile
     private var sessionToken: String = ""
-
-    /** Routes that drive the presentation or moderate the audience. Token required. */
-    private val PRESENTER_ENDPOINTS = setOf("/api/action", "/api/qa/dismiss")
 
     /** SEC-4: ceiling on concurrent request handlers. */
     private const val MAX_WORKER_THREADS = 16
@@ -423,18 +421,53 @@ object RemoteCompanionServer {
     }
 
     /**
-     * Endpoints that mutate presentation or audience state. These require POST so that
-     * a cross-origin page cannot trigger them with a bare `<img src="...">` or link
-     * (SEC-3). Combined with the session token (SEC-2) this closes the drive-by path.
+     * The complete request surface, with each route's access-control policy attached.
+     *
+     * SEC-8: this table replaces `PRESENTER_ENDPOINTS`, `WRITE_ENDPOINTS` and a `when (path)`
+     * dispatch — three places that had to be kept in agreement by hand, where forgetting one
+     * failed **silently** and left an endpoint unauthenticated or unthrottled. A route cannot
+     * be added now without stating its method and scope, and [routeRequest] derives the
+     * policy from them. `RouteTableSecurityTest` asserts over the whole table.
+     *
+     * `/` and `/remote` serve the same portal: the pairing QR points at `/remote`, and `/`
+     * is kept so a hand-typed host:port still lands somewhere useful.
      */
-    private val WRITE_ENDPOINTS = setOf(
-        "/api/action",
-        "/api/poll/vote",
-        "/api/qa/submit",
-        "/api/qa/upvote",
-        "/api/qa/dismiss",
-        "/api/parking-lot/add"
+    val routes: List<Route> = listOf(
+        // The portals carry no secrets and are inert without a token, so they are served
+        // unconditionally rather than creating a pairing dead end.
+        Route("/", HttpMethod.GET, RouteScope.PUBLIC) { sendHtmlResponse(it.output, getCompanionHtml()) },
+        Route("/remote", HttpMethod.GET, RouteScope.PUBLIC) { sendHtmlResponse(it.output, getCompanionHtml()) },
+        Route("/audience", HttpMethod.GET, RouteScope.PUBLIC) { sendHtmlResponse(it.output, getAudienceHtml()) },
+
+        // SEC-2: a read for everyone, but speaker notes are filtered by `authorized`.
+        Route("/api/state", HttpMethod.GET, RouteScope.PUBLIC) {
+            handleStateApi(it.output, it.state, includeNotes = it.authorized)
+        },
+
+        // Audience scope: mutates without a token, by design. Rate-limited (SEC-5).
+        Route("/api/poll/vote", HttpMethod.POST, RouteScope.AUDIENCE) {
+            handlePollVoteApi(it.output, it.params, it.state, it.clientKey)
+        },
+        Route("/api/qa/submit", HttpMethod.POST, RouteScope.AUDIENCE) {
+            handleQaSubmitApi(it.output, it.params, it.state)
+        },
+        Route("/api/qa/upvote", HttpMethod.POST, RouteScope.AUDIENCE) {
+            handleQaUpvoteApi(it.output, it.params, it.state)
+        },
+        Route("/api/parking-lot/add", HttpMethod.POST, RouteScope.AUDIENCE) {
+            handleParkingLotAddApi(it.output, it.params, it.state)
+        },
+
+        // Presenter scope: drives the deck or moderates. Session token required (SEC-2).
+        Route("/api/action", HttpMethod.POST, RouteScope.PRESENTER) {
+            handleActionApi(it.output, it.params, it.state)
+        },
+        Route("/api/qa/dismiss", HttpMethod.POST, RouteScope.PRESENTER) {
+            handleQaDismissApi(it.output, it.params, it.state)
+        }
     )
+
+    private val routesByPath: Map<String, Route> = routes.associateBy { it.path }
 
     private fun routeRequest(
         path: String,
@@ -446,58 +479,42 @@ object RemoteCompanionServer {
         state: PresentationState,
         clientKey: String
     ) {
-        if (path in WRITE_ENDPOINTS && method != "POST") {
-            sendErrorResponse(output, "This endpoint requires POST", 405)
+        val route = routesByPath[path]
+        if (route == null) {
+            sendErrorResponse(output, "Endpoint not found: $path", 404)
+            return
+        }
+
+        // SEC-3: a cross-origin page can only issue a GET (a bare `<img src>` or a link), so
+        // refusing it on anything that mutates closes the drive-by path.
+        if (route.method.name != method) {
+            sendErrorResponse(output, "This endpoint requires ${route.method.name}", 405)
             return
         }
 
         // SEC-5: throttle writes only — polling /api/state must stay free.
-        if (path in WRITE_ENDPOINTS && !allowRequest(clientKey)) {
+        if (route.mutating && !allowRequest(clientKey)) {
             sendErrorResponse(output, "Too many requests", 429)
             return
         }
 
         val authorized = isAuthorized(params, headers)
 
-        if (path in PRESENTER_ENDPOINTS && !authorized) {
+        // SEC-2: derived from the route's declared scope, not from set membership.
+        if (route.requiresToken && !authorized) {
             sendErrorResponse(output, "Presenter session token required", 401)
             return
         }
 
-        when (path) {
-            "/", "/remote" -> {
-                // The portal itself carries no secrets; it is inert without a valid token,
-                // so it is served unconditionally rather than creating a pairing dead end.
-                sendHtmlResponse(output, getCompanionHtml())
-            }
-            "/audience" -> {
-                sendHtmlResponse(output, getAudienceHtml())
-            }
-            "/api/state" -> {
-                handleStateApi(output, state, includeNotes = authorized)
-            }
-            "/api/action" -> {
-                handleActionApi(output, params, state)
-            }
-            "/api/poll/vote" -> {
-                handlePollVoteApi(output, params, state, clientKey)
-            }
-            "/api/qa/submit" -> {
-                handleQaSubmitApi(output, params, state)
-            }
-            "/api/qa/upvote" -> {
-                handleQaUpvoteApi(output, params, state)
-            }
-            "/api/qa/dismiss" -> {
-                handleQaDismissApi(output, params, state)
-            }
-            "/api/parking-lot/add" -> {
-                handleParkingLotAddApi(output, params, state)
-            }
-            else -> {
-                sendErrorResponse(output, "Endpoint not found: $path", 404)
-            }
-        }
+        route.handler(
+            RequestContext(
+                params = params,
+                state = state,
+                output = output,
+                clientKey = clientKey,
+                authorized = authorized
+            )
+        )
     }
 
     // ==========================================
@@ -531,7 +548,9 @@ object RemoteCompanionServer {
             // try/catch that swallowed the resulting ConcurrentModificationException.
             val questionsList = state.audienceQuestionsSnapshot()
             val questionsJson = questionsList.joinToString(prefix = "[", postfix = "]") { q ->
-                """{"id": "${q.id}", "author": "${escapeJson(q.author)}", "text": "${escapeJson(q.text)}", "upvotes": ${q.upvotes}, "isAnswered": ${q.isAnswered}}"""
+                // The id is generated, not user-supplied — escaped anyway so no field in
+                // this object depends on an assumption about its contents.
+                """{"id": "${escapeJson(q.id)}", "author": "${escapeJson(q.author)}", "text": "${escapeJson(q.text)}", "upvotes": ${q.upvotes}, "isAnswered": ${q.isAnswered}}"""
             }
 
             val title = escapeJson(current?.title ?: "Untitled Slide")
@@ -733,13 +752,16 @@ object RemoteCompanionServer {
         }
     }
 
-    private fun escapeJson(str: String): String {
-        return str.replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "")
-            .replace("\t", "\\t")
-    }
+    /**
+     * COR-12: delegates to the single JSON encoder.
+     *
+     * This was a local five-replacement chain missing every C0 control character other than
+     * `\n`, `\r` and `\t` — which RFC 8259 requires to be escaped. Audience text arrives
+     * URL-decoded, so `%01` reached the response raw and made `/api/state` unparseable for
+     * every polling device. Do not reintroduce a local escape routine here; twelve call
+     * sites means one encoder.
+     */
+    private fun escapeJson(str: String): String = Json.escape(str)
 
     // ==========================================
     // EMBEDDED HTML PORTALS

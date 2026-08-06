@@ -29,22 +29,54 @@ data class AppConfig(
  */
 object ConfigManager {
 
-    private val configDir: File by lazy {
+    /** Name of the per-user directory holding config and the autosaved draft. */
+    private const val CONFIG_DIR_NAME = ".skaldoria"
+
+    /**
+     * System property that relocates [rootDir] at startup.
+     *
+     * The Gradle `desktopTest` task sets this to a folder under `build/`, which is what makes
+     * the whole suite hermetic without every test having to remember to redirect.
+     */
+    const val ROOT_DIR_PROPERTY = "skaldoria.configDir"
+
+    private fun defaultRootDir(): File {
+        System.getProperty(ROOT_DIR_PROPERTY)?.takeIf { it.isNotBlank() }?.let { return File(it) }
         val userHome = System.getProperty("user.home") ?: "."
-        val dir = File(userHome, ".skaldoria")
+        return File(userHome, CONFIG_DIR_NAME)
+    }
+
+    /**
+     * COR-11: the single injection point for where configuration is persisted.
+     *
+     * This was a `by lazy` resolving `user.home` with nothing able to override it. Because
+     * `PresentationState`'s autosave path reaches this object, and that class is constructed
+     * in 20+ test cases, running `./gradlew desktopTest` wrote a real `autosave_draft.md`
+     * and `config.json` into the developer's home — capable of clobbering a draft recovered
+     * from a genuinely crashed session.
+     *
+     * A settable root rather than a constructor parameter keeps the change to one line at
+     * every one of the ~20 existing call sites (they need none), while still giving tests
+     * and the Gradle task a way in. The directory is created lazily on write, not here, so
+     * assigning a root has no filesystem side effect.
+     */
+    @Volatile
+    var rootDir: File = defaultRootDir()
+
+    /** Creates [rootDir] on demand. Called before every write, never on a read. */
+    private fun ensureRootDir(): File {
+        val dir = rootDir
         if (!dir.exists()) {
             dir.mkdirs()
         }
-        dir
+        return dir
     }
 
-    private val configFile: File by lazy {
-        File(configDir, "config.json")
-    }
+    private val configFile: File
+        get() = File(rootDir, "config.json")
 
-    private val draftFile: File by lazy {
-        File(configDir, "autosave_draft.md")
-    }
+    private val draftFile: File
+        get() = File(rootDir, "autosave_draft.md")
 
     @Synchronized
     fun loadConfig(): AppConfig {
@@ -74,6 +106,9 @@ object ConfigManager {
      * network shares), since a best-effort save still beats no save.
      */
     private fun writeAtomically(target: File, content: String) {
+        // The root is created here rather than when `rootDir` is assigned, so pointing the
+        // app or a test at a directory never has a filesystem side effect on its own.
+        ensureRootDir()
         val temp = File(target.parentFile, "${target.name}.tmp")
         temp.writeText(content, Charsets.UTF_8)
         try {

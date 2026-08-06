@@ -20,10 +20,14 @@ import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideFileEntry
 import com.skaldoria.core.models.SlideLayoutType
 import com.skaldoria.core.models.SlideTransition
+import com.skaldoria.core.pacing.Pacing
+import com.skaldoria.core.pacing.PacingCalculator
+import com.skaldoria.core.pacing.TalkTimer
 import com.skaldoria.core.parser.MarkdownSlideParser
 import com.skaldoria.remote.RemoteCompanionServer
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.theme.PresentationTheme
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -31,10 +35,18 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * @param backgroundContext where debounced autosave runs. PRF-4: injected rather than
+ *   constructed, so a test can cancel it instead of leaving work running past the test.
+ * @param timer the talk stopwatch. PRF-4: extracted so the pacing bookkeeping is testable
+ *   against a fake clock; see [TalkTimer].
+ */
 class PresentationState(
-    initialMarkdown: String = DEFAULT_SAMPLE_MARKDOWN
+    initialMarkdown: String = DEFAULT_SAMPLE_MARKDOWN,
+    backgroundContext: CoroutineContext = Dispatchers.Default,
+    private val timer: TalkTimer = TalkTimer()
 ) {
-    private val scope = CoroutineScope(Dispatchers.Default)
+    private val scope = CoroutineScope(backgroundContext)
 
     var markdownText by mutableStateOf(initialMarkdown)
         private set
@@ -75,7 +87,30 @@ class PresentationState(
     // *base* URL — never the presenter URL, which carries the session credential and must
     // not sit in long-lived observable state.
     var remoteServerUrl by mutableStateOf<String?>(null)
+
+    /**
+     * Failures from starting or stopping the companion server. Rendered by the pairing
+     * dialog, so **only** the companion server may write here — see [lastError].
+     */
     var remoteServerError by mutableStateOf<String?>(null)
+
+    /**
+     * DED-6: general application errors that the user should see — file operations, project
+     * edits, exports.
+     *
+     * Slide-file creation failures used to be assigned to [remoteServerError], the property
+     * named for and rendered by the companion pairing UI, so a file-system failure surfaced
+     * to a speaker trying to pair a phone. That is what happens when one class holds every
+     * field: the nearest one wins. Keep the two channels distinct.
+     */
+    var lastError by mutableStateOf<String?>(null)
+        private set
+
+    /** Dismisses whatever [lastError] is currently reporting. */
+    fun clearLastError() {
+        lastError = null
+    }
+
     var isCustomThemeDialogOpen by mutableStateOf(false)
     var isExportBundleDialogOpen by mutableStateOf(false)
     var isUnlockThemeDialogOpen by mutableStateOf(false)
@@ -259,53 +294,52 @@ class PresentationState(
         currentMatchIndex = 0
     }
 
-    var elapsedSeconds by mutableStateOf(0L)
-        private set
+    // ------------------------------------------------------------------
+    // Talk clock and pacing — delegated.
+    //
+    // PRF-4: the stopwatch lives in [TalkTimer] (monotonic bookkeeping, injected clock) and
+    // the speaker-rhythm formula in [PacingCalculator] (pure). These properties remain so
+    // the presenter console and the companion server keep their existing call sites; they
+    // are now a facade over two tested units rather than the logic itself.
+    // ------------------------------------------------------------------
 
-    var isTimerRunning by mutableStateOf(false)
-        private set
+    val elapsedSeconds: Long
+        get() = timer.elapsedSeconds
+
+    val isTimerRunning: Boolean
+        get() = timer.isRunning
 
     var targetTalkDurationMinutes by mutableStateOf<Int?>(null)
 
     val targetTotalSeconds: Long?
         get() = targetTalkDurationMinutes?.times(60L)
 
+    /** One consistent readout, so the ribbon's delta and status can never disagree. */
+    private val pacing: Pacing
+        get() = PacingCalculator.compute(
+            elapsedSeconds = elapsedSeconds,
+            targetTotalSeconds = targetTotalSeconds,
+            slideIndex = currentSlideIndex,
+            slideCount = slides.size
+        )
+
     val targetSecondsPerSlide: Long
-        get() = if (targetTotalSeconds != null && slides.isNotEmpty()) {
-            (targetTotalSeconds!! / slides.size).coerceAtLeast(1L)
-        } else 0L
+        get() = pacing.secondsPerSlide
 
     val idealElapsedSecondsAtCurrentSlide: Long
-        get() = currentSlideIndex * targetSecondsPerSlide
+        get() = pacing.idealElapsedSeconds
 
     val pacingDeltaSeconds: Long
-        get() = if (targetTalkDurationMinutes != null) {
-            elapsedSeconds - idealElapsedSecondsAtCurrentSlide
-        } else 0L
+        get() = pacing.deltaSeconds
 
     val pacingStatus: PacingStatus
-        get() {
-            val total = targetTotalSeconds ?: return PacingStatus.OFF
-            if (elapsedSeconds > total) return PacingStatus.OVERTIME
-            return when {
-                pacingDeltaSeconds > 75 -> PacingStatus.OVERTIME
-                pacingDeltaSeconds > 20 -> PacingStatus.BEHIND
-                pacingDeltaSeconds < -20 -> PacingStatus.AHEAD
-                else -> PacingStatus.ON_TRACK
-            }
-        }
+        get() = pacing.status
 
     val remainingSecondsInTalk: Long
-        get() = if (targetTotalSeconds != null) {
-            (targetTotalSeconds!! - elapsedSeconds).coerceAtLeast(0L)
-        } else 0L
+        get() = pacing.remainingSeconds
 
     val pacingProgressRatio: Float
-        get() {
-            val total = targetTotalSeconds ?: return 0f
-            if (total <= 0) return 0f
-            return (elapsedSeconds.toFloat() / total.toFloat()).coerceIn(0f, 1f)
-        }
+        get() = pacing.progressRatio
 
     fun setTargetDuration(minutes: Int?) {
         targetTalkDurationMinutes = minutes
@@ -325,28 +359,6 @@ class PresentationState(
             ConfigManager.saveDraft(content)
         }
     }
-
-    init {
-        // PRF-4: derive elapsed time from a monotonic clock rather than counting loop
-        // iterations. The old ticker incremented once per delay(1000), so scheduling jitter
-        // accumulated and the timer drifted behind wall clock over a long talk.
-        scope.launch {
-            while (true) {
-                delay(200)
-                val startedAt = timerStartedAtNanos
-                if (startedAt != null) {
-                    val running = (System.nanoTime() - startedAt) / 1_000_000_000L
-                    elapsedSeconds = accumulatedSeconds + running
-                }
-            }
-        }
-    }
-
-    /** Monotonic timestamp of the current run, or null while paused. */
-    private var timerStartedAtNanos: Long? = null
-
-    /** Seconds banked from previous runs, so pausing does not lose time. */
-    private var accumulatedSeconds: Long = 0L
 
     /**
      * DED-1: an unsaved draft recovered from the last session, or null.
@@ -392,6 +404,7 @@ class PresentationState(
     /** Releases the background timer and flushes preferences. Call when the app shuts down. */
     fun dispose() {
         persistUiPreferences()
+        timer.dispose()
         scope.cancel()
     }
 
@@ -647,7 +660,9 @@ class PresentationState(
         try {
             com.skaldoria.project.DeckProjectManager.addNewSlideFile(proj, name)
         } catch (e: Exception) {
-            remoteServerError = "Could not create slide file: ${e.message}"
+            // DED-6: a file-system failure belongs on the general channel, not on the one
+            // the companion pairing dialog renders.
+            lastError = "Could not create slide file: ${e.message}"
             return
         }
 
@@ -741,24 +756,9 @@ class PresentationState(
         com.skaldoria.export.FileManager.exportStandaloneHtmlDeck(this) { _ -> }
     }
 
-    fun toggleTimer() {
-        if (isTimerRunning) {
-            // Bank the elapsed run before pausing.
-            timerStartedAtNanos?.let { accumulatedSeconds += (System.nanoTime() - it) / 1_000_000_000L }
-            timerStartedAtNanos = null
-            isTimerRunning = false
-        } else {
-            timerStartedAtNanos = System.nanoTime()
-            isTimerRunning = true
-        }
-    }
+    fun toggleTimer() = timer.toggle()
 
-    fun resetTimer() {
-        elapsedSeconds = 0L
-        accumulatedSeconds = 0L
-        timerStartedAtNanos = null
-        isTimerRunning = false
-    }
+    fun resetTimer() = timer.reset()
 
     fun toggleBlackout() {
         isBlackoutActive = !isBlackoutActive
