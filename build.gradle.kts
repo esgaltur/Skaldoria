@@ -84,7 +84,12 @@ kotlin {
                 implementation(compose.materialIconsExtended)
                 implementation(compose.components.resources)
 
-                // JetBrains Official Markdown AST parser
+                // Used only by `AstLibrarySpike`, which benchmarked adopting a general CommonMark
+                // AST in place of the hand-rolled slide parser. It measured 2.65 us/line against
+                // 1.42 for the specialised scanner, so the swap was rejected and this stayed a
+                // test-only dependency. The comment here previously read "JetBrains Official
+                // Markdown AST parser", which implied the app parsed markdown with it. It never
+                // has. Remove both once the spike is deleted.
                 implementation("org.jetbrains:markdown:0.7.8")
 
                 // Coroutines & Desktop Swing dispatcher.

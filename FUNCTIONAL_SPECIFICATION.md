@@ -23,9 +23,10 @@
 
 ```mermaid
 flowchart TD
-    subgraph Authoring["1. Authoring & Parsing"]
-        MD[Markdown / .skaldoria Deck] --> Lexer[Slide Lexer & Delimiter Splitter]
-        Lexer --> AST[CommonMark AST Generator]
+    subgraph Authoring["1. Authoring & Parsing — :markdown-core"]
+        MD[Markdown / .skaldoria Deck] --> Fence[FenceRules — shared fence authority]
+        Fence --> Lexer[Slide Lexer & Delimiter Splitter]
+        Lexer --> Blocks[Block Rule Dispatch — BLOCK_RULES]
         Lexer --> Directives[Directive & Comment Extractor]
         Directives --> Notes[Speaker Notes]
         Directives --> ParkingLot[Parking Lot Items]
@@ -33,7 +34,7 @@ flowchart TD
     end
 
     subgraph Plugins["2. Semantic Layout & Content Plugins"]
-        AST --> Classifier[Smart Layout Classifier]
+        Blocks --> Classifier[Smart Layout Classifier]
         Classifier --> L1[Hero Title / Section Header]
         Classifier --> L2[Split Text & Code / Full Code]
         Classifier --> L3[Split Text & Media]
@@ -51,6 +52,22 @@ flowchart TD
         RenderPipeline --> RemoteServer[Embedded Companion HTTP Server]
     end
 ```
+
+**There is no general markdown AST.** Stage 1 is a single-pass line scanner that produces slides
+directly, and that is a deliberate, measured choice: building a full CommonMark AST was benchmarked
+at **2.65 µs/line** against **1.42 µs/line** for the specialised scanner — more than the whole
+current per-keystroke pipeline costs. Specialisation wins here because the scanner produces exactly
+what slides need and nothing else. *(Earlier revisions of this document described a "CommonMark AST
+Generator" in this stage; no such component has ever existed.)*
+
+Stage 1 lives in **`:markdown-core`**, a Gradle module with no Compose dependency, so the engine
+can be compiled, tested and benchmarked without a UI toolkit.
+
+`FenceRules` sits ahead of the lexer because fence state decides whether a `---` splits a slide or
+belongs to a code sample. It is **shared grammar**: the slide lexer, the block rules and the
+editor's syntax highlighter all defer to it, and `FenceLexerAgreementTest` fails if any of them
+starts answering differently. Rules that are *not* shared — `SLIDE_HEADING`, `SLIDE_BREAK_RULE` —
+are named for the question they ask, because the highlighter is expected to disagree with them.
 
 ---
 
@@ -114,6 +131,25 @@ val state = PresentationState()
 state.addFollowUpQuestion("Throughput per shard?", slideIndex = 3)
 ```
 ````
+
+Fence handling follows CommonMark, and one authority — `FenceRules` in `:markdown-core` — answers
+for the slide parser and the editor's syntax highlighter alike.
+
+| Rule | Behaviour |
+| :--- | :--- |
+| Marker | Backticks or tildes: ` ``` ` and `~~~` are equivalent |
+| Length | Three or more; a fence closes only on **the same marker, at least as long** |
+| Info string | Any text is accepted. The first word is the language; the rest is ignored |
+| Line highlighting | `[1-3\|5-8]` after the language, as above |
+| Closing fence | Carries no info string — ` ```js ` inside an open block is code, not a terminator |
+
+Because a longer fence is needed to close a longer one, a block containing ` ``` ` can be written
+by opening with ` ```` `. A `---` inside any fence is code and never splits a slide.
+
+> **Changed.** Earlier releases recognised backtick fences only, and only with an info string of
+> the form `language [1,3-5]`. Anything else — ` ```js {highlight=2} `, ` ```python title="x" ` —
+> lost its language and fell back to Kotlin syntax colouring, and `~~~` blocks were not treated as
+> code at all.
 
 ---
 

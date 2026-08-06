@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Roadmap and delivery work. The candidate feature set is catalogued in
 [`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md); the connectivity design is
 [ADR-005](./docs/ADR_COMPANION_LINK_ESTABLISHMENT.md).
-Test suite: **235 to 588 tests**, zero compiler warnings.
+Test suite: **235 to 616 tests** (550 in the app, 66 in `:markdown-core`), zero compiler warnings.
 
 ### Performance
 
@@ -28,8 +28,38 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
 - **Caret tracking allocated the whole document per cursor move.** Slide ⇄ offset mapping built
   a list of every line and a boxed integer per line start to answer a question about one line.
   Now a forward scan that stops. **-70%**.
+- **Moving the caret re-highlighted the entire document.** `VisualTransformation.filter()` runs on
+  every recomposition, not only on text change, so an arrow key rebuilt every span in the deck to
+  produce a byte-identical result. Memoised on its inputs: **~425 µs to 1–2 µs** on that path,
+  which also covers selection drags, focus changes and slide navigation.
+- **The parking-lot scan ran in full on decks that have no parking-lot items.** It reconciles on
+  every deck change, and most decks have never used the feature. A pre-scan short-circuits it:
+  **640 µs to 31 µs**. The guard deliberately covers *both* extraction paths — directive comments
+  and checkbox task lists — because the obvious `parking-lot:`-only check would have silently
+  dropped every checkbox-derived item.
+
+  Together: **~2.4 ms to ~1.64 ms per keystroke** on an 886-line deck.
+
+- **The benchmark itself was unreliable, and that is the finding worth keeping.**
+  `PerformanceProbe` timed a single pass and discarded every result. Back-to-back runs of an
+  unchanged binary produced **579 µs and 1.27 ms** for the same measurement — a 2.2× spread, wide
+  enough to invent a regression that never existed. Three plausible causes were investigated
+  against that noise before it was recognised as noise. The probe now reports the fastest of three
+  passes and routes every result through a sink. **Figures in
+  [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANCE_BASELINE.md) that predate this change should
+  be re-run before being trusted.**
 
 ### Added
+- **`:markdown-core`, a Gradle module holding the markdown engine.** The parser, block rules,
+  layout classifier and slide model, with **zero Compose on its compile classpath** — verified,
+  not assumed. It compiles, tests and benchmarks without a UI toolkit, which is what makes the
+  parser measurable in isolation and would let a non-desktop front end consume the engine.
+  `AnnotationStroke` moved back out to the app module: it was the only type in the slide model
+  needing Compose, and it is a drawing concern rather than a parsing one.
+
+  A note for anyone extracting the next module: a module boundary stops Kotlin smart-casting
+  nullable `val`s, because another module could in principle change them. That produced 11 compile
+  errors here — mechanical to fix, but not free.
 - **The editor has a caret.** The source pane used the `String` overload of `TextField`, so the
   application had no handle on selection, caret offset or scroll position for the one control a
   user spends all day in. Two of the three reported defects below were consequences of that one
@@ -56,6 +86,21 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   with a job that fails the build on any Kotlin compiler warning.
 
 ### Fixed
+- **Code fences lost their language unless the info string had exactly one supported shape.**
+  ` ```js {highlight=2} ` and ` ```python title="demo.py" ` are ordinary markdown that every other
+  tool accepts. The parser recognised only `language [1,3-5]`, so anything else fell through: the
+  language came back blank, and a blank language defaults to `kotlin` — so JavaScript rendered
+  with Kotlin syntax colouring, and any `[1,3-5]` line highlighting on such a fence was discarded.
+- **Tilde fences were not code.** A `~~~python` block was parsed as prose by the slide parser and
+  styled as prose by the editor. Both now treat `~~~` and ` ``` ` identically.
+- **A fence can no longer be closed by the wrong terminator.** Closing now requires the same
+  marker, at least as long, and no info string — so a ` ``` ` nested inside a ` ```` ` block stays
+  code instead of ending the outer fence.
+
+  All three came from the same root cause: **four separate pieces of code each decided
+  independently what opened a fence** — the slide splitter, the parser's fence regex, the block
+  rules, and the editor's highlighter — and nothing compared them. They now share `FenceRules`,
+  and `FenceLexerAgreementTest` fails if they ever diverge again.
 - **The speaker console answered to no keyboard shortcut at all.** `PresenterView` had no key
   handling, and its window is `alwaysOnTop` — so it is the window a speaker actually looks at
   and the one holding focus for most of a talk. <kbd>H</kbd>, the arrows, blackout, the laser,
@@ -89,6 +134,20 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
 - Editor ⇄ slide synchronisation and find-result reveal remain open; both wait on the caret
   foundation in [ADR-004](./docs/ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md) Phase 2.
 - The CI workflow has never been executed.
+- **Two parser/editor disagreements remain, found and test-pinned but not fixed.** Both are
+  cosmetic — one wrongly styled line, not a mangled deck — and fixing either is a decision about
+  what the editor *should* show. See `LineRuleAgreementTest`.
+  - `***`, `___` and `----` all split the deck, but the editor styles only `---`, so those forms
+    break a slide with no visual cue.
+  - The body of a multi-line `$$` block is one math element to the parser and ordinary prose to
+    the highlighter; only the delimiter lines are styled.
+- **Tables written without outer pipes (`a | b` / `---|---`) are unsupported.** Ordinary GFM, and
+  neither the parser nor the highlighter handles it — they agree, and both are wrong, so this is a
+  missing feature rather than a divergence.
+- **`DraftRecoveryTest` is order-dependent.** `the bundled sample decks are not offered as
+  recovered work` failed once, then passed in isolation and across repeated full runs. The likely
+  cause is a pre-existing race between `PresentationState`'s debounced autosave and the shared
+  draft file. Recorded rather than papered over; it will resurface.
 
 ## [1.2.0] - 2026-08-05
 
