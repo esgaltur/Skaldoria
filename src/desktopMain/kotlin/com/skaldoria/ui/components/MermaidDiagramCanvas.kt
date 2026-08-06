@@ -1,6 +1,5 @@
 package com.skaldoria.ui.components
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -11,27 +10,29 @@ import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.skaldoria.core.diagram.FlowDirection
 import com.skaldoria.core.diagram.SequenceDiagram
 import com.skaldoria.core.diagram.SequenceDiagramParser
 import com.skaldoria.theme.PresentationTheme
+import com.skaldoria.ui.components.MermaidParser.ARROW_TOKEN
+import com.skaldoria.ui.components.MermaidParser.NODE_BRACKETS
+import com.skaldoria.ui.components.MermaidParser.NODE_TOKEN
+import com.skaldoria.ui.components.MermaidParser.parseEdgeChain
+import com.skaldoria.ui.components.MermaidParser.shapeOf
 
 /**
  * Parsed diagram model for native Compose visualization of Mermaid flowcharts,
@@ -81,11 +82,15 @@ data class DiagramGroup(
 
 data class ParsedDiagram(
     val type: String, // "flowchart", "sequence", "graph"
-    val isHorizontal: Boolean = true,
+    /** DIA-08: all four Mermaid directions, not just the two an axis flag could express. */
+    val direction: FlowDirection = FlowDirection.DEFAULT,
     val nodes: List<DiagramNode>,
     val edges: List<DiagramEdge>,
     val groups: List<DiagramGroup> = emptyList()
-)
+) {
+    /** Kept so every existing renderer call site reads the same; now derived, not stored. */
+    val isHorizontal: Boolean get() = direction.isHorizontal
+}
 
 /**
  * Parses Mermaid flowchart and sequence definitions into structured renderable models.
@@ -318,10 +323,10 @@ object MermaidParser {
         }
 
         /** Finalises the diagram: close any unterminated subgraphs, then fall back if empty. */
-        fun build(bodyLines: List<String>, isHorizontal: Boolean): ParsedDiagram {
+        fun build(bodyLines: List<String>, direction: FlowDirection): ParsedDiagram {
             drainOpenSubgraphs()
             if (nodes.isEmpty()) fillFallback(bodyLines)
-            return ParsedDiagram("flowchart", isHorizontal, nodes.values.toList(), edges, groups)
+            return ParsedDiagram("flowchart", direction, nodes.values.toList(), edges, groups)
         }
 
         private fun tryOpenSubgraph(line: String): Boolean {
@@ -399,12 +404,14 @@ object MermaidParser {
         if (firstLine.startsWith("sequence") || firstLine.contains("sequencediagram")) {
             return parseSequenceDiagram(lines)
         }
-        val isHorizontal = firstLine.contains("lr") || firstLine.contains("right")
+        // DIA-08: parsed as a word, by FlowDirection. The previous test asked whether the
+        // header *contained* "lr", which could not see RL or BT at all.
+        val direction = FlowDirection.parse(lines.first())
 
         val bodyLines = lines.drop(1)
         val builder = FlowchartBuilder()
         bodyLines.forEach(builder::consume)
-        return builder.build(bodyLines, isHorizontal)
+        return builder.build(bodyLines, direction)
     }
 
     /** A sequence-diagram message line: `A ->> B : text`, dashed/plain arrows included. */
@@ -437,7 +444,7 @@ object MermaidParser {
         val nodes = actors.map { DiagramNode(it, it, NodeShape.ROUNDED_RECT) }
         return ParsedDiagram(
             type = "sequence",
-            isHorizontal = true,
+            direction = FlowDirection.LR,
             nodes = nodes,
             edges = edges
         )

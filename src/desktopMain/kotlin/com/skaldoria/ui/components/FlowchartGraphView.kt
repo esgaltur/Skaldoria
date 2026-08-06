@@ -98,7 +98,8 @@ fun FlowchartGraphView(
             availableBounds = IntSize(constraints.maxWidth, constraints.maxHeight),
             labelWidths = labelWidths,
             groupOf = groupOf,
-            groups = diagram.groups.map { Triple(it.id, it.title, it.nodeIds) }
+            groups = diagram.groups.map { Triple(it.id, it.title, it.nodeIds) },
+            reversed = diagram.direction.isReversed
         )
 
         // 3. Draw subgraph frames, then edges, into one canvas behind the node cards.
