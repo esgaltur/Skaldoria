@@ -14,6 +14,14 @@ from `PerformanceProbe` on an 886-line, 60-slide deck — the size of a real con
 > prints; this document records. If a number here doubles, that is a conversation, not a build
 > failure.
 
+> ⚠️ **The numbers below predate PRF-6 and were produced by a harness now known to be unreliable.**
+> It timed a single pass and discarded every result. Back-to-back runs of an unchanged binary were
+> later shown to vary by **2.2×** on the highlighter benchmark — enough that a doubling here means
+> nothing without a repeat. `PerformanceProbe` now reports the fastest of three passes and routes
+> every result through a sink. **Re-run it before trusting any figure on this page**; see
+> `MARKDOWN_UNIFICATION_PLAN.md`, Phase C, for how three false conclusions were drawn from the old
+> harness before the variance was recognised.
+
 ---
 
 ## The budget
