@@ -10,9 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Roadmap and delivery work. The candidate feature set is catalogued in
 [`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md); the connectivity design is
 [ADR-005](./docs/ADR_COMPANION_LINK_ESTABLISHMENT.md).
-Test suite: **235 to 472 tests**, zero compiler warnings.
+Test suite: **235 to 575 tests**, zero compiler warnings.
 
 ### Added
+- **The editor has a caret.** The source pane used the `String` overload of `TextField`, so the
+  application had no handle on selection, caret offset or scroll position for the one control a
+  user spends all day in. Two of the three reported defects below were consequences of that one
+  gap rather than separate bugs.
+- **Selecting a slide moves the editor to it.** Clicking thumbnail #37 in a fifty-slide deck
+  used to repaint the preview and leave the source showing line 1. The filmstrip, the grid
+  overview and the command palette all inherit this, because all three route through the same
+  call.
+- **Moving the caret selects the slide.** Typing in slide 12's source selects slide 12 in the
+  preview and filmstrip. There is a toggle in the editor header, defaulting to on.
+- **Presenter clickers blank the screen.** Forward and back already worked — a clicker is an
+  ordinary HID keyboard and <kbd>PageUp</kbd>/<kbd>PageDown</kbd> were bound. The blank-screen
+  button was not: it sends <kbd>.</kbd> or <kbd>,</kbd>, the convention the hardware is built
+  against, and only <kbd>B</kbd> and <kbd>W</kbd> were bound. Both pairs now work.
 - **Undo/redo for structural slide edits.** Deleting a slide was a single click on the
   filmstrip with no way back — the only undo in the application was for annotation strokes.
   Delete, move, duplicate and insert are now reversible in both single-file and project mode
@@ -25,6 +39,12 @@ Test suite: **235 to 472 tests**, zero compiler warnings.
   with a job that fails the build on any Kotlin compiler warning.
 
 ### Fixed
+- **The editor's find buttons appeared to do nothing.** Search was complete and unit-tested:
+  matches were found, the active one was restyled, the count updated. Nothing scrolled, so the
+  match was off screen and the only feedback was a badge changing in a corner. ▲/▼ also moved
+  focus out of the query field, so <kbd>Enter</kbd> stopped advancing until you clicked back.
+  Both fixed; the bar now also states what it is searching, because in project mode it covers
+  one file and answering `No matches` without saying so reads as a broken feature.
 - **Slide transitions had no effect.** All four `SlideTransition` values were parsed, persisted
   and offered in a picker while the renderer hardcoded a fade. Every value now renders as
   itself, and a per-slide `transition:` directive overrides the deck default.

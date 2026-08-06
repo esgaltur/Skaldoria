@@ -62,6 +62,8 @@ object KeyBindings {
         "PageUp" to Key.PageUp,
         "PageDown" to Key.PageDown,
         "Escape" to Key.Escape,
+        "Period" to Key.Period,
+        "Comma" to Key.Comma,
         "Equals" to Key.Equals,
         "Minus" to Key.Minus,
         "Plus" to Key.Plus,

@@ -83,7 +83,7 @@ reading the code rather than the README, and all small once found.
 | :--- | :--- | :--- |
 | **DEL-01** transitions | `SlideTransition` had four values, the parser accepted `transition: zoom`, `DeckProject` persisted it and the TopBar offered a picker — and `FullscreenDeck` hardcoded `fadeIn() togetherWith fadeOut()`. Picking "Zoom Scale" gave you a fade. | `TransitionResolver` + an exhaustive `transitionSpecFor` |
 | **AUT-01** shortcuts | The README documented `Ctrl+E`, `T`, `Home`/`End`, `Backspace`. None was bound — there was no `Key.E`, `Key.T`, `Key.MoveHome`, `Key.MoveEnd` or `Key.Backspace` anywhere in `src/desktopMain`. | All five bound, now guarded by `DocumentedShortcutsTest` |
-| **AUT-03** find reveal | `findNext()` advanced an index; nothing scrolled to the match. The buttons looked dead. **Still open** — it needs the caret foundation (`AUT-05`). | ADR-004 Phase 3 |
+| **AUT-03** find reveal | `findNext()` advanced an index; nothing scrolled to the match. The buttons looked dead. **Closed 2026-08-06**, once `AUT-05` laid the caret foundation. | `EditorSession`'s reveal token, guarded by `EditorWorkspaceRenderingTest` — which asserts the *rendered pane moved*, not that a token changed |
 
 ### It reopened once, and took three other features with it
 
@@ -140,10 +140,10 @@ spends in it. It is a single `TextField` with a syntax-highlighting `VisualTrans
 | ID | Feature | Status | Size | Depends | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **AUT-01** | Bind the four documented-but-absent shortcuts | ✅ | S | — | `Ctrl+E`, `Home`, `End`, `Backspace`, `T`. `T` is bound in the presentation window only — a bare letter in the studio window would race the markdown editor for the keystroke. |
-| **AUT-02** | Editor ⇄ slide synchronisation | 📋 | M | — | Specified in ADR-004. |
-| **AUT-03** | Find reveal — scroll the match into view | 📋 | S | AUT-05 | Specified in ADR-004. |
+| **AUT-02** | Editor ⇄ slide synchronisation | ✅ | M | AUT-05 | Both directions. Selecting a slide reveals its source (`SlideSourceLocator`, EDT-3); moving the caret selects the slide, behind a follow-caret toggle that defaults on (EDT-2). ADR-004 Phases 4–5. |
+| **AUT-03** | Find reveal — scroll the match into view | ✅ | S | AUT-05 | EDT-4. Also: focus returns to the query field after ▲/▼, the bar states its scope, and the first match is taken from the caret rather than from 0. ADR-004 Phase 3. |
 | **AUT-04** | **Undo/redo for structural edits** | ✅ | M | — | `DeckHistory` + snapshot/restore in `PresentationState`. Covers delete, move, duplicate, insert in both single-file and project mode; `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` plus TopBar buttons. Does **not** cover free-text editing (the `TextField` has its own undo). |
-| **AUT-05** | Caret & selection model | 📋 | M | — | ADR-004 Phase 2. Unblocks AUT-02/03/06/07. |
+| **AUT-05** | Caret & selection model | ✅ | M | — | `EditorSession` — selection stored, text derived (EDT-1), clamped on change (EDT-5). The pane took ADR-004's **Option B** (`BasicTextField` + explicit `ScrollState` + `onTextLayout`) rather than Option A, so the reveal works while the *find bar* holds focus; this also unblocks AUT-06's gutter, which Option A would not have. |
 | **AUT-06** | Line-number gutter with slide-boundary markers | 📋 | M | AUT-05 | Makes deck structure legible in a long single-file deck. |
 | **AUT-07** | Outline panel — navigate by heading | 📋 | M | AUT-05 | Complements the filmstrip for text-heavy decks. |
 | **AUT-08** | Directive autocomplete | 📋 | M | AUT-05 | The directive language (`<!-- note: -->`, `> note:`, `<!-- poll: -->`, `layout:`, `transition:`, mermaid fences) is rich and entirely undiscoverable while typing. |
@@ -249,7 +249,7 @@ A design proposal already exists:
 | **AUD-05** | Question upvote sorting and moderation queue | 📋 | S | — | `AudienceQuestion` already carries `upvotes` and `isAnswered`. Check what the presenter UI does with them before sizing. |
 | **AUD-06** | Attendance count / session analytics | 🕓 | M | — | Privacy implications; needs a decision on what is retained. |
 | **AUD-07** | Companion UI localisation | 🕓 | M | PLT-03 | |
-| **AUD-08** | **Verify BLE presenter clickers work** | 📋 | S | — | `FullscreenDeck.kt:93/97` already consumes `PageUp`/`PageDown`, which is what an off-the-shelf clicker emits at OS level. Likely works today with zero code. Test and document. [ADR-005](./ADR_COMPANION_LINK_ESTABLISHMENT.md) Phase 0. |
+| **AUD-08** | **Verify BLE presenter clickers work** | ✅ | S | — | Confirmed: forward/back already worked — a clicker is an HID keyboard and `PageUp`/`PageDown` were bound. The survey found **one** gap: the blank-screen button sends `.` / `,` (the PowerPoint convention the hardware targets), not `B` / `W`, so it did nothing. Both added. `PresenterClickerTest` (CLK-1) asserts the virtual key codes; a physical clicker is still a hardware claim and stays on the manual script. ADR-005 Phase 0. |
 | **AUD-09** | **Link ranking for non-LAN interfaces** | ✅ | M | — | `LinkRanking` + `LinkKind`, extracted pure so it is testable. LNK-A and LNK-B both fixed: a hotspot/tether/PAN link now outranks an unreachable routed adapter, and Bluetooth PAN is classified as a transport rather than denylisted. |
 | **AUD-10** | **SoftAP pairing guidance** | 📋 | M | AUD-09 | Detect the isolated-network case, explain the remedy per platform, never show a QR that cannot work. The only path that serves the *audience* portal without venue infrastructure. ADR-005 Phase 2. |
 | **AUD-11** | Wi-Fi credential QR (`WIFI:T:WPA;…`) | 📋 | S | AUD-10 | Phone joins the hotspot by camera, then chains to the portal QR. `QrCodeGenerator.encode` already takes arbitrary text — no generator change. ADR-005 Phase 3. |
@@ -296,33 +296,41 @@ then remove the sharpest edges, then extend.
 
 ### Shipped so far
 
-Every 🟡 "already paid for" item is closed, plus the two highest-risk gaps.
+Every 🟡 "already paid for" item is closed, plus the two highest-risk gaps, plus the whole
+editor track.
 
 `DEL-01`/`DEL-10` transitions · `AUT-01` the five missing shortcuts · `DEL-02` HUD visibility ·
 `DEL-08` jump to slide · `DIA-06` diagram footer · `AUT-04` undo/redo · `AUD-09` link ranking ·
-`OUT-01` offline HTML export · `PLT-01` CI *(written, never executed)*
+`OUT-01` offline HTML export · `PLT-01` CI *(written, never executed)* ·
+**`AUT-05` caret foundation · `AUT-03` find reveal · `AUT-02` editor ⇄ slide sync ·
+`AUD-08` presenter clickers**
 
-Suite: **235 → 472 tests**, zero compiler warnings throughout.
+Suite: **235 → 575 tests**, zero compiler warnings throughout.
 
-### Now — the editor, and proving CI works
+> **The editor track's lesson, for the next survey.** ADR-004 chose Option A (the Material
+> `TextField`'s built-in cursor-following scroll) and named Option B as the escalation. Option A
+> would have shipped a reveal that fires while the *find bar* holds focus — an unfocused field
+> is not specified to scroll — and the find buttons would have gone on looking dead, under a
+> new mechanism, with a green suite. The pattern this document keeps rediscovering held again:
+> **the guard has to render the pane, not read the token.**
+> `EditorWorkspaceRenderingTest` is the one that would have caught it.
 
-The editor is the least-developed surface relative to time spent in it, and everything in it
-waits on one change.
+### Now — proving the build works off this machine
+
+The editor track is done. What is left in this tier is entirely about trusting the build.
 
 | | Item | Note |
 | :--- | :--- | :--- |
-| 1 | **`PLT-01` run CI** | Written but never executed. Push and watch it go green before trusting it — an unrun workflow is a guess. |
-| 2 | **`AUT-05` caret foundation** | ADR-004 Phase 2. Blocks 02/03/06/07/11. **Land alone**; its failure mode is a caret that jumps to the end of the document on every keystroke. |
-| 3 | **`AUT-03` find reveal** | Smallest consumer of the foundation. Proves the reveal mechanism on one call site. |
-| 4 | **`AUT-02` editor ⇄ slide sync** | The originally reported defect. |
-| 5 | `AUD-08` verify BLE clickers | Possibly zero code. Cheapest item in the document. |
-| 6 | `PLT-02` verify macOS/Linux packaging | Four installer formats are declared and unproven; CI makes this checkable. |
+| 1 | **`PLT-01` run CI** | Written but never executed. Push and watch it go green before trusting it — an unrun workflow is a guess. Needs a push, so it is the user's call, not a code change. |
+| 2 | `PLT-02` verify macOS/Linux packaging | Four installer formats are declared and unproven; CI makes this checkable. Needs runners this machine does not have. |
+| 3 | `AUT-06` line-number gutter | Newly cheap: `AUT-05` landed with an explicit `ScrollState` and `onTextLayout`, which is exactly the foundation a gutter needs. Option A would not have provided it. |
 
 ### Next — remove the sharpest edges
 
 `AUT-10` drag-and-drop reordering · `THM-01` font themes · `AUT-12` clipboard image paste ·
-`AUD-10` SoftAP pairing guidance · `AUT-06` line-number gutter · `MED-02` SVG images ·
-`DEL-04` rehearsal timings · `MED-04` image sizing directives
+`AUD-10` SoftAP pairing guidance · `MED-02` SVG images · `DEL-04` rehearsal timings ·
+`MED-04` image sizing directives · `AUT-11` formatting shortcuts *(now unblocked — `AUT-05`
+shipped the selection it needed)*
 
 ### Later — extend the product
 
