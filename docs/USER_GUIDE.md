@@ -382,9 +382,13 @@ All themes pass through the `AdaptiveContrastEnforcer` and `ColorScience` mathem
 
 ### Standalone HTML Export
 Click **Export -> HTML** or press <kbd>Ctrl+E</kbd>:
-* Generates a single, self-contained `.html` file.
-* Includes embedded KaTeX for math, Mermaid JS for diagrams, and full keyboard navigation.
-* Can be opened in any web browser without internet access.
+* Generates a single `.html` file holding all slide content, your theme and print page breaks.
+* Uses KaTeX for math and Mermaid for diagrams.
+* ⚠️ **Not fully offline.** KaTeX and Mermaid are referenced from a CDN, not inlined, so a
+  machine with no internet access renders the raw `$$…$$` and `mermaid` source instead of the
+  typeset output. Text, code, tables, images, polls and theming all render offline. If you are
+  presenting from an exported file in a room with no network, export the **PNG image bundle**
+  instead, or keep the deck in Skaldoria, which renders both natively.
 
 ### Print to PDF
 * Open the exported standalone HTML file in Chrome, Edge, or Safari and select **Print -> Save as PDF** (<kbd>Ctrl+P</kbd>).

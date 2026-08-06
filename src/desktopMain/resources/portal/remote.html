@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Skaldoria Presenter Remote</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background: #0b0f19; color: #f1f5f9; display: flex; flex-direction: column; min-height: 100vh; padding: 14px; }
+        .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid #1e293b; }
+        .logo { font-weight: 800; font-size: 1.1rem; color: #38bdf8; display: flex; align-items: center; gap: 6px; }
+        .timer-badge { background: #1e293b; padding: 6px 12px; border-radius: 20px; font-family: monospace; font-size: 1.1rem; color: #38bdf8; font-weight: bold; border: 1px solid rgba(56,189,248,0.2); }
+        .tabs { display: flex; gap: 8px; margin-top: 12px; }
+        .tab-btn { flex: 1; padding: 10px; background: #131b2e; border: 1px solid #1e293b; border-radius: 10px; color: #94a3b8; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
+        .tab-btn.active { background: #0284c7; color: #fff; border-color: #38bdf8; }
+        .slide-card { background: #131b2e; border: 1px solid #1e293b; border-radius: 14px; padding: 16px; margin: 12px 0; flex: 1; display: flex; flex-direction: column; }
+        .slide-meta { font-size: 0.8rem; color: #38bdf8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+        .slide-title { font-size: 1.25rem; font-weight: 700; color: #ffffff; margin: 6px 0; }
+        .notes-box { background: #0a0e1a; border-radius: 10px; padding: 12px; margin-top: 8px; flex: 1; overflow-y: auto; max-height: 220px; font-size: 0.95rem; line-height: 1.5; color: #cbd5e1; border: 1px solid #1e293b; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+        .btn { padding: 18px; border: none; border-radius: 12px; font-size: 1.2rem; font-weight: bold; cursor: pointer; transition: transform 0.1s; display: flex; align-items: center; justify-content: center; user-select: none; }
+        .btn:active { transform: scale(0.96); }
+        .btn-prev { background: #1e293b; color: #f1f5f9; }
+        .btn-next { background: #0284c7; color: #ffffff; }
+        .actions-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .btn-action { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #1e293b; background: #131b2e; color: #94a3b8; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+        .btn-action.active { background: #dc2626; color: white; border-color: #ef4444; }
+        .qa-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; flex: 1; overflow-y: auto; }
+        .qa-item { background: #0a0e1a; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .qa-text { font-size: 0.95rem; color: #f1f5f9; font-weight: 500; }
+        .qa-author { font-size: 0.75rem; color: #64748b; margin-top: 4px; }
+        .qa-votes { background: #0369a1; color: white; padding: 4px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">⚡ SKALDORIA <span style="font-size:0.7rem;color:#64748b;font-weight:600;">{{VERSION}}</span></div>
+        <div class="timer-badge" id="timer">00:00</div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-remote-btn" onclick="showTab('remote')">📱 Slide Remote</button>
+        <button class="tab-btn" id="tab-qa-btn" onclick="showTab('qa')">💬 Live Q&A (<span id="qa-count">0</span>)</button>
+    </div>
+
+    <div id="tab-remote" style="display:flex; flex-direction:column; flex:1;">
+        <div class="slide-card">
+            <div class="slide-meta" id="slide-index">Slide 1 of 1</div>
+            <div class="slide-title" id="slide-title">Loading presentation...</div>
+            <div class="notes-box" id="notes">No notes for this slide.</div>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-prev" onclick="sendAction('prev')">◀ PREV</button>
+            <button class="btn btn-next" onclick="sendAction('next')">NEXT ▶</button>
+        </div>
+
+        <div class="actions-row">
+            <button class="btn-action" id="btn-blackout" onclick="sendAction('blackout')">⚫ Blackout (B)</button>
+            <button class="btn-action" id="btn-whiteout" onclick="sendAction('whiteout')">⚪ Whiteout (W)</button>
+            <button class="btn-action" onclick="sendAction('toggleTimer')">⏱ Timer</button>
+        </div>
+    </div>
+
+    <div id="tab-qa" style="display:none; flex-direction:column; flex:1;">
+        <div class="slide-card" style="margin-top:12px;">
+            <div class="slide-meta">AUDIENCE QUESTIONS</div>
+            <div class="qa-list" id="qa-container">
+                <div style="text-align:center; color:#64748b; padding:20px;">No questions submitted yet.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'remote';
+
+        // SEC-2: the pairing QR points at /remote?t=<token>. Capture it, then strip it from
+        // the visible address bar so the credential is not shoulder-surfed or leaked via a
+        // shared screenshot. Sent as a custom header, which forces a CORS preflight on any
+        // cross-origin attempt and thereby closes the residual CSRF gap.
+        const SESSION_TOKEN = new URLSearchParams(location.search).get('t') || '';
+        if (SESSION_TOKEN && history.replaceState) {
+            history.replaceState(null, '', location.pathname);
+        }
+
+        function authFetch(url, options) {
+            const opts = options || {};
+            opts.headers = Object.assign({}, opts.headers, { 'X-Skaldoria-Token': SESSION_TOKEN });
+            return fetch(url, opts);
+        }
+
+        // SEC-1: every value that originates from an audience device or the deck
+        // author is inserted with textContent, never innerHTML. Do not "simplify"
+        // these builders back into template literals — that reintroduces stored XSS.
+        function el(tag, className, text) {
+            const node = document.createElement(tag);
+            if (className) node.className = className;
+            if (text !== undefined && text !== null) node.textContent = text;
+            return node;
+        }
+
+        function showTab(t) {
+            currentTab = t;
+            document.getElementById('tab-remote').style.display = t === 'remote' ? 'flex' : 'none';
+            document.getElementById('tab-qa').style.display = t === 'qa' ? 'flex' : 'none';
+            document.getElementById('tab-remote-btn').className = t === 'remote' ? 'tab-btn active' : 'tab-btn';
+            document.getElementById('tab-qa-btn').className = t === 'qa' ? 'tab-btn active' : 'tab-btn';
+        }
+
+        async function sendAction(action) {
+            try {
+                await authFetch('/api/action?action=' + encodeURIComponent(action), { method: 'POST' });
+                pollState();
+            } catch(e) {}
+        }
+
+        async function dismissQa(id) {
+            try {
+                await authFetch('/api/qa/dismiss?id=' + encodeURIComponent(id), { method: 'POST' });
+                pollState();
+            } catch(e) {}
+        }
+
+        function formatTime(sec) {
+            const m = Math.floor(sec / 60).toString().padStart(2, '0');
+            const s = (sec % 60).toString().padStart(2, '0');
+            return m + ':' + s;
+        }
+
+        async function pollState() {
+            try {
+                const res = await authFetch('/api/state');
+                if (!res.ok) return;
+                const data = await res.json();
+                document.getElementById('slide-index').innerText = 'Slide ' + (data.currentSlideIndex + 1) + ' of ' + data.totalSlides;
+                document.getElementById('slide-title').innerText = data.title;
+                document.getElementById('timer').innerText = formatTime(data.elapsedSeconds);
+                
+                const notesContainer = document.getElementById('notes');
+                notesContainer.textContent = '';
+                if (data.notes && data.notes.length > 0) {
+                    data.notes.forEach(n => {
+                        const p = el('p', null, n);
+                        p.style.marginBottom = '8px';
+                        notesContainer.appendChild(p);
+                    });
+                } else {
+                    const empty = el('span', null, 'No notes for this slide.');
+                    empty.style.color = '#64748b';
+                    empty.style.fontStyle = 'italic';
+                    notesContainer.appendChild(empty);
+                }
+
+                document.getElementById('btn-blackout').className = data.isBlackout ? 'btn-action active' : 'btn-action';
+                document.getElementById('btn-whiteout').className = data.isWhiteout ? 'btn-action active' : 'btn-action';
+
+                // Q&A
+                const qaCount = data.questions ? data.questions.length : 0;
+                document.getElementById('qa-count').innerText = qaCount;
+                const qaContainer = document.getElementById('qa-container');
+                qaContainer.textContent = '';
+                if (data.questions && data.questions.length > 0) {
+                    data.questions.forEach(q => {
+                        const item = el('div', 'qa-item');
+
+                        const left = el('div');
+                        left.appendChild(el('div', 'qa-text', q.text));
+                        left.appendChild(el('div', 'qa-author', q.author));
+                        item.appendChild(left);
+
+                        const right = el('div');
+                        right.style.cssText = 'display:flex; align-items:center; gap:8px;';
+                        right.appendChild(el('span', 'qa-votes', '👍 ' + q.upvotes));
+
+                        // Listener closure instead of an inline onclick attribute: a quote
+                        // in q.id can no longer break out into markup.
+                        const dismiss = el('button', null, 'Dismiss');
+                        dismiss.style.cssText = 'background:#dc2626; color:white; border:none; border-radius:6px; padding:6px 10px; font-size:0.75rem; cursor:pointer;';
+                        dismiss.addEventListener('click', () => dismissQa(q.id));
+                        right.appendChild(dismiss);
+
+                        item.appendChild(right);
+                        qaContainer.appendChild(item);
+                    });
+                } else {
+                    const empty = el('div', null, 'No questions submitted yet.');
+                    empty.style.cssText = 'text-align:center; color:#64748b; padding:20px;';
+                    qaContainer.appendChild(empty);
+                }
+            } catch(e) {}
+        }
+
+        setInterval(pollState, 700);
+        pollState();
+    </script>
+</body>
+</html>

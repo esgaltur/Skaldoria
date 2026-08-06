@@ -1,6 +1,6 @@
 # Quality Baseline
 
-**Version:** 1.2.0 · **Last reviewed:** 2026-08-06 · **Suite:** 302 tests, 0 failures
+**Version:** 1.2.0 · **Last reviewed:** 2026-08-06 · **Suite:** 402 tests, 0 failures
 
 This document is the reference for the invariants this codebase holds, established during a
 systematic pre-release review of `src/desktopMain`. Every entry has a stable identifier, and
@@ -100,6 +100,9 @@ Entries without a **Rationale** are self-evident and need none.
 | DED-4 | Diagrams | A shape exists only if the parser can emit it | `MermaidParserTest` |
 | DED-5 | State | `remoteServerUrl` is display-only | — |
 | DED-6 | State | Application errors and companion errors use separate channels | `ErrorChannelTest` |
+| DED-7 | Parsing | Block-rule order is explicit and asserted | `BlockRuleOrderTest` |
+| DED-8 | Companion | The portals are assets, and their SEC-1/SEC-2 properties are asserted | `PortalAssetsTest` |
+| DED-9 | Companion | The request parser is pure, so SEC-7's caps are unit-tested | `HttpRequestParserTest` |
 | SEC-8 | Companion | Every route declares its method and scope; policy is derived from them | `RouteTableSecurityTest` |
 | R-1 | Diagrams | Sequence diagrams scale to fit | `SlideRenderingTest` |
 | R-2 | Diagrams | The diagram header reflects the parsed type | — |

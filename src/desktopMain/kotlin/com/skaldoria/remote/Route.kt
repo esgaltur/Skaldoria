@@ -1,6 +1,5 @@
 package com.skaldoria.remote
 
-import com.skaldoria.state.PresentationState
 import java.io.OutputStream
 
 /** The HTTP methods this server understands. */
@@ -29,7 +28,8 @@ enum class RouteScope {
 /** Everything a handler needs, so handlers do not each re-derive it. */
 class RequestContext(
     val params: Map<String, String>,
-    val state: PresentationState,
+    /** F-08: the narrow port, never the whole application state. */
+    val deck: DeckControl,
     val output: OutputStream,
     /** Stable per-device identity, for one-ballot-per-device and rate limiting (SEC-5). */
     val clientKey: String,
