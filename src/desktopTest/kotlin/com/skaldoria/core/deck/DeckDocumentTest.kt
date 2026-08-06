@@ -162,6 +162,64 @@ class DeckDocumentTest {
         assertNull(doc.move(0, 2), "reordering files is not well defined here")
     }
 
+    // ---- PRF-5: the slide→file map is cached, so it must be invalidated ----
+    //
+    // `slideOwnerFileIndices()` reparses every file in the project, and `editorTextFor` reaches
+    // it on every composition — 1.1 ms per call for a twenty-file project, several times a
+    // frame. Caching it is worth ~1000x on that path and buys a stale-cache failure mode that
+    // is exactly COR-3: the editor silently writing to the wrong file. These pin it down.
+
+    @Test
+    fun `adding a slide inside a file re-maps the files after it`() {
+        val doc = document("")
+        doc.adopt(projectOf("# A", "# B"))
+        assertEquals("# B", doc.editorTextFor(1), "warms the map")
+
+        // File 0 now holds two slides, so global slide 1 belongs to file 0, not file 1.
+        doc.insert(0, "# A2")
+
+        assertEquals(3, doc.slides.size)
+        assertEquals(0, doc.fileFor(1)?.relativePath?.let { path -> doc.project!!.slideFiles.indexOfFirst { it.relativePath == path } })
+        assertTrue(doc.editorTextFor(1).contains("# A2"), "the editor is showing a stale file")
+    }
+
+    @Test
+    fun `deleting a slide re-maps the files after it`() {
+        val doc = document("")
+        doc.adopt(projectOf("# A\n\n---\n\n# B", "# C"))
+        assertEquals("# C", doc.editorTextFor(2), "warms the map")
+
+        doc.delete(0)
+
+        assertEquals(2, doc.slides.size)
+        assertEquals("# C", doc.editorTextFor(1), "slide 1 is now the second file, not the first")
+    }
+
+    @Test
+    fun `adopting a different project discards the previous map`() {
+        val doc = document("")
+        doc.adopt(projectOf("# A\n\n---\n\n# B", "# C"))
+        assertEquals("# C", doc.editorTextFor(2), "warms the map")
+
+        doc.adopt(projectOf("# X", "# Y", "# Z"))
+
+        assertEquals("# Z", doc.editorTextFor(2))
+    }
+
+    @Test
+    fun `editing a file re-maps when the edit changes its slide count`() {
+        val doc = document("")
+        doc.adopt(projectOf("# A", "# B"))
+        assertEquals("# B", doc.editorTextFor(1), "warms the map")
+
+        // The first file grows a second slide by hand.
+        doc.updateEditorContent(0, "# A\n\n---\n\n# A2")
+
+        assertEquals(3, doc.slides.size)
+        assertEquals("# B", doc.editorTextFor(2), "the third slide is still the second file")
+        assertTrue(doc.editorTextFor(1).contains("# A2"))
+    }
+
     // ---- editor text selection ----
 
     @Test

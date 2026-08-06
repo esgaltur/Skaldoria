@@ -31,6 +31,19 @@ class MarkdownVisualTransformation(
     }
 
     companion object {
+        /**
+         * PRF-5: compiled once.
+         *
+         * These three were `Regex(...)` literals *inside* the per-line loop, so every call
+         * re-ran `Pattern.compile` once per line — and [filter] is called on every composition
+         * of the editor field, which is at least once per keystroke. On an 886-line deck that
+         * was ~900 compilations per keystroke for [BULLET] alone, since it sits on the path
+         * every ordinary prose line takes.
+         */
+        private val CODE_WORD = Regex("""\b[a-zA-Z_][a-zA-Z0-9_]*\b""")
+        private val CODE_STRING = Regex("""\"[^\"]*\"|'[^']*'""")
+        private val BULLET = Regex("""^(\s*[-*+]|\s*\d+\.)\s""")
+
         private val KEYWORDS = setOf(
             "fun", "val", "var", "class", "object", "interface", "import", "package",
             "return", "if", "else", "when", "for", "while", "try", "catch", "def",
@@ -101,8 +114,7 @@ class MarkdownVisualTransformation(
                             )
                         } else {
                             // Token highlighting for code
-                            val wordRegex = Regex("\\b[a-zA-Z_][a-zA-Z0-9_]*\\b")
-                            for (match in wordRegex.findAll(line)) {
+                            for (match in CODE_WORD.findAll(line)) {
                                 if (KEYWORDS.contains(match.value)) {
                                     val start = lineStart + match.range.first
                                     val end = lineStart + match.range.last + 1
@@ -119,8 +131,7 @@ class MarkdownVisualTransformation(
                             }
 
                             // Highlight string literals
-                            val strRegex = Regex("\"[^\"]*\"|'[^']*'")
-                            for (match in strRegex.findAll(line)) {
+                            for (match in CODE_STRING.findAll(line)) {
                                 val start = lineStart + match.range.first
                                 val end = lineStart + match.range.last + 1
                                 addStyle(
@@ -231,7 +242,7 @@ class MarkdownVisualTransformation(
                     }
 
                     // Bullet Lists (- or * or + or 1.)
-                    val bulletMatch = Regex("^(\\s*[-*+]|\\s*\\d+\\.)\\s").find(line)
+                    val bulletMatch = BULLET.find(line)
                     if (bulletMatch != null) {
                         val bulletEnd = lineStart + bulletMatch.range.last + 1
                         addStyle(

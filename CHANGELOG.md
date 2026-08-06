@@ -10,7 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Roadmap and delivery work. The candidate feature set is catalogued in
 [`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md); the connectivity design is
 [ADR-005](./docs/ADR_COMPANION_LINK_ESTABLISHMENT.md).
-Test suite: **235 to 583 tests**, zero compiler warnings.
+Test suite: **235 to 588 tests**, zero compiler warnings.
+
+### Performance
+
+Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANCE_BASELINE.md).
+
+- **The editor's syntax highlighter compiled three regexes per line, on every keystroke.** They
+  were `Regex(...)` literals inside the per-line loop, and the highlighter runs on every
+  composition of the text field. On an 886-line deck that was roughly 900 `Pattern.compile`
+  calls per character typed. **-37%** on the highlighter.
+- **Project mode reparsed every file in the deck just to display the editor's text.** The
+  slide→file map is derived by parsing every file, nothing cached it, and `currentEditorText`
+  reaches it on every composition. Now computed once per project change: **1.09 ms to 1 µs** on
+  that path, with four guards against the stale-cache case (which would be COR-3 — the editor
+  writing to the wrong file).
+- **Caret tracking allocated the whole document per cursor move.** Slide ⇄ offset mapping built
+  a list of every line and a boxed integer per line start to answer a question about one line.
+  Now a forward scan that stops. **-70%**.
 
 ### Added
 - **The editor has a caret.** The source pane used the `String` overload of `TextField`, so the

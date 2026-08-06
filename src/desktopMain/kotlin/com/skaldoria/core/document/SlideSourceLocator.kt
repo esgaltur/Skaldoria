@@ -15,28 +15,35 @@ import com.skaldoria.core.models.Slide
 object SlideSourceLocator {
 
     /**
-     * Character offset of the first line of every line in [text].
+     * Character offset at which zero-based [line] begins, or the end of [text] if it has fewer
+     * lines than that.
      *
-     * Computed by walking the string rather than summing `lines()` lengths, because `lines()`
-     * splits on `\r\n`, `\n` *and* a bare `\r`, and a deck authored on Windows and opened here
-     * carries `\r\n`. Summing `length + 1` per line would drift by one character per line and
-     * put the caret in the wrong place by the bottom of a long deck.
+     * PRF-5: a single forward scan with no allocation. This runs on every caret movement, and
+     * the first version materialised `text.lines()` *and* an `ArrayList<Int>` of every line
+     * start — a boxed `Integer` per line of the deck, per keystroke, to answer a question about
+     * one line.
+     *
+     * Line ends are recognised as `\r\n`, `\n` and a bare `\r`, matching Kotlin's `lines()`,
+     * because a deck authored on Windows carries `\r\n`. Summing `length + 1` per line — the
+     * obvious shortcut — would drift by one character per line and put the caret in the wrong
+     * place well before the bottom of a long deck.
      */
-    internal fun lineStartOffsets(text: String): List<Int> {
-        val starts = ArrayList<Int>(16)
-        starts.add(0)
+    internal fun offsetOfLine(text: String, line: Int): Int {
+        if (line <= 0) return 0
+        var seen = 0
         var i = 0
         while (i < text.length) {
             when (text[i]) {
                 '\r' -> {
                     if (i + 1 < text.length && text[i + 1] == '\n') i++
-                    starts.add(i + 1)
+                    seen++
                 }
-                '\n' -> starts.add(i + 1)
+                '\n' -> seen++
             }
             i++
+            if (seen == line) return i
         }
-        return starts
+        return text.length
     }
 
     /**
@@ -52,16 +59,42 @@ object SlideSourceLocator {
      */
     fun offsetOfSlide(markdown: String, slide: Slide): Int {
         val range = slide.sourceLineRange
-        if (range.isEmpty()) return 0
+        if (range.isEmpty() || markdown.isEmpty()) return 0
 
-        val lines = markdown.lines()
-        if (lines.isEmpty()) return 0
+        // PRF-5: walks only this slide's own lines. The first version called `markdown.lines()`,
+        // allocating the entire document as a list of strings to look at a handful of them.
+        val start = offsetOfLine(markdown, range.first)
+        var lineStart = start
+        var line = range.first
 
-        val first = range.first.coerceIn(0, lines.lastIndex)
-        val last = range.last.coerceIn(first, lines.lastIndex)
-        val target = (first..last).firstOrNull { lines[it].isNotBlank() } ?: first
+        while (line <= range.last && lineStart < markdown.length) {
+            val lineEnd = endOfLine(markdown, lineStart)
+            if (hasNonBlank(markdown, lineStart, lineEnd)) return lineStart
+            lineStart = startOfNextLine(markdown, lineEnd)
+            line++
+        }
+        return start
+    }
 
-        return lineStartOffsets(markdown).getOrElse(target) { 0 }
+    /** Index of the terminator ending the line that begins at [from], or the text length. */
+    private fun endOfLine(text: String, from: Int): Int {
+        var i = from
+        while (i < text.length && text[i] != '\n' && text[i] != '\r') i++
+        return i
+    }
+
+    /** Start of the line after the one ending at [terminator]. */
+    private fun startOfNextLine(text: String, terminator: Int): Int {
+        if (terminator >= text.length) return text.length
+        val isCrLf = text[terminator] == '\r' &&
+            terminator + 1 < text.length &&
+            text[terminator + 1] == '\n'
+        return terminator + if (isCrLf) 2 else 1
+    }
+
+    private fun hasNonBlank(text: String, from: Int, to: Int): Boolean {
+        for (i in from until to) if (!text[i].isWhitespace()) return true
+        return false
     }
 
     /** [offsetOfSlide] for a slide index, or 0 when the index is not in [slides]. */
@@ -96,13 +129,26 @@ object SlideSourceLocator {
         return preceding.coerceAtLeast(0)
     }
 
-    /** Zero-based line containing [offset], clamped into [markdown]. */
+    /**
+     * Zero-based line containing [offset], clamped into [markdown].
+     *
+     * PRF-5: counts line ends up to [offset] and stops there, rather than building an index of
+     * the whole document and binary-searching it. Same reasoning as [offsetOfLine].
+     */
     internal fun lineAtOffset(markdown: String, offset: Int): Int {
-        val starts = lineStartOffsets(markdown)
         val clamped = offset.coerceIn(0, markdown.length)
-
-        // starts is ascending; binarySearch returns the insertion point negated when absent.
-        val found = starts.binarySearch { it.compareTo(clamped) }
-        return if (found >= 0) found else (-found - 2).coerceIn(0, starts.lastIndex)
+        var line = 0
+        var i = 0
+        while (i < clamped) {
+            when (markdown[i]) {
+                '\r' -> {
+                    if (i + 1 < markdown.length && markdown[i + 1] == '\n') i++
+                    if (i + 1 <= clamped) line++
+                }
+                '\n' -> line++
+            }
+            i++
+        }
+        return line
     }
 }
