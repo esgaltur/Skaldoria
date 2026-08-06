@@ -3,8 +3,8 @@
 Companion to [ADR-003](./ADR_GOD_OBJECT_DECOMPOSITION.md). The ADR argues *why*; this file is
 the actionable list — one row per fix, ordered by **risk reduction per unit of change**.
 
-**Status — 2026-08-06.** 23 of 24 items are **done**, every one implemented test-first.
-The suite went from **235 to 506 tests, 0 failures**.
+**Status — 2026-08-06.** **All 24 items are done**, every one implemented test-first.
+The suite went from **235 to 529 tests, 0 failures**.
 
 | | Item | Outcome |
 | :--- | :--- | :--- |
@@ -27,7 +27,7 @@ The suite went from **235 to 506 tests, 0 failures**.
 | ✅ | F-21 | Export docs corrected — it was **not** self-contained, contrary to three claims |
 | ✅ | F-22 | Doc test counts corrected |
 | ✅ | F-23 | Coroutines versions unified behind one variable |
-| ◐ | F-13 | `SlideNavigator` **done**; `DeckDocument` still outstanding — see below |
+| ✅ | F-13 | `SlideNavigator`, `ProjectSlideMap`, `SlideTemplates` and `DeckDocument` extracted |
 | ✅ | F-14 | `ProjectRepository`, `FileDialogs`, `CompanionServerPort` injected |
 | ✅ | F-18 | `PresenterView` body 597 → ~285 lines across six named composables |
 | ✅ | F-19 | `AppCommands` registry; both key handlers dispatch through it |
@@ -118,51 +118,27 @@ Fixed. `flatten` turned each `alt`/`par` section label into a `SequenceStep.Note
 There is now a `SequenceStep.SectionDivider`, drawn as a dashed rule across the frame with
 `[failure]` in the corner — Mermaid's convention. Verified in `render-all/04_sequence_blocks.png`.
 
-### F-13 · half done
+### F-13 · done (2026-08-06)
 
-`SlideNavigator` is extracted and tested — the cursor, its bounds, and the two distinct
-"where do I land" semantics (`goTo` refuses an out-of-range index; `moveTo` clamps, because
-structural edits compute the landing index from a deck that has since been reparsed).
+The god object's core is split four ways:
 
-`DeckDocument` is **not** done. `ProjectSlideMap` is the first piece to land: COR-3's derived
-slide-to-file mapping, lifted out as pure functions and unit-tested, and adopted by
-`PresentationState`. It could move ahead of the rest because it touches no mutable state.
+| | |
+| :--- | :--- |
+| `SlideNavigator` | the cursor and its bounds. `goTo` refuses an out-of-range index (jumps arrive from the palette, the grid and the phone); `moveTo` clamps, because structural edits compute the landing index from a deck that has since been reparsed. |
+| `ProjectSlideMap` | COR-3's derived slide-to-file mapping, pure and tested — including the two-slides-in-one-file case the old positional assumption got wrong. |
+| `SlideTemplates` | the starter markdown per layout. Authored content, exhaustive over `SlideLayoutType` with no `else`. |
+| `DeckDocument` | the deck: markdown, parse, project files, and every edit to them. Carries COR-1 and COR-2. |
 
-Measured, not guessed: **122 of `PresentationState`'s 1094 lines touch the document cluster**
-(`markdownText`, `slides`, `activeProject`, `isPerSlideEditorMode`, the navigator, autosave)
-and there are **25 undo/redo touch points** through `rememberForUndo`/`history`/`snapshot`.
+**The design decision that made it separable:** structural edits **return the index the cursor
+should land on** rather than moving it. That is what decouples `DeckDocument` from
+`SlideNavigator` — `deck.delete(i)?.let(navigator::moveTo)` — instead of the document reaching
+into the cursor, which is what made the old code impossible to pull apart.
 
-The boundary cannot be drawn smaller. Extracting only the structural edits was tried and
-rejected: `writeProjectFile` reaches `activeProject`, `markdownText`, `slides`, the navigator
-*and* `scheduleDraftSave`, so a `SlideStructureEditor` would need six callbacks — more coupling
-than it removes, not less.
+`PresentationState` went **1094 → 746 lines** and is now a facade: it owns window/dialog flags
+and wires the pieces together. Every collaborator it delegates to is separately tested.
 
-**The shape it wants:**
-
-```kotlin
-class DeckDocument(
-    initialMarkdown: String,
-    private val onDeckChanged: (String) -> Unit  // reconcile parking lot, autosave, clamp cursor
-) {
-    val markdown: String; val slides: List<Slide>; val project: DeckProject?
-    var perSlideEditing: Boolean
-    fun editorTextFor(slideIndex: Int): String
-    fun replaceAll(markdown: String)
-    fun updateEditorContent(slideIndex: Int, content: String)
-    fun adopt(project: DeckProject); fun loadFlat(markdown: String)
-    // structural edits return the index the cursor should land on, instead of moving it
-    fun move(from: Int, to: Int): Int?
-    fun duplicate(index: Int): Int?
-    fun delete(index: Int): Int?
-    fun insert(afterIndex: Int, template: String): Int?
-}
-```
-
-Having the structural edits *return* the landing index rather than move the cursor is what
-decouples them from `SlideNavigator` — and `moveTo` already exists to receive it.
-
-Guards that must stay green: `SlideDocumentTest`, `CompanionDeckTest`, `PresentationStateTest`,
-`CharacterizationTest`, `DeckProjectManagerTest`, plus whatever covers undo/redo.
+The whole suite passed on the first run after wiring, including `ParkingLotDeleteTest`,
+`CompanionDeckTest` and `CharacterizationTest` — the ones that fail if COR-1/COR-2/COR-3 shift.
 
 **One behaviour change found and preserved, not fixed.** The directive and note rules sit above
 `InCodeBlockRule`, so a `<!-- note: … -->` inside a fenced block is still consumed as a directive

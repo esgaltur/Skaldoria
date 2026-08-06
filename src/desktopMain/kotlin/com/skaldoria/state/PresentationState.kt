@@ -9,7 +9,9 @@ import com.skaldoria.config.ConfigManager
 import com.skaldoria.core.annotation.AnnotationLayer
 import com.skaldoria.core.audience.AudienceSession
 import com.skaldoria.core.deck.SampleDecks
+import com.skaldoria.core.deck.DeckDocument
 import com.skaldoria.core.deck.ProjectSlideMap
+import com.skaldoria.core.deck.SlideTemplates
 import com.skaldoria.core.deck.SlideNavigator
 import com.skaldoria.core.document.DeckHistory
 import com.skaldoria.core.document.SlideDocument
@@ -46,11 +48,21 @@ class PresentationState(
 ) : DeckControl {
     private val scope = CoroutineScope(backgroundContext)
 
-    var markdownText by mutableStateOf(initialMarkdown)
-        private set
+    /**
+     * F-13: the deck itself — text, parse and project files — lives in [DeckDocument].
+     * Everything it changes is funnelled through one callback, so reconciling the parking
+     * lot, clamping the cursor and scheduling autosave happen in exactly one place instead of
+     * being repeated at each mutation site (and occasionally forgotten at one).
+     */
+    private val deck = DeckDocument(initialMarkdown) { combined ->
+        navigator.clampToDeck()
+        parkingLot.reconcile(combined)
+        scheduleDraftSave(combined)
+    }
 
-    var slides by mutableStateOf(MarkdownSlideParser.parse(initialMarkdown))
-        private set
+    val markdownText: String get() = deck.markdown
+
+    val slides: List<Slide> get() = deck.slides
 
     /**
      * F-13: the cursor lives in [SlideNavigator]. Reading the deck length through a lambda
@@ -192,10 +204,8 @@ class PresentationState(
             updateEditorContent(rewritten)
             return
         }
-        markdownText = rewritten
-        slides = MarkdownSlideParser.parse(rewritten)
-        parkingLot.reconcile(rewritten)
-        scheduleDraftSave(rewritten)
+        // replaceAll's callback reconciles and autosaves, so this is the whole of it.
+        deck.replaceAll(rewritten)
     }
 
     /** F-11: per-slide pen strokes, with their own lifetime. */
@@ -206,13 +216,13 @@ class PresentationState(
 
     var editorFontSize by mutableStateOf(14)
 
-    var activeProject by mutableStateOf<DeckProject?>(null)
-        private set
+    val activeProject: DeckProject? get() = deck.project
 
-    var isPerSlideEditorMode by mutableStateOf(true)
+    var isPerSlideEditorMode: Boolean
+        get() = deck.perSlideEditing
+        set(value) { deck.perSlideEditing = value }
 
-    val isProjectMode: Boolean
-        get() = activeProject != null
+    val isProjectMode: Boolean get() = deck.isProjectMode
 
     /**
      * COR-3: resolved through the slide→file map rather than by indexing [DeckProject.slideFiles]
@@ -221,21 +231,10 @@ class PresentationState(
      * silently began writing to the wrong file.
      */
     val currentSlideFile: SlideFileEntry?
-        get() {
-            val proj = activeProject ?: return null
-            val fileIndex = proj.slideOwnerFileIndices().getOrNull(currentSlideIndex)
-                ?: return proj.slideFiles.lastOrNull()
-            return proj.slideFiles.getOrNull(fileIndex)
-        }
+        get() = deck.fileFor(currentSlideIndex)
 
     val currentEditorText: String
-        get() {
-            return if (isProjectMode && isPerSlideEditorMode) {
-                currentSlideFile?.content ?: markdownText
-            } else {
-                markdownText
-            }
-        }
+        get() = deck.editorTextFor(currentSlideIndex)
 
     // ------------------------------------------------------------------
     // Find & Replace — delegated to [FindReplaceController] (F-11).
@@ -376,7 +375,6 @@ class PresentationState(
 
     /** DED-1: adopt a recovered draft as the working deck. */
     fun restoreDraft(draft: String) {
-        activeProject = null
         currentFilePath = null
         updateMarkdown(draft)
         navigator.reset()
@@ -469,26 +467,7 @@ class PresentationState(
         editorFontSize = 14
     }
 
-    fun updateEditorContent(newContent: String) {
-        if (isProjectMode && isPerSlideEditorMode) {
-            val proj = activeProject ?: return
-            val currentFile = currentSlideFile ?: return
-            val updatedFiles = proj.slideFiles.map {
-                if (it.absolutePath == currentFile.absolutePath || it.relativePath == currentFile.relativePath) {
-                    it.copy(content = newContent)
-                } else it
-            }.toMutableList()
-            val updatedProj = proj.copy(slideFiles = updatedFiles)
-            activeProject = updatedProj
-
-            val combined = updatedProj.compileCombinedMarkdown()
-            markdownText = combined
-            slides = MarkdownSlideParser.parse(combined)
-            scheduleDraftSave(combined)
-        } else {
-            updateMarkdown(newContent)
-        }
-    }
+    fun updateEditorContent(newContent: String) = deck.updateEditorContent(currentSlideIndex, newContent)
 
     /**
      * Opens whatever the user picked — a deck project or a single markdown file.
@@ -543,22 +522,17 @@ class PresentationState(
         // AUT-04: undoing across a deck boundary would restore one deck's content over
         // another's.
         history.clear()
-        activeProject = proj
         currentFilePath = proj.rootDir
-        val combined = proj.compileCombinedMarkdown()
-        markdownText = combined
-        slides = MarkdownSlideParser.parse(combined)
+        deck.adopt(proj)
         navigator.reset()
         showWelcome = false
-        parkingLot.reconcile(combined)
         ConfigManager.addRecentProject(proj.rootDir, proj.name, slides.size)
     }
 
     fun loadMarkdownFromFile(path: String, content: String) {
         history.clear()
         currentFilePath = path
-        activeProject = null
-        updateMarkdown(content)
+        deck.loadFlat(content)
         navigator.reset()
         showWelcome = false
         val firstTitle = slides.firstOrNull()?.title ?: "Presentation"
@@ -586,13 +560,7 @@ class PresentationState(
     val previousSlide: Slide?
         get() = slides.getOrNull(currentSlideIndex - 1)
 
-    fun updateMarkdown(newMarkdown: String) {
-        markdownText = newMarkdown
-        slides = MarkdownSlideParser.parse(newMarkdown)
-        navigator.clampToDeck()
-        parkingLot.reconcile(newMarkdown)
-        scheduleDraftSave(newMarkdown)
-    }
+    fun updateMarkdown(newMarkdown: String) = deck.replaceAll(newMarkdown)
 
     val hasNext: Boolean get() = navigator.hasNext
 
@@ -641,13 +609,8 @@ class PresentationState(
         }
 
         // Reload so `activeProject` is a fresh instance and recomposition actually fires.
-        val updated = projects.loadProjectFromDirectory(java.io.File(proj.rootDir))
-        activeProject = updated
-        val combined = updated.compileCombinedMarkdown()
-        markdownText = combined
-        slides = MarkdownSlideParser.parse(combined)
+        deck.adopt(projects.loadProjectFromDirectory(java.io.File(proj.rootDir)))
         navigator.moveTo(slides.size - 1)
-        scheduleDraftSave(combined)
     }
 
     override fun goToSlide(index: Int) {
@@ -861,12 +824,7 @@ class PresentationState(
     private fun restore(snapshot: DeckSnapshot) {
         val proj = activeProject
         if (proj != null && snapshot.slideFiles != null) {
-            val restored = proj.copy(slideFiles = snapshot.slideFiles.toMutableList())
-            activeProject = restored
-            val combined = restored.compileCombinedMarkdown()
-            markdownText = combined
-            slides = MarkdownSlideParser.parse(combined)
-            scheduleDraftSave(combined)
+            deck.adopt(proj.copy(slideFiles = snapshot.slideFiles.toMutableList()))
         } else {
             updateMarkdown(snapshot.markdown)
         }
@@ -883,155 +841,24 @@ class PresentationState(
         restore(next)
     }
 
-    private fun document(): SlideDocument = SlideDocument.of(markdownText)
-
-    // F-13, first step: COR-3's derived slide-to-file mapping is pure, so it moves out
-    // ahead of the rest of the document cluster. See [ProjectSlideMap].
-    private fun ownerFileIndex(slideIndex: Int): Int? =
-        ProjectSlideMap.ownerFileIndex(activeProject, slideIndex)
-
-    private fun localSlideIndex(slideIndex: Int): Int? =
-        ProjectSlideMap.localSlideIndex(activeProject, slideIndex)
-
-    private fun writeProjectFile(fileIndex: Int, newContent: String) {
-        val proj = activeProject ?: return
-        if (fileIndex !in proj.slideFiles.indices) return
-
-        val updatedFiles = proj.slideFiles.toMutableList()
-        updatedFiles[fileIndex] = updatedFiles[fileIndex].copy(content = newContent)
-        val updatedProj = proj.copy(slideFiles = updatedFiles)
-        activeProject = updatedProj
-
-        val combined = updatedProj.compileCombinedMarkdown()
-        markdownText = combined
-        slides = MarkdownSlideParser.parse(combined)
-        if (currentSlideIndex >= slides.size) {
-            navigator.moveTo(slides.size - 1)
-        }
-        scheduleDraftSave(combined)
-    }
-
-    /**
-     * Applies a structural edit to the file owning [slideIndex]. Returns false when the
-     * deck is not a project or the slide cannot be located, so callers can fall back to
-     * editing the flat document.
-     */
-    private fun editOwningFile(slideIndex: Int, edit: (SlideDocument, Int) -> String?): Boolean {
-        val proj = activeProject ?: return false
-        val fileIndex = ownerFileIndex(slideIndex) ?: return false
-        val local = localSlideIndex(slideIndex) ?: return false
-        val entry = proj.slideFiles.getOrNull(fileIndex) ?: return false
-
-        val result = edit(SlideDocument.of(entry.content), local) ?: return false
-        writeProjectFile(fileIndex, result)
-        return true
-    }
-
     fun moveSlide(fromIndex: Int, toIndex: Int) {
         rememberForUndo()
-        if (isProjectMode) {
-            // Reordering slides across files means reordering the files themselves; that
-            // is only well defined when each file holds exactly one slide.
-            val proj = activeProject ?: return
-            val owners = proj.slideOwnerFileIndices()
-            val oneSlidePerFile = ProjectSlideMap.isOneSlidePerFile(proj)
-            if (oneSlidePerFile) {
-                if (fromIndex !in proj.slideFiles.indices || toIndex !in proj.slideFiles.indices) return
-                val reordered = proj.slideFiles.toMutableList()
-                reordered.add(toIndex, reordered.removeAt(fromIndex))
-                val updatedProj = proj.copy(slideFiles = reordered)
-                activeProject = updatedProj
-                val combined = updatedProj.compileCombinedMarkdown()
-                markdownText = combined
-                slides = MarkdownSlideParser.parse(combined)
-                navigator.moveTo(toIndex)
-                scheduleDraftSave(combined)
-            } else if (ownerFileIndex(fromIndex) == ownerFileIndex(toIndex)) {
-                val local = localSlideIndex(fromIndex) ?: return
-                val localTo = localSlideIndex(toIndex) ?: return
-                if (editOwningFile(fromIndex) { doc, _ -> doc.move(local, localTo) }) {
-                    navigator.moveTo(toIndex)
-                }
-            }
-            return
-        }
-
-        val updated = document().move(fromIndex, toIndex) ?: return
-        updateMarkdown(updated)
-        navigator.moveTo(toIndex)
+        deck.move(fromIndex, toIndex)?.let(navigator::moveTo)
     }
 
     fun duplicateSlide(index: Int) {
         rememberForUndo()
-        if (isProjectMode) {
-            if (editOwningFile(index) { doc, local -> doc.duplicate(local) }) {
-                navigator.moveTo(index + 1)
-            }
-            return
-        }
-
-        val updated = document().duplicate(index) ?: return
-        updateMarkdown(updated)
-        navigator.moveTo(index + 1)
+        deck.duplicate(index)?.let(navigator::moveTo)
     }
 
     fun deleteSlide(index: Int) {
         rememberForUndo()
-        if (isProjectMode) {
-            val proj = activeProject ?: return
-            val fileIndex = ownerFileIndex(index) ?: return
-            val owners = proj.slideOwnerFileIndices()
-
-            // Last slide in its file: remove the file from the deck rather than leaving
-            // an empty one behind. The file itself is left on disk.
-            if (ProjectSlideMap.slideCountInFile(proj, fileIndex) <= 1) {
-                if (proj.slideFiles.size <= 1) return
-                val remaining = proj.slideFiles.toMutableList().apply { removeAt(fileIndex) }
-                val updatedProj = proj.copy(slideFiles = remaining)
-                activeProject = updatedProj
-                val combined = updatedProj.compileCombinedMarkdown()
-                markdownText = combined
-                slides = MarkdownSlideParser.parse(combined)
-                navigator.moveTo(index - 1)
-                scheduleDraftSave(combined)
-            } else if (editOwningFile(index) { doc, local -> doc.delete(local) }) {
-                navigator.moveTo(index - 1)
-            }
-            return
-        }
-
-        val updated = document().delete(index) ?: return
-        updateMarkdown(updated)
-        navigator.moveTo(index - 1)
+        deck.delete(index)?.let(navigator::moveTo)
     }
 
     fun insertSlide(afterIndex: Int, layout: SlideLayoutType) {
         rememberForUndo()
-        val template = when (layout) {
-            SlideLayoutType.HERO_TITLE -> "<!-- layout: hero -->\n# New Hero Title\n### Compelling Subtitle Here\n"
-            SlideLayoutType.SECTION_HEADER -> "<!-- layout: section -->\n# Section Header\n### Chapter Overview\n"
-            SlideLayoutType.BULLET_LIST -> "## Key Takeaways\n\n- First strategic point\n- Second crucial insight\n- Actionable next step\n"
-            SlideLayoutType.SPLIT_TEXT_CODE -> "## Architecture Design\n\n- Ultra low latency pipeline\n- Built on pure Kotlin Multiplatform\n\n```kotlin\nclass HighSpeedEngine {\n    fun render() = 120.fps\n}\n```\n"
-            SlideLayoutType.SPLIT_TEXT_MEDIA -> "## Visual Overview\n\n- Seamless graphic acceleration\n- Crystal-clear typography\n\n![System Diagram](https://picsum.photos/800/450)\n"
-            SlideLayoutType.DATA_TABLE -> "## Benchmark Performance\n\n| Engine | FPS | Memory |\n|---|---|---|\n| Skaldoria | 120 FPS | 42 MB |\n| Web Deck | 30 FPS | 240 MB |\n"
-            SlideLayoutType.BIG_QUOTE -> "> The art of presentation is turning complexity into clarity.\n> -- Steve Jobs\n"
-            SlideLayoutType.BIG_METRIC -> "# 99.99% Uptime\n### Mission Critical Reliability\n"
-            SlideLayoutType.FULL_CODE -> "```kotlin\nfun main() {\n    println(\"Native performance unlocked.\")\n}\n```\n"
-            SlideLayoutType.DIAGRAM -> "## System Flow\n\n```mermaid\nflowchart LR\n    A[Start] --> B(Process) --> C{Decision}\n    C -->|Yes| D[Success]\n    C -->|No| E[Retry]\n```\n"
-            SlideLayoutType.MATH_FORMULA -> "## Core Equation\n\n$$ E = mc^2 $$\n\n- Fundamental equivalence of mass and energy\n"
-            SlideLayoutType.POLL -> "## Audience Live Poll\n\n<!-- poll: Option A | Option B | Option C | Option D -->\n\n- Cast your vote in real-time from your phone!\n"
-        }
-
-        if (isProjectMode) {
-            if (editOwningFile(afterIndex) { doc, local -> doc.insert(local, template) }) {
-                navigator.moveTo(afterIndex + 1)
-            }
-            return
-        }
-
-        val newMarkdown = document().insert(afterIndex, template)
-        updateMarkdown(newMarkdown)
-        navigator.moveTo(afterIndex + 1)
+        deck.insert(afterIndex, SlideTemplates.forLayout(layout))?.let(navigator::moveTo)
     }
 
     fun resetToSample() {
@@ -1042,7 +869,6 @@ class PresentationState(
 
     /** Start a fresh, minimal deck from the welcome screen. */
     fun startBlankPresentation() {
-        activeProject = null
         currentFilePath = null
         updateMarkdown(BLANK_STARTER_MARKDOWN)
         navigator.reset()
@@ -1052,7 +878,6 @@ class PresentationState(
 
     /** Load the built-in demo deck from the welcome screen. */
     fun openSampleDeck() {
-        activeProject = null
         currentFilePath = null
         resetToSample()
         showWelcome = false
