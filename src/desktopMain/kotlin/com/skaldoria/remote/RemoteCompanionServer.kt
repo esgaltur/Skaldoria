@@ -1,14 +1,9 @@
 package com.skaldoria.remote
 
 import com.skaldoria.core.json.Json
-import com.skaldoria.core.models.SlideElement
+import com.skaldoria.remote.RemoteCompanionServer.routeRequest
 import java.io.OutputStream
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.NetworkInterface
-import java.net.ServerSocket
-import java.net.Socket
-import java.net.SocketException
+import java.net.*
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors

@@ -1,46 +1,29 @@
 package com.skaldoria.state
 
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import com.skaldoria.config.ConfigManager
-import com.skaldoria.core.document.SlideDocument
-import com.skaldoria.core.editor.FindReplaceController
 import com.skaldoria.core.annotation.AnnotationLayer
 import com.skaldoria.core.audience.AudienceSession
 import com.skaldoria.core.deck.SampleDecks
-import com.skaldoria.core.models.AnnotationStroke
-import com.skaldoria.core.models.AudienceQuestion
-import com.skaldoria.core.models.DeckProject
-import com.skaldoria.core.models.FollowUpQuestion
-import com.skaldoria.core.models.PacingStatus
-import com.skaldoria.core.models.Slide
-import com.skaldoria.core.models.SlideFileEntry
-import com.skaldoria.core.models.SlideLayoutType
-import com.skaldoria.core.models.SlideElement
-import com.skaldoria.core.models.SlideTransition
-import com.skaldoria.core.parkinglot.ParkingLotStore
+import com.skaldoria.core.document.SlideDocument
+import com.skaldoria.core.editor.FindReplaceController
+import com.skaldoria.core.models.*
 import com.skaldoria.core.pacing.Pacing
 import com.skaldoria.core.pacing.PacingCalculator
 import com.skaldoria.core.pacing.TalkTimer
+import com.skaldoria.core.parkinglot.ParkingLotStore
 import com.skaldoria.core.parser.MarkdownSlideParser
 import com.skaldoria.remote.DeckControl
 import com.skaldoria.remote.RemoteCompanionServer
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.theme.PresentationTheme
+import kotlinx.coroutines.*
 import kotlin.coroutines.CoroutineContext
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * @param backgroundContext where debounced autosave runs. PRF-4: injected rather than

@@ -120,6 +120,12 @@ fun main() = application {
                         state.openFile()
                         true
                     }
+                    // AUT-01: documented in the README shortcut table since before 1.2.0 and
+                    // never bound — there was no `Key.E` anywhere in the source.
+                    isCtrl && event.key == androidx.compose.ui.input.key.Key.E -> {
+                        com.skaldoria.export.DeckExporter.exportPdf(state) {}
+                        true
+                    }
                     isCtrl && event.key == androidx.compose.ui.input.key.Key.S -> {
                         state.saveFile()
                         true

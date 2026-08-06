@@ -119,7 +119,7 @@ spends in it. It is a single `TextField` with a syntax-highlighting `VisualTrans
 
 | ID | Feature | Status | Size | Depends | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **AUT-01** | Bind the four documented-but-absent shortcuts | 🟡 | S | — | See above. |
+| **AUT-01** | Bind the four documented-but-absent shortcuts | 🟡 | S | — | `Ctrl+E`, `Home`, `End`, `Backspace` **shipped**. `T` (cycle themes) still unbound — it needs a `PresentationState` change, which was blocked by a concurrent refactor. |
 | **AUT-02** | Editor ⇄ slide synchronisation | 📋 | M | — | Specified in ADR-004. |
 | **AUT-03** | Find reveal — scroll the match into view | 📋 | S | AUT-05 | Specified in ADR-004. |
 | **AUT-04** | **Undo/redo for structural edits** | 📋 | M | — | The only undo in the app is `undoStroke()` for annotation strokes. Deleting a slide is a one-click destructive action on the filmstrip with **no way back**. Highest-risk gap in the product. |
@@ -142,16 +142,16 @@ spends in it. It is a single `TextField` with a syntax-highlighting `VisualTrans
 
 | ID | Feature | Status | Size | Depends | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **DEL-01** | Honour the transition model | 🟡 | S | — | See above. |
-| **DEL-02** | HUD show/hide | 📋 | S | — | ADR-004 Phase 1. |
+| **DEL-01** | Honour the transition model | ✅ | S | — | `TransitionResolver` + exhaustive `transitionSpecFor`. All four values now render. |
+| **DEL-02** | HUD show/hide | ✅ | S | — | `HudVisibility` (AUTO/PINNED/HIDDEN), `H` binding, idle fade, HUD button, recovery hint. **Not persisted** — see note below. |
 | **DEL-03** | **Incremental reveals (bullet builds)** | 📋 | L | — | The most-requested feature of any presentation tool that lacks it. Code blocks already support `highlightedLines` step highlighting (FR-DIAG / §3.7), so the *concept* exists for code but not for bullets. Needs a directive, a per-slide step counter, and step-aware navigation in both windows and the companion. |
 | **DEL-04** | Rehearsal mode with per-slide timing | 📋 | M | — | The pacing engine (FR-PRES-06) computes whether you are ahead or behind against a target. It cannot tell you *which slides* cost you the time. Record per-slide dwell, show it afterwards. |
 | **DEL-05** | Auto-advance / kiosk loop | 📋 | S | — | Booths, lobby screens, unattended demos. |
 | **DEL-06** | "Starting soon" / countdown holding screen | 📋 | S | — | |
 | **DEL-07** | Presentation zoom / spotlight a slide region | 📋 | M | — | Pairs with the existing laser pointer for dense diagrams and code. |
-| **DEL-08** | Jump-to-slide by number during presentation | 📋 | S | — | Type `27` `Enter`. Grid overview (`G`) exists but is a visual scan. |
+| **DEL-08** | Jump-to-slide by number during presentation | ✅ | S | — | `SlideNumberEntry` + on-screen feedback. Type `27` `Enter`; `Esc` cancels. |
 | **DEL-09** | Freeze / hold current slide while navigating ahead | 🕓 | M | — | Presenter reads ahead; audience display stays put. |
-| **DEL-10** | Per-slide transition override honoured | 🟡 | S | DEL-01 | `Slide.customTransition` is parsed and stored; wire it once DEL-01 lands. |
+| **DEL-10** | Per-slide transition override honoured | ✅ | S | DEL-01 | `transition:` on a slide beats the deck default. |
 
 ---
 
@@ -166,7 +166,7 @@ The known-limitations table in `QUALITY_BASELINE.md` is the honest source for th
 | **DIA-03** | ER diagrams | 🕓 | L | — | As above. |
 | **DIA-04** | Gantt charts | 🕓 | L | — | As above. Weakest fit — a Gantt on a slide is usually a picture. |
 | **DIA-05** | Nested subgraphs | 📋 | M | — | Currently flattened; a node joins the innermost group that declares it. MMD-10 reserves cross-axis bands per group, which is the mechanism nesting would extend. |
-| **DIA-06** | Diagram footer reports the parsed type | 🟡 | S | — | R-2: the slide footer shows the *layout* type ("Architecture / Flow Diagram") rather than the parsed diagram type ("sequence"). |
+| **DIA-06** | Diagram footer reports the parsed type | ✅ | S | — | `SlideFooterLabel`, with the Mermaid parser injected so `core/` keeps no UI dependency. |
 | **DIA-07** | Honour `classDef` / `style` / `linkStyle` | 📋 | M | — | FR-DIAG-08 parses and deliberately discards these. Colour-coded flowcharts are a common authoring need. |
 | **DIA-08** | Layout direction beyond LR/TD | 📋 | S | — | `RL` and `BT` are not recognised. |
 | **DIA-09** | Manual layout hints (rank/position pinning) | 🕓 | L | — | Escape hatch when the auto-layout is wrong. Defer until DIA-01/02 show whether it is needed. |
