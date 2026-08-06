@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Skaldoria Audience Portal</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background: #0b0f19; color: #f1f5f9; display: flex; flex-direction: column; min-height: 100vh; padding: 16px; }
+        .header { text-align: center; padding-bottom: 16px; border-bottom: 1px solid #1e293b; }
+        .brand { font-size: 1.3rem; font-weight: 800; color: #38bdf8; letter-spacing: 1px; }
+        .subtitle { font-size: 0.85rem; color: #94a3b8; margin-top: 4px; }
+        .card { background: #131b2e; border: 1px solid #1e293b; border-radius: 16px; padding: 18px; margin: 16px 0; }
+        .card-title { font-size: 1.1rem; font-weight: 700; color: #ffffff; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .poll-opt-btn { width: 100%; padding: 14px 16px; margin-bottom: 10px; background: #1e293b; border: 1px solid #334155; border-radius: 12px; color: #f8fafc; font-size: 1rem; font-weight: 600; text-align: left; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: all 0.15s; }
+        .poll-opt-btn:active { background: #0284c7; transform: scale(0.98); }
+        .poll-opt-btn.voted { background: #0369a1; border-color: #38bdf8; }
+        .input-group { margin-bottom: 12px; }
+        .input-text { width: 100%; padding: 12px; background: #0a0e1a; border: 1px solid #1e293b; border-radius: 10px; color: #f1f5f9; font-size: 0.95rem; }
+        .btn-submit { width: 100%; padding: 14px; background: #0284c7; border: none; border-radius: 10px; color: white; font-weight: bold; font-size: 1rem; cursor: pointer; }
+        .btn-submit:active { transform: scale(0.98); }
+        .qa-feed { display: flex; flex-direction: column; gap: 10px; }
+        .qa-card { background: #0a0e1a; border: 1px solid #1e293b; border-radius: 12px; padding: 14px; display: flex; justify-content: space-between; align-items: center; }
+        .qa-content { flex: 1; padding-right: 12px; }
+        .qa-author-label { font-size: 0.75rem; color: #38bdf8; font-weight: bold; margin-bottom: 4px; }
+        .qa-text-body { font-size: 0.95rem; color: #e2e8f0; line-height: 1.4; }
+        .upvote-btn { background: #1e293b; border: 1px solid #334155; color: #38bdf8; padding: 8px 12px; border-radius: 20px; font-size: 0.9rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+        .upvote-btn:active { background: #0284c7; color: white; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="brand">⚡ SKALDORIA AUDIENCE</div>
+        <div class="subtitle">Live Presentation Interactive Portal · {{VERSION}}</div>
+    </div>
+
+    <!-- Active Poll Section -->
+    <div class="card" id="poll-section" style="display:none;">
+        <div class="card-title">📊 Live Poll: <span id="poll-question"></span></div>
+        <div id="poll-options"></div>
+        <div id="poll-voted-msg" style="display:none; color:#34d399; font-size:0.85rem; font-weight:bold; margin-top:8px; text-align:center;">✓ Your vote was recorded!</div>
+    </div>
+
+    <!-- Ask Question Section -->
+    <div class="card">
+        <div class="card-title">💬 Ask the Speaker</div>
+        <div class="input-group">
+            <input type="text" class="input-text" id="qa-author-input" placeholder="Your Name or Handle (optional)">
+        </div>
+        <div class="input-group">
+            <textarea class="input-text" id="qa-text-input" rows="3" placeholder="Type your question for the presenter..."></textarea>
+        </div>
+        <button class="btn-submit" onclick="submitQuestion()">Submit Question</button>
+    </div>
+
+    <!-- Live Questions Feed -->
+    <div class="card">
+        <div class="card-title">🔥 Audience Questions</div>
+        <div class="qa-feed" id="qa-feed">
+            <div style="text-align:center; color:#64748b; padding:16px;">No questions submitted yet. Be the first!</div>
+        </div>
+    </div>
+
+    <script>
+        let currentActiveSlide = -1;
+        let lastVotedSlide = -1;
+        let lastVotedOption = -1;
+
+        // SEC-1: every value that originates from another audience device is inserted
+        // with textContent, never innerHTML. Do not "simplify" these builders back into
+        // template literals — that reintroduces stored XSS.
+        function el(tag, className, text) {
+            const node = document.createElement(tag);
+            if (className) node.className = className;
+            if (text !== undefined && text !== null) node.textContent = text;
+            return node;
+        }
+
+        async function votePoll(optIndex) {
+            try {
+                await fetch('/api/poll/vote?slideIndex=' + currentActiveSlide + '&optionIndex=' + optIndex, { method: 'POST' });
+                lastVotedSlide = currentActiveSlide;
+                lastVotedOption = optIndex;
+                document.getElementById('poll-voted-msg').style.display = 'block';
+                pollState();
+            } catch(e) {}
+        }
+
+        async function submitQuestion() {
+            const author = document.getElementById('qa-author-input').value.trim();
+            const text = document.getElementById('qa-text-input').value.trim();
+            if (!text) return;
+
+            try {
+                await fetch('/api/qa/submit?author=' + encodeURIComponent(author) + '&text=' + encodeURIComponent(text), { method: 'POST' });
+                document.getElementById('qa-text-input').value = '';
+                pollState();
+            } catch(e) {}
+        }
+
+        async function upvoteQuestion(id) {
+            try {
+                await fetch('/api/qa/upvote?id=' + encodeURIComponent(id), { method: 'POST' });
+                pollState();
+            } catch(e) {}
+        }
+
+        async function pollState() {
+            try {
+                const res = await fetch('/api/state');
+                if (!res.ok) return;
+                const data = await res.json();
+                currentActiveSlide = data.currentSlideIndex;
+
+                // Check poll
+                const pollSec = document.getElementById('poll-section');
+                if (data.poll && data.poll.hasPoll) {
+                    pollSec.style.display = 'block';
+                    document.getElementById('poll-question').textContent = data.poll.question;
+
+                    const isVotedOnThisSlide = (lastVotedSlide === currentActiveSlide);
+                    document.getElementById('poll-voted-msg').style.display = isVotedOnThisSlide ? 'block' : 'none';
+
+                    const optsContainer = document.getElementById('poll-options');
+                    optsContainer.textContent = '';
+                    data.poll.options.forEach(opt => {
+                        const voted = isVotedOnThisSlide && lastVotedOption === opt.index;
+                        const btn = el('button', voted ? 'poll-opt-btn voted' : 'poll-opt-btn');
+                        btn.appendChild(el('span', null, opt.text));
+                        const count = el('span', null, opt.votes + ' votes');
+                        count.style.cssText = 'font-size:0.85rem; color:#94a3b8;';
+                        btn.appendChild(count);
+                        btn.addEventListener('click', () => votePoll(opt.index));
+                        optsContainer.appendChild(btn);
+                    });
+                } else {
+                    pollSec.style.display = 'none';
+                }
+
+                // Questions
+                const feed = document.getElementById('qa-feed');
+                feed.textContent = '';
+                if (data.questions && data.questions.length > 0) {
+                    data.questions.forEach(q => {
+                        const card = el('div', 'qa-card');
+
+                        const content = el('div', 'qa-content');
+                        content.appendChild(el('div', 'qa-author-label', q.author));
+                        content.appendChild(el('div', 'qa-text-body', q.text));
+                        card.appendChild(content);
+
+                        // Listener closure instead of an inline onclick attribute: a quote
+                        // in q.id can no longer break out into markup.
+                        const upvote = el('button', 'upvote-btn', '👍 ' + q.upvotes);
+                        upvote.addEventListener('click', () => upvoteQuestion(q.id));
+                        card.appendChild(upvote);
+
+                        feed.appendChild(card);
+                    });
+                } else {
+                    const empty = el('div', null, 'No questions submitted yet. Be the first!');
+                    empty.style.cssText = 'text-align:center; color:#64748b; padding:16px;';
+                    feed.appendChild(empty);
+                }
+            } catch(e) {}
+        }
+
+        setInterval(pollState, 1000);
+        pollState();
+    </script>
+</body>
+</html>

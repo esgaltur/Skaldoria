@@ -71,7 +71,7 @@ fun EditorFindBar(
                 theme = state.currentTheme
             ) {
                 IconButton(
-                    onClick = { state.isReplaceOpen = !state.isReplaceOpen },
+                    onClick = { state.toggleReplaceRow() },
                     modifier = Modifier.size(26.dp)
                 ) {
                     Icon(

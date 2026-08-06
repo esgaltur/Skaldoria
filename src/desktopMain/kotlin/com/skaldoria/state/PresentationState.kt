@@ -11,6 +11,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import com.skaldoria.config.ConfigManager
 import com.skaldoria.core.document.SlideDocument
+import com.skaldoria.core.editor.FindReplaceController
+import com.skaldoria.core.annotation.AnnotationLayer
+import com.skaldoria.core.audience.AudienceSession
+import com.skaldoria.core.deck.SampleDecks
 import com.skaldoria.core.models.AnnotationStroke
 import com.skaldoria.core.models.AudienceQuestion
 import com.skaldoria.core.models.DeckProject
@@ -19,11 +23,14 @@ import com.skaldoria.core.models.PacingStatus
 import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideFileEntry
 import com.skaldoria.core.models.SlideLayoutType
+import com.skaldoria.core.models.SlideElement
 import com.skaldoria.core.models.SlideTransition
+import com.skaldoria.core.parkinglot.ParkingLotStore
 import com.skaldoria.core.pacing.Pacing
 import com.skaldoria.core.pacing.PacingCalculator
 import com.skaldoria.core.pacing.TalkTimer
 import com.skaldoria.core.parser.MarkdownSlideParser
+import com.skaldoria.remote.DeckControl
 import com.skaldoria.remote.RemoteCompanionServer
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.theme.PresentationTheme
@@ -45,7 +52,7 @@ class PresentationState(
     initialMarkdown: String = DEFAULT_SAMPLE_MARKDOWN,
     backgroundContext: CoroutineContext = Dispatchers.Default,
     private val timer: TalkTimer = TalkTimer()
-) {
+) : DeckControl {
     private val scope = CoroutineScope(backgroundContext)
 
     var markdownText by mutableStateOf(initialMarkdown)
@@ -54,7 +61,7 @@ class PresentationState(
     var slides by mutableStateOf(MarkdownSlideParser.parse(initialMarkdown))
         private set
 
-    var currentSlideIndex by mutableStateOf(0)
+    override var currentSlideIndex by mutableStateOf(0)
         private set
 
     var currentTheme by mutableStateOf<PresentationTheme>(BuiltinThemes.SkaldoriaDark)
@@ -78,8 +85,8 @@ class PresentationState(
     var currentFilePath by mutableStateOf<String?>(null)
 
     // Delivery power tools
-    var isBlackoutActive by mutableStateOf(false)
-    var isWhiteoutActive by mutableStateOf(false)
+    override var isBlackoutActive by mutableStateOf(false)
+    override var isWhiteoutActive by mutableStateOf(false)
     var isGridOverviewOpen by mutableStateOf(false)
     var isRemoteServerRunning by mutableStateOf(false)
     // DED-5: the pairing dialog reads the tokenised URL straight from the server (SEC-2),
@@ -135,19 +142,54 @@ class PresentationState(
         }
     }
 
-    // Live Audience Interaction: Polls & Q&A
-    val audienceQuestions = mutableStateListOf<AudienceQuestion>()
-    /** SEC-5: `slideIndex -> (voterKey -> chosen option)`. Counts are derived, not stored. */
-    private val pollVotesMap = mutableStateMapOf<Int, Map<String, Int>>()
+    /**
+     * F-08: the room's contributions — questions and ballots — with their SEC-5 bounds.
+     * This is the only surface the companion server mutates; see [DeckControl].
+     */
+    override val audience = AudienceSession()
 
-    // Presentation Aside: Parking Lot & Unanswered Questions Follow-Up
-    val followUpQuestions = mutableStateListOf<FollowUpQuestion>()
+    /** Newest first. Kept so the presenter console's existing call sites are unchanged. */
+    val audienceQuestions: List<AudienceQuestion> get() = audience.questions
+
+    // ------------------------------------------------------------------
+    // Presentation Aside: Parking Lot — delegated to [ParkingLotStore] (F-12).
+    //
+    // Which buffer is authoritative (the flat document, or one slide file in project mode)
+    // is decided here; the store only knows "the source".
+    // ------------------------------------------------------------------
+
+    private val parkingLot = ParkingLotStore(
+        source = { if (isProjectMode && isPerSlideEditorMode) currentEditorText else markdownText },
+        onSourceChanged = { applyParkingLotSource(it) }
+    )
+
+    val followUpQuestions: List<FollowUpQuestion> get() = parkingLot.items
+
     var isParkingLotDrawerOpen by mutableStateOf(false)
 
-    private val annotations = mutableStateMapOf<Int, MutableList<AnnotationStroke>>()
+    /**
+     * Writes parking-lot-rewritten markdown back to whichever buffer owns it.
+     *
+     * In the flat case the list is re-read afterwards so it picks up the `id:` fields just
+     * written. Without that the in-memory items still look id-less, and the *next* rewrite
+     * cannot match the directives it has already stamped — which silently deleted them.
+     */
+    private fun applyParkingLotSource(rewritten: String) {
+        if (isProjectMode && isPerSlideEditorMode) {
+            updateEditorContent(rewritten)
+            return
+        }
+        markdownText = rewritten
+        slides = MarkdownSlideParser.parse(rewritten)
+        parkingLot.reconcile(rewritten)
+        scheduleDraftSave(rewritten)
+    }
+
+    /** F-11: per-slide pen strokes, with their own lifetime. */
+    private val annotationLayer = AnnotationLayer()
 
     val currentSlideStrokes: List<AnnotationStroke>
-        get() = annotations[currentSlideIndex] ?: emptyList()
+        get() = annotationLayer.strokesFor(currentSlideIndex)
 
     var editorFontSize by mutableStateOf(14)
 
@@ -182,117 +224,63 @@ class PresentationState(
             }
         }
 
-    // Find & Replace in Editor
-    var isFindOpen by mutableStateOf(false)
-    var isReplaceOpen by mutableStateOf(false)
-    var findQuery by mutableStateOf("")
-    var replaceQuery by mutableStateOf("")
-    var isFindCaseSensitive by mutableStateOf(false)
-    var isFindWholeWord by mutableStateOf(false)
-    var isFindRegex by mutableStateOf(false)
-    var currentMatchIndex by mutableStateOf(0)
+    // ------------------------------------------------------------------
+    // Find & Replace — delegated to [FindReplaceController] (F-11).
+    //
+    // The controller reaches the buffer through these two lambdas, so it needs to know
+    // nothing about project mode; deciding which buffer is being edited stays here.
+    // ------------------------------------------------------------------
 
-    /**
-     * PRF-3: cached. This was an uncached computed property running `Regex.findAll` over
-     * the whole document — read three times inside `replaceCurrent` alone and on every
-     * recomposition of the find bar, i.e. a full-document scan per frame while typing.
-     * `derivedStateOf` recomputes only when the text, the query, or a flag actually changes.
-     */
-    private val findMatchesState = derivedStateOf {
-        val query = findQuery
-        if (query.isEmpty()) return@derivedStateOf emptyList()
-        val text = currentEditorText
-        if (text.isEmpty()) return@derivedStateOf emptyList()
+    private val findReplace = FindReplaceController(
+        text = { currentEditorText },
+        onTextChanged = { updateEditorContent(it) }
+    )
 
-        try {
-            val options = if (isFindCaseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
-            val pattern = if (isFindRegex) {
-                Regex(query, options)
-            } else {
-                val literal = Regex.escape(query)
-                Regex(if (isFindWholeWord) "\\b$literal\\b" else literal, options)
-            }
-            pattern.findAll(text).map { it.range }.toList()
-        } catch (_: Exception) {
-            // An in-progress regex the user is still typing is expected to be invalid.
-            emptyList()
-        }
-    }
+    val isFindOpen: Boolean get() = findReplace.isOpen
+    val isReplaceOpen: Boolean get() = findReplace.isReplaceOpen
+
+    var findQuery: String
+        get() = findReplace.query
+        set(value) { findReplace.query = value }
+
+    var replaceQuery: String
+        get() = findReplace.replacement
+        set(value) { findReplace.replacement = value }
+
+    var isFindCaseSensitive: Boolean
+        get() = findReplace.isCaseSensitive
+        set(value) { findReplace.isCaseSensitive = value }
+
+    var isFindWholeWord: Boolean
+        get() = findReplace.isWholeWord
+        set(value) { findReplace.isWholeWord = value }
+
+    var isFindRegex: Boolean
+        get() = findReplace.isRegex
+        set(value) { findReplace.isRegex = value }
+
+    var currentMatchIndex: Int
+        get() = findReplace.currentMatchIndex
+        set(value) { findReplace.currentMatchIndex = value }
 
     val findMatches: List<IntRange>
-        get() = findMatchesState.value
+        get() = findReplace.matches
 
-    fun openFind(withReplace: Boolean = false) {
-        isFindOpen = true
-        if (withReplace) {
-            isReplaceOpen = true
-        }
-    }
+    fun openFind(withReplace: Boolean = false) = findReplace.open(withReplace)
 
-    fun closeFind() {
-        isFindOpen = false
-        isReplaceOpen = false
-    }
+    fun closeFind() = findReplace.close()
 
-    fun toggleFind(withReplace: Boolean = false) {
-        if (isFindOpen && (!withReplace || isReplaceOpen)) {
-            closeFind()
-        } else {
-            openFind(withReplace)
-        }
-    }
+    fun toggleReplaceRow() = findReplace.toggleReplaceRow()
 
-    fun findNext() {
-        val matches = findMatches
-        if (matches.isNotEmpty()) {
-            currentMatchIndex = (currentMatchIndex + 1) % matches.size
-        }
-    }
+    fun toggleFind(withReplace: Boolean = false) = findReplace.toggle(withReplace)
 
-    fun findPrevious() {
-        val matches = findMatches
-        if (matches.isNotEmpty()) {
-            currentMatchIndex = (currentMatchIndex - 1 + matches.size) % matches.size
-        }
-    }
+    fun findNext() = findReplace.findNext()
 
-    fun replaceCurrent() {
-        val matches = findMatches
-        if (matches.isEmpty()) return
-        val safeIndex = currentMatchIndex.coerceIn(0, matches.size - 1)
-        val matchRange = matches[safeIndex]
-        val text = currentEditorText
-        if (matchRange.first >= 0 && matchRange.last < text.length && matchRange.first <= matchRange.last) {
-            val newText = text.substring(0, matchRange.first) + replaceQuery + text.substring(matchRange.last + 1)
-            updateEditorContent(newText)
-            val updatedMatches = findMatches
-            if (updatedMatches.isNotEmpty()) {
-                currentMatchIndex = safeIndex.coerceIn(0, updatedMatches.size - 1)
-            } else {
-                currentMatchIndex = 0
-            }
-        }
-    }
+    fun findPrevious() = findReplace.findPrevious()
 
-    fun replaceAll() {
-        val matches = findMatches
-        if (matches.isEmpty()) return
-        val text = currentEditorText
-        val newText = try {
-            if (isFindRegex) {
-                val options = if (isFindCaseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
-                Regex(findQuery, options).replace(text, replaceQuery)
-            } else {
-                val patternString = if (isFindWholeWord) "\\b${Regex.escape(findQuery)}\\b" else Regex.escape(findQuery)
-                val options = if (isFindCaseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
-                Regex(patternString, options).replace(text, replaceQuery)
-            }
-        } catch (_: Exception) {
-            text
-        }
-        updateEditorContent(newText)
-        currentMatchIndex = 0
-    }
+    fun replaceCurrent() = findReplace.replaceCurrent()
+
+    fun replaceAll() = findReplace.replaceAll()
 
     // ------------------------------------------------------------------
     // Talk clock and pacing — delegated.
@@ -303,10 +291,10 @@ class PresentationState(
     // are now a facade over two tested units rather than the logic itself.
     // ------------------------------------------------------------------
 
-    val elapsedSeconds: Long
+    override val elapsedSeconds: Long
         get() = timer.elapsedSeconds
 
-    val isTimerRunning: Boolean
+    override val isTimerRunning: Boolean
         get() = timer.isRunning
 
     var targetTalkDurationMinutes by mutableStateOf<Int?>(null)
@@ -420,12 +408,31 @@ class PresentationState(
      * Wrapping the write makes it atomic and publishes it to Compose as a single change,
      * so readers never observe a half-applied mutation.
      */
-    fun <T> applyFromBackgroundThread(mutation: () -> T): T =
+    override fun <T> applyFromBackgroundThread(mutation: () -> T): T =
         Snapshot.withMutableSnapshot(mutation)
 
     /** Consistent point-in-time copy of the audience queue, safe to read off-thread. */
-    fun audienceQuestionsSnapshot(): List<AudienceQuestion> =
-        Snapshot.withMutableSnapshot { audienceQuestions.toList() }
+    fun audienceQuestionsSnapshot(): List<AudienceQuestion> = audience.snapshot()
+
+    // ------------------------------------------------------------------
+    // DeckControl (F-08) — the narrow port the companion server depends on.
+    // ------------------------------------------------------------------
+
+    override val totalSlides: Int
+        get() = slides.size
+
+    override val currentSlideTitle: String
+        get() = currentSlide?.title ?: "Untitled Slide"
+
+    override val currentSlideNotes: List<String>
+        get() = currentSlide?.notes ?: emptyList()
+
+    override val currentSlidePoll: SlideElement.Poll?
+        get() = currentSlide?.elements?.filterIsInstance<SlideElement.Poll>()?.firstOrNull()
+
+    override fun parkQuestion(question: String, author: String?) {
+        addFollowUpQuestion(question = question, slideIndex = currentSlideIndex, author = author)
+    }
 
     fun increaseEditorFontSize() {
         if (editorFontSize < 32) editorFontSize += 2
@@ -517,7 +524,7 @@ class PresentationState(
         slides = MarkdownSlideParser.parse(combined)
         currentSlideIndex = 0
         showWelcome = false
-        reconcileFollowUpQuestions(combined)
+        parkingLot.reconcile(combined)
         ConfigManager.addRecentProject(proj.rootDir, proj.name, slides.size)
     }
 
@@ -558,65 +565,8 @@ class PresentationState(
         if (currentSlideIndex >= slides.size) {
             currentSlideIndex = (slides.size - 1).coerceAtLeast(0)
         }
-        reconcileFollowUpQuestions(newMarkdown)
+        parkingLot.reconcile(newMarkdown)
         scheduleDraftSave(newMarkdown)
-    }
-
-    /**
-     * Syncs directive-sourced parking-lot items with the markdown, without resurrecting
-     * deleted ones.
-     *
-     * The previous rule was "if the list is empty, add everything the markdown declares".
-     * `updateMarkdown` runs on every keystroke, so deleting the last item emptied the list
-     * and the next character typed brought the whole set back — which is why delete looked
-     * like it did nothing. Matching is by [FollowUpQuestion.directiveKey] rather than `id`,
-     * since `id` is a fresh UUID on each parse.
-     *
-     * Manual items are never touched: they have no backing directive, so nothing here can
-     * add or remove them.
-     */
-    private fun reconcileFollowUpQuestions(markdown: String) {
-        val fromMarkdown = MarkdownSlideParser.extractFollowUpQuestions(markdown)
-
-        // The markdown is authoritative. That is safe *because* every mutation
-        // (add / answer / toggle / delete) writes through to the source first, so there is
-        // no in-memory state that the file does not already have. Adopting the file wholesale
-        // is what makes an edit to a question's wording show up as an edit rather than
-        // leaving the old text stranded in the list.
-        //
-        // Ids are preserved across the swap by the `id:` field, so list keys stay stable and
-        // the UI does not lose scroll position or selection.
-        val unchanged = followUpQuestions.size == fromMarkdown.size &&
-            followUpQuestions.zip(fromMarkdown).all { (a, b) -> a == b }
-        if (unchanged) return
-
-        followUpQuestions.clear()
-        followUpQuestions.addAll(fromMarkdown)
-    }
-
-    /**
-     * Writes the current parking-lot list back into the deck markdown.
-     *
-     * Without this the markdown stayed authoritative and one-way: a deleted question was
-     * still sitting in the file as a `<!-- parking-lot: … -->` comment, so it returned on
-     * the next load — the "not removed from the file itself" symptom.
-     */
-    private fun persistFollowUpQuestions() {
-        val source = if (isProjectMode && isPerSlideEditorMode) currentEditorText else markdownText
-        val rewritten = MarkdownSlideParser.rewriteFollowUpDirectives(source, followUpQuestions.toList())
-        if (rewritten == source) return
-
-        if (isProjectMode && isPerSlideEditorMode) {
-            updateEditorContent(rewritten)
-        } else {
-            markdownText = rewritten
-            slides = MarkdownSlideParser.parse(rewritten)
-            // Re-read so the list picks up the `id:` fields just written. Without this the
-            // in-memory items still look id-less, and the *next* rewrite cannot match the
-            // directives it has already stamped — which silently deleted them.
-            reconcileFollowUpQuestions(rewritten)
-            scheduleDraftSave(rewritten)
-        }
     }
 
     val hasNext: Boolean
@@ -625,7 +575,7 @@ class PresentationState(
     val hasPrev: Boolean
         get() = currentSlideIndex > 0
 
-    fun nextSlide() {
+    override fun nextSlide() {
         if (currentSlideIndex < slides.size - 1) {
             currentSlideIndex++
             isBlackoutActive = false
@@ -633,7 +583,7 @@ class PresentationState(
         }
     }
 
-    fun previousSlide() {
+    override fun previousSlide() {
         if (currentSlideIndex > 0) {
             currentSlideIndex--
             isBlackoutActive = false
@@ -676,7 +626,7 @@ class PresentationState(
         scheduleDraftSave(combined)
     }
 
-    fun goToSlide(index: Int) {
+    override fun goToSlide(index: Int) {
         if (index in slides.indices) {
             currentSlideIndex = index
             isBlackoutActive = false
@@ -685,25 +635,11 @@ class PresentationState(
         }
     }
 
-    fun addStroke(stroke: AnnotationStroke) {
-        val list = annotations.getOrPut(currentSlideIndex) { mutableListOf() }
-        list.add(stroke)
-    }
+    fun addStroke(stroke: AnnotationStroke) = annotationLayer.add(currentSlideIndex, stroke)
 
-    fun updateLastStroke(point: Offset) {
-        val list = annotations[currentSlideIndex]
-        if (!list.isNullOrEmpty()) {
-            val last = list.last()
-            list[list.size - 1] = last.copy(points = last.points + point)
-        }
-    }
+    fun updateLastStroke(point: Offset) = annotationLayer.extendLastStroke(currentSlideIndex, point)
 
-    fun undoStroke() {
-        val list = annotations[currentSlideIndex]
-        if (!list.isNullOrEmpty()) {
-            list.removeAt(list.size - 1)
-        }
-    }
+    fun undoStroke() = annotationLayer.undo(currentSlideIndex)
 
     fun toggleLaserPointer() {
         isLaserPointerActive = !isLaserPointerActive
@@ -715,13 +651,9 @@ class PresentationState(
         if (isPenDrawingActive) isLaserPointerActive = false
     }
 
-    fun clearAnnotations() {
-        annotations.remove(currentSlideIndex)
-    }
+    fun clearAnnotations() = annotationLayer.clear(currentSlideIndex)
 
-    fun clearAllAnnotations() {
-        annotations.clear()
-    }
+    fun clearAllAnnotations() = annotationLayer.clearAll()
 
     fun openFile() {
         // Routes through openPath so a manifest opens as a project rather than as its own
@@ -756,16 +688,16 @@ class PresentationState(
         com.skaldoria.export.FileManager.exportStandaloneHtmlDeck(this) { _ -> }
     }
 
-    fun toggleTimer() = timer.toggle()
+    override fun toggleTimer() = timer.toggle()
 
-    fun resetTimer() = timer.reset()
+    override fun resetTimer() = timer.reset()
 
-    fun toggleBlackout() {
+    override fun toggleBlackout() {
         isBlackoutActive = !isBlackoutActive
         if (isBlackoutActive) isWhiteoutActive = false
     }
 
-    fun toggleWhiteout() {
+    override fun toggleWhiteout() {
         isWhiteoutActive = !isWhiteoutActive
         if (isWhiteoutActive) isBlackoutActive = false
     }
@@ -794,71 +726,27 @@ class PresentationState(
         }
     }
 
-    // Live Poll Votes
-    /**
-     * SEC-5: records one ballot per voter rather than incrementing a counter.
-     *
-     * The old model stored `option -> count` and added 1 per request, so refreshing the
-     * audience page and voting again stacked votes indefinitely — the client-side
-     * `lastVotedSlide` guard was cosmetic. Keying by voter both prevents stuffing and
-     * lets someone change their mind, which a counter cannot express.
-     *
-     * @param voterKey stable per audience device. Null means a local in-app vote from the
-     *   speaker's own machine, which is always counted as a distinct ballot.
-     */
-    fun recordVote(slideIndex: Int, optionIndex: Int, voterKey: String? = null) {
-        val ballots = pollVotesMap[slideIndex].orEmpty().toMutableMap()
-        val key = voterKey ?: "local:${ballots.size}"
-        ballots[key] = optionIndex
-        pollVotesMap[slideIndex] = ballots
-    }
+    // ------------------------------------------------------------------
+    // Audience polls and Q&A — delegated to [AudienceSession] (F-08).
+    //
+    // These remain so the presenter console and the in-slide poll keep their call sites;
+    // the SEC-5 invariants now live with the data they constrain.
+    // ------------------------------------------------------------------
 
-    /** Tallies the current ballots into `optionIndex -> count`. */
-    fun getVotesForSlide(slideIndex: Int): Map<Int, Int> =
-        pollVotesMap[slideIndex].orEmpty().values.groupingBy { it }.eachCount()
+    fun recordVote(slideIndex: Int, optionIndex: Int, voterKey: String? = null) =
+        audience.recordVote(slideIndex, optionIndex, voterKey)
 
-    fun resetVotesForSlide(slideIndex: Int) {
-        pollVotesMap.remove(slideIndex)
-    }
+    fun getVotesForSlide(slideIndex: Int): Map<Int, Int> = audience.votesForSlide(slideIndex)
 
-    // Audience Q&A Stream
-    fun submitQuestion(author: String, text: String): AudienceQuestion {
-        val q = AudienceQuestion(
-            // COR-6: millisecond + 4-digit-random collides under the concurrent submissions
-            // this endpoint is explicitly built for; upvote/dismiss then hit the wrong item.
-            id = "q_${java.util.UUID.randomUUID()}",
-            author = author.ifBlank { "Anonymous" }.take(MAX_AUTHOR_LENGTH),
-            // SEC-5: bound the payload. Untrusted devices submit this, and it is re-sent to
-            // every other device on each poll.
-            text = text.trim().take(MAX_QUESTION_LENGTH)
-        )
-        audienceQuestions.add(0, q)
-        // SEC-5: the queue grew without limit. Oldest entries fall off the end.
-        while (audienceQuestions.size > MAX_AUDIENCE_QUESTIONS) {
-            audienceQuestions.removeAt(audienceQuestions.size - 1)
-        }
-        return q
-    }
+    fun resetVotesForSlide(slideIndex: Int) = audience.resetVotes(slideIndex)
 
-    fun upvoteQuestion(questionId: String) {
-        val idx = audienceQuestions.indexOfFirst { it.id == questionId }
-        if (idx != -1) {
-            val prev = audienceQuestions[idx]
-            audienceQuestions[idx] = prev.copy(upvotes = prev.upvotes + 1)
-        }
-    }
+    fun submitQuestion(author: String, text: String): AudienceQuestion = audience.submit(author, text)
 
-    fun markQuestionAnswered(questionId: String) {
-        val idx = audienceQuestions.indexOfFirst { it.id == questionId }
-        if (idx != -1) {
-            val prev = audienceQuestions[idx]
-            audienceQuestions[idx] = prev.copy(isAnswered = true)
-        }
-    }
+    fun upvoteQuestion(questionId: String) = audience.upvote(questionId)
 
-    fun dismissQuestion(questionId: String) {
-        audienceQuestions.removeAll { it.id == questionId }
-    }
+    fun markQuestionAnswered(questionId: String) = audience.markAnswered(questionId)
+
+    fun dismissQuestion(questionId: String) = audience.dismiss(questionId)
 
     // Presentation Aside: Parking Lot & Unanswered Questions Management
     fun toggleParkingLotDrawer() {
@@ -871,115 +759,30 @@ class PresentationState(
         author: String? = null,
         answerText: String = "",
         isAnswered: Boolean = false
-    ) {
-        if (question.isBlank()) return
-        val item = FollowUpQuestion(
-            question = question.trim(),
-            isAnswered = isAnswered,
-            answerText = answerText.trim(),
-            slideIndex = slideIndex,
-            author = author,
-            // The deck markdown is this app's only storage, so a question captured during a
-            // talk has to be written there or it is lost when the app closes. It is created
-            // markdown-backed with a persisted id, which also makes every later edit,
-            // answer, and delete take exactly the same path as an authored directive.
-            isFromMarkdown = true,
-            hasPersistedId = true
-        )
-        followUpQuestions.add(item)
-        appendFollowUpDirective(item)
-    }
+    ) = parkingLot.add(question, slideIndex, author, answerText, isAnswered)
+
+    fun toggleFollowUpAnswered(id: String) = parkingLot.toggleAnswered(id)
+
+    fun updateFollowUpAnswer(id: String, answer: String) = parkingLot.updateAnswer(id, answer)
+
+    fun deleteFollowUpQuestion(id: String) = parkingLot.delete(id)
 
     /**
-     * Appends a new `<!-- parking-lot: … -->` directive for [item] to the deck source.
-     *
-     * Appended at the end of the document rather than inside a slide section: a comment is
-     * invisible in the rendered deck, and appending avoids disturbing slide boundaries. The
-     * slide it refers to is carried by the `slide:N` field, not by position.
-     */
-    private fun appendFollowUpDirective(item: FollowUpQuestion) {
-        val directive = MarkdownSlideParser.directiveLineFor(item)
-
-        if (isProjectMode && isPerSlideEditorMode) {
-            val current = currentEditorText
-            updateEditorContent(current.trimEnd() + "\n\n" + directive + "\n")
-            return
-        }
-
-        val updated = markdownText.trimEnd() + "\n\n" + directive + "\n"
-        markdownText = updated
-        slides = MarkdownSlideParser.parse(updated)
-        scheduleDraftSave(updated)
-    }
-
-    fun toggleFollowUpAnswered(id: String) {
-        val idx = followUpQuestions.indexOfFirst { it.id == id }
-        if (idx != -1) {
-            val item = followUpQuestions[idx]
-            followUpQuestions[idx] = item.copy(isAnswered = !item.isAnswered)
-            persistFollowUpQuestions()
-        }
-    }
-
-    fun updateFollowUpAnswer(id: String, answer: String) {
-        val idx = followUpQuestions.indexOfFirst { it.id == id }
-        if (idx != -1) {
-            val item = followUpQuestions[idx]
-            followUpQuestions[idx] = item.copy(answerText = answer)
-            persistFollowUpQuestions()
-        }
-    }
-
-    /**
-     * Removes a parking-lot item, and — for directive-sourced items — the
-     * `<!-- parking-lot: … -->` comment that produced it.
-     *
-     * Dropping only the in-memory entry was the original defect: the directive survived, so
-     * the item came back on the next keystroke and on the next file load.
-     */
-    fun deleteFollowUpQuestion(id: String) {
-        val removed = followUpQuestions.firstOrNull { it.id == id } ?: return
-        followUpQuestions.removeAll { it.id == id }
-        if (removed.isFromMarkdown) {
-            persistFollowUpQuestions()
-        }
-    }
-
-    /**
-     * 1-Click deferral: Move an audience live Q&A question to the Presentation Parking Lot
-     * so the speaker can address it later without losing track.
+     * 1-click deferral: moves a live audience question into the parking lot so the speaker
+     * can address it later without losing track of it.
      */
     fun convertAudienceQuestionToParkingLot(questionId: String) {
-        val q = audienceQuestions.find { it.id == questionId } ?: return
-        addFollowUpQuestion(
-            question = q.text,
+        val question = audience.find(questionId) ?: return
+        parkingLot.add(
+            question = question.text,
             slideIndex = currentSlideIndex,
-            author = q.author,
-            answerText = "",
-            isAnswered = false
+            author = question.author
         )
-        // Mark audience question as answered/handled
-        markQuestionAnswered(questionId)
+        audience.markAnswered(questionId)
     }
 
-    /**
-     * Export all parking lot questions as Markdown checklist.
-     */
-    fun exportFollowUpMarkdownChecklist(): String {
-        if (followUpQuestions.isEmpty()) return "No follow-up action items."
-        val sb = StringBuilder()
-        sb.append("## Follow-Up Action Items & Parking Lot\n\n")
-        for (item in followUpQuestions) {
-            val box = if (item.isAnswered) "[x]" else "[ ]"
-            val slidePart = if (item.slideIndex != null) " (Slide ${item.slideIndex + 1})" else ""
-            val authorPart = if (!item.author.isNullOrBlank()) " [Asked by ${item.author}]" else ""
-            sb.append("- $box **${item.question}**$slidePart$authorPart\n")
-            if (item.answerText.isNotBlank()) {
-                sb.append("  - *Answer / Resolution:* ${item.answerText}\n")
-            }
-        }
-        return sb.toString()
-    }
+    /** The follow-up checklist as clean markdown, for the clipboard. */
+    fun exportFollowUpMarkdownChecklist(): String = parkingLot.exportChecklist()
 
     fun startPresenting(presenterMode: Boolean = false) {
         // Go through the same monotonic bookkeeping as toggleTimer (PRF-4); setting the
@@ -1191,133 +994,19 @@ class PresentationState(
         private const val DRAFT_SAVE_DEBOUNCE_MS = 750L
 
         /** SEC-5: bounds on audience-supplied content. */
-        const val MAX_AUDIENCE_QUESTIONS = 200
-        const val MAX_QUESTION_LENGTH = 500
-        const val MAX_AUTHOR_LENGTH = 60
+        /**
+         * SEC-5 bounds, owned by [AudienceSession]. Re-exported rather than re-declared —
+         * two copies of a limit is how a limit and its enforcement drift apart.
+         */
+        const val MAX_AUDIENCE_QUESTIONS = AudienceSession.MAX_QUESTIONS
+        const val MAX_QUESTION_LENGTH = AudienceSession.MAX_QUESTION_LENGTH
+        const val MAX_AUTHOR_LENGTH = AudienceSession.MAX_AUTHOR_LENGTH
 
-        val BLANK_STARTER_MARKDOWN = """
-# Your Presentation Title
-### A short, punchy subtitle
-
-<!-- note: Speaker notes for this slide go here. They only show in Presenter View. -->
-
----
-
-## First Topic
-
-- Your first key point
-- Your second key point
-- Add a code block, quote, table, or image on the next slides
-
----
-
-## Add Anything
-
-> Big quotes, `inline code`, **bold**, and images all work.
-
-![Optional caption](path/to/image.png)
-""".trimIndent()
-
-        val DEFAULT_SAMPLE_MARKDOWN = """
-# Next-Gen Multiplatform Systems
-### Building Resilient Native Apps with Kotlin & Compose
-Antigravity Tech Summit 2026
-
-<!-- note: Welcome the audience and explain the shift from heavy web wrappers to high-performance native engines. -->
-
----
-
-## The Cross-Platform Dilemma
-
-- **Heavy Browser Bundles**: Electron apps consuming hundreds of megabytes of RAM
-- **Inconsistent Rendering**: Web engine quirks across multiple platforms
-- **Slow Startup Latency**: JIT warmups and script parsing bottlenecks
-- **The Modern Solution**: Native Skia GPU-accelerated graphics with zero overhead
-
-<!-- note: Emphasize that Compose Multiplatform renders directly to Skia canvas at 120 FPS. -->
-
----
-
-## Distributed Pipeline Architecture
-### Real-Time Presentation Sync Engine
-
-```mermaid
-flowchart LR
-    Editor[Markdown Studio] -->|Compile AST| Engine[Skaldoria Core]
-    Engine -->|Direct 120 FPS| Deck[Fullscreen Projector]
-    Engine -->|WebSocket Sync| Mobile[Companion Remote]
-    Engine -->|Auto Pacing| Presenter[Speaker HUD]
-```
-
-<!-- note: Mermaid architecture diagrams render natively with interactive node visualization! -->
-
----
-
-## Algorithmic Pacing Formula
-### Speaker Rhythm Optimization
-
-$$ \Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{current} $$
-
-- **Pacing Delta**: Computes exact time offset relative to scheduled slide milestones
-- **Target Allocation**: Automatically balances talk time across all slides in the deck
-- **Live Visual Gauge**: Green (on track), Cyan (ahead), Amber (behind), Red (critical)
-
-<!-- note: Explain how the Pacing Ribbon in Presenter View keeps speakers strictly on schedule. -->
-
----
-
-## Clean Engine Architecture
-
-- Declarative unidirectional state management
-- Real-time CommonMark AST layout classifier
-- Zero-allocation slide render pipeline
-- Instant dual-monitor presenter sync
-
-```kotlin [3, 7-9]
-class PresentationEngine(val canvas: SkiaCanvas) {
-    val state = PresentationState()
-
-    fun renderFrame(slide: Slide) {
-        canvas.drawSlide(slide)
-    }
-}
-```
-
-<!-- note: Explain line-highlighting in code blocks using square brackets [3, 7-9]. -->
-
----
-
-<!-- layout: metric -->
-# 120 FPS
-### Consistent Native Frame Delivery
-
-<!-- note: Reiterate 120 FPS vs standard 30 FPS web sliders. -->
-
----
-
-<!-- layout: quote -->
-> "Simplicity is prerequisite for reliability."
-> -- Edsger W. Dijkstra
-
----
-
-<!-- layout: table -->
-## Performance Comparison
-
-| Metric | Skaldoria Studio | Web Electron Deck |
-|---|---|---|
-| Startup Time | 120 ms | 1850 ms |
-| Memory Footprint | 48 MB | 380 MB |
-| Frame Latency | 8.3 ms (120 FPS) | 33.3 ms (30 FPS) |
-| Offline Standalone | 100% Native | Requires Chromium |
-
-<!-- note: Highlight the 10x memory and startup speed improvement. -->
-
----
-
-# Empower Your Audience
-### Available Now on GitHub
-Get started at github.com/esgaltur/Skaldoria
-""".trimIndent()
+        /**
+         * F-11: the deck text itself lives in [SampleDecks]. Re-exported so the welcome
+         * screen and the existing tests keep their call sites.
+         */
+        val BLANK_STARTER_MARKDOWN = SampleDecks.BLANK_STARTER_MARKDOWN
+        val DEFAULT_SAMPLE_MARKDOWN = SampleDecks.DEFAULT_SAMPLE_MARKDOWN
     }
 }

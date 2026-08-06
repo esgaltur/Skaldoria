@@ -136,9 +136,13 @@ Write diagrams directly in a fenced block:
 
 ### 8. 📄 Standalone HTML & PDF Export
 
-- Export complete decks to single-file self-contained HTML presentations with embedded KaTeX, Mermaid JS, and
-  customizable themes.
-- One-click print-to-PDF ready.
+- Export a complete deck to a **single `.html` file** carrying your theme, all slide content and
+  print-ready page breaks.
+- One-click print-to-PDF ready — via headless Chrome/Edge when one is installed, otherwise by
+  opening the HTML and printing.
+- **Math and diagrams need a network connection to render.** KaTeX and Mermaid are loaded from a
+  CDN rather than inlined, so a deck exported for an offline room shows the raw formula and
+  diagram source. Everything else — text, code, tables, images, polls, theming — renders offline.
 
 ### 9. 🎨 10+ Intelligent Slide Layouts
 - Automatic heuristic classification detects:
@@ -192,7 +196,7 @@ cd skaldoria
 | <kbd>Ctrl</kbd> + <kbd>H</kbd> | Find & Replace in Slide Source Editor |
 | <kbd>Ctrl</kbd> + <kbd>O</kbd>                                  | Open Markdown File, Directory, or `.mdpres` Project                                                    |
 | <kbd>Ctrl</kbd> + <kbd>S</kbd>                                  | Save Current Slide / Project                                                                           |
-| <kbd>Ctrl</kbd> + <kbd>E</kbd>                                  | Export to Self-Contained HTML / PDF                                                                    |
+| <kbd>Ctrl</kbd> + <kbd>E</kbd>                                  | Export to Standalone HTML / PDF                                                                        |
 | <kbd>Ctrl</kbd> + <kbd>+</kbd> / <kbd>Ctrl</kbd> + <kbd>−</kbd> | Zoom Editor Font In / Out                                                                              |
 | <kbd>Ctrl</kbd> + <kbd>0</kbd>                                  | Reset Editor Font Size                                                                                 |
 | <kbd>→</kbd> / <kbd>Space</kbd> / <kbd>PageDown</kbd>           | Next Slide                                                                                             |

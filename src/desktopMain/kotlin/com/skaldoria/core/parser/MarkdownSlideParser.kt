@@ -14,14 +14,14 @@ import java.util.UUID
  */
 object MarkdownSlideParser {
 
-    private val HR_REGEX = Regex("""^(\*{3,}|-{3,}|_{3,})\s*$""")
-    private val HEADING_1_2_REGEX = Regex("""^(#{1,2})\s+(.+)$""")
-    private val CODE_FENCE_START = Regex("""^```([a-zA-Z0-9_-]*)(?:\s*\[([0-9,\-|]+)\])?\s*$""")
-    private val IMAGE_REGEX = Regex("""!\[(.*?)\]\((.*?)\)""")
-    private val NOTE_COMMENT_REGEX = Regex("""<!--\s*(?:note|speaker):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
-    private val NOTE_QUOTE_REGEX = Regex("""^>\s*note:\s*(.+)$""", RegexOption.IGNORE_CASE)
-    private val DIRECTIVE_COMMENT_REGEX = Regex("""<!--\s*(layout|bg|background|transition|poll|vote):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
-    private val DIRECTIVE_LINE_REGEX = Regex("""^(layout|bg|background|transition|poll|vote):\s*(.+)$""", RegexOption.IGNORE_CASE)
+    internal val HR_REGEX = Regex("""^(\*{3,}|-{3,}|_{3,})\s*$""")
+    internal val HEADING_1_2_REGEX = Regex("""^(#{1,2})\s+(.+)$""")
+    internal val CODE_FENCE_START = Regex("""^```([a-zA-Z0-9_-]*)(?:\s*\[([0-9,\-|]+)\])?\s*$""")
+    internal val IMAGE_REGEX = Regex("""!\[(.*?)\]\((.*?)\)""")
+    internal val NOTE_COMMENT_REGEX = Regex("""<!--\s*(?:note|speaker):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
+    internal val NOTE_QUOTE_REGEX = Regex("""^>\s*note:\s*(.+)$""", RegexOption.IGNORE_CASE)
+    internal val DIRECTIVE_COMMENT_REGEX = Regex("""<!--\s*(layout|bg|background|transition|poll|vote):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
+    internal val DIRECTIVE_LINE_REGEX = Regex("""^(layout|bg|background|transition|poll|vote):\s*(.+)$""", RegexOption.IGNORE_CASE)
 
     /**
      * A big-metric value: a signed number, a percentage, an `x` multiplier, a currency
@@ -30,7 +30,7 @@ object MarkdownSlideParser {
      * COR-4: a bare integer is deliberately *not* enough. Requiring a unit is what stops
      * ordinary prose beginning with a year or a count from being promoted to a KPI slide.
      */
-    private val METRIC_REGEX = Regex(
+    internal val METRIC_REGEX = Regex(
         """^([+\-~]\d+(?:[.,]\d+)?[%xX]?|\d+(?:[.,]\d+)?\s*[%]|\d+(?:[.,]\d+)?\s*[xX]|\d+(?:[.,]\d+)?\s*[MBKmbk]\b|[$€£]\s?\d+(?:[.,]\d+)?\s*[MBKmbk]?)\s+(.{3,30})$"""
     )
 
@@ -116,367 +116,49 @@ object MarkdownSlideParser {
         }
     }
 
+    /**
+     * Parses one slide section by running each line through [BLOCK_RULES].
+     *
+     * F-17: this was a 364-line function holding twelve mutable locals, five nested closures
+     * and a nine-branch `if … continue` chain whose *ordering* was the specification but was
+     * nowhere stated. Every branch also opened with two to four `flushX()` calls, and missing
+     * one silently dropped an element.
+     *
+     * Now: the ordering is [BLOCK_RULES], the accumulating state is [SectionContext], and the
+     * flush ritual happens **once, here**, driven by each rule's own declaration of whether
+     * it closes open blocks.
+     */
     private fun parseSlideSection(
         index: Int,
         lines: List<String>,
         isFirst: Boolean,
         sourceRange: IntRange = IntRange.EMPTY
     ): Slide {
-        var title = ""
-        var subtitle: String? = null
-        val elements = mutableListOf<SlideElement>()
-        val notes = mutableListOf<String>()
-        val directives = SectionDirectives()
+        val context = SectionContext()
 
-        var currentListItems = mutableListOf<String>()
-        var inCodeBlock = false
-        var currentCodeLang = "kotlin"
-        var currentHighlightedLines = emptySet<Int>()
-        var currentCodeLines = mutableListOf<String>()
-        var inMathBlock = false
-        var currentMathLines = mutableListOf<String>()
-        var currentQuoteLines = mutableListOf<String>()
-        var currentTableLines = mutableListOf<String>()
-
-        fun flushMath() {
-            if (currentMathLines.isNotEmpty()) {
-                val fullFormula = currentMathLines.joinToString("\n").trim()
-                if (fullFormula.isNotEmpty()) {
-                    elements.add(SlideElement.MathFormula(formula = fullFormula, isBlock = true))
-                }
-                currentMathLines = mutableListOf()
-                inMathBlock = false
-            }
+        for (raw in lines) {
+            val line = raw.trim()
+            val rule = BLOCK_RULES.firstOrNull { it.matches(line, context) } ?: continue
+            if (rule.flushesPendingBlocks) context.flushPending()
+            rule.consume(line, raw, context)
         }
 
-        fun flushList() {
-            if (currentListItems.isNotEmpty()) {
-                elements.add(SlideElement.BulletList(currentListItems.toList()))
-                currentListItems = mutableListOf()
-            }
-        }
+        context.flushAll()
 
-        fun flushQuote() {
-            if (currentQuoteLines.isNotEmpty()) {
-                val fullQuote = currentQuoteLines.joinToString("\n")
-                val parts = fullQuote.split(Regex("""\n\s*--?\s*"""))
-                if (parts.size >= 2) {
-                    elements.add(SlideElement.Quote(parts[0].trim(), parts[1].trim()))
-                } else {
-                    elements.add(SlideElement.Quote(fullQuote.trim()))
-                }
-                currentQuoteLines = mutableListOf()
-            }
-        }
-
-        fun flushTable() {
-            if (currentTableLines.size >= 2) {
-                val splitCells = { raw: String ->
-                    val clean = raw.trim().removeSurrounding("|", "|")
-                    clean.split("|").map { it.trim() }
-                }
-                val rawHeaders = splitCells(currentTableLines[0])
-                val rows = mutableListOf<List<String>>()
-                for (i in 1 until currentTableLines.size) {
-                    val rowLine = currentTableLines[i].trim()
-                    if (rowLine.replace(Regex("[|:\\-\\s]"), "").isEmpty()) {
-                        continue
-                    }
-                    rows.add(splitCells(rowLine))
-                }
-                if (rawHeaders.isNotEmpty()) {
-                    elements.add(SlideElement.Table(headers = rawHeaders, rows = rows))
-                }
-                currentTableLines = mutableListOf()
-            } else if (currentTableLines.isNotEmpty()) {
-                for (l in currentTableLines) {
-                    elements.add(SlideElement.Text(l))
-                }
-                currentTableLines = mutableListOf()
-            }
-        }
-
-        fun flushCode() {
-            if (currentCodeLines.isNotEmpty() || inCodeBlock) {
-                val fullCode = currentCodeLines.joinToString("\n")
-                val lang = currentCodeLang.lowercase().trim()
-
-                when (lang) {
-                    "mermaid", "diagram", "flowchart", "sequence", "graph" -> {
-                        elements.add(
-                            SlideElement.MermaidDiagram(
-                                code = fullCode,
-                                diagramType = if (lang.isNotBlank()) lang else "flowchart"
-                            )
-                        )
-                    }
-                    "math", "latex", "katex", "tex", "equation" -> {
-                        elements.add(
-                            SlideElement.MathFormula(
-                                formula = fullCode,
-                                isBlock = true
-                            )
-                        )
-                    }
-                    else -> {
-                        elements.add(
-                            SlideElement.CodeBlock(
-                                code = fullCode,
-                                language = currentCodeLang.ifBlank { "kotlin" },
-                                highlightedLines = currentHighlightedLines
-                            )
-                        )
-                    }
-                }
-                currentCodeLines = mutableListOf()
-                inCodeBlock = false
-            }
-        }
-
-        for (line in lines) {
-            val trimmed = line.trim()
-
-            // 1. Directives, in either spelling:
-            //      <!-- layout: hero -->   (anywhere in the section)
-            //      layout: hero            (YAML-style, before the title only)
-            //
-            // F-15: the two spellings had a copy-pasted body each. The line form stays
-            // restricted to the pre-title region so ordinary prose such as
-            // "background: dark blue" cannot be swallowed as configuration.
-            val directiveMatch = DIRECTIVE_COMMENT_REGEX.find(trimmed)
-                ?: if (title.isEmpty()) DIRECTIVE_LINE_REGEX.find(trimmed) else null
-
-            if (directiveMatch != null) {
-                val poll = applyDirective(
-                    key = directiveMatch.groupValues[1].lowercase(),
-                    value = directiveMatch.groupValues[2].trim(),
-                    directives = directives,
-                    // A poll adopts the slide title once there is one; the line form is only
-                    // reachable before the title, so it always takes the generic label.
-                    pollQuestion = title.ifEmpty { "Audience Poll" }
-                )
-                if (poll != null) elements.add(poll)
-                continue
-            }
-
-            // 1c. Check for Speaker Notes
-            val noteCommentMatch = NOTE_COMMENT_REGEX.find(trimmed)
-            if (noteCommentMatch != null) {
-                notes.add(noteCommentMatch.groupValues[1])
-                continue
-            }
-
-            val noteQuoteMatch = NOTE_QUOTE_REGEX.find(trimmed)
-            if (noteQuoteMatch != null) {
-                notes.add(noteQuoteMatch.groupValues[1])
-                continue
-            }
-
-            // 2. Code Block
-            if (trimmed.startsWith("```")) {
-                if (inCodeBlock) {
-                    flushCode()
-                } else {
-                    flushList()
-                    flushQuote()
-                    flushTable()
-                    flushMath()
-                    inCodeBlock = true
-                    val fenceMatch = CODE_FENCE_START.find(trimmed)
-                    currentCodeLang = fenceMatch?.groupValues?.getOrNull(1) ?: ""
-                    val lineHighlightsStr = fenceMatch?.groupValues?.getOrNull(2)
-                    currentHighlightedLines = parseLineHighlights(lineHighlightsStr)
-                    currentCodeLines = mutableListOf()
-                }
-                continue
-            }
-
-            if (inCodeBlock) {
-                currentCodeLines.add(line)
-                continue
-            }
-
-            // 2b. Math Formula Block ($$)
-            if (inMathBlock) {
-                if (trimmed == "$$" || (trimmed.endsWith("$$") && !trimmed.startsWith("$$"))) {
-                    val content = trimmed.removeSuffix("$$").trim()
-                    if (content.isNotEmpty()) {
-                        currentMathLines.add(content)
-                    }
-                    flushMath()
-                } else {
-                    currentMathLines.add(line)
-                }
-                continue
-            }
-
-            if (trimmed.startsWith("$$")) {
-                flushList()
-                flushQuote()
-                flushTable()
-                if (trimmed.endsWith("$$") && trimmed.length > 2) {
-                    val formula = trimmed.removeSurrounding("$$").trim()
-                    if (formula.isNotEmpty()) {
-                        elements.add(SlideElement.MathFormula(formula = formula, isBlock = true))
-                    }
-                } else {
-                    inMathBlock = true
-                    currentMathLines = mutableListOf()
-                    val rest = trimmed.removePrefix("$$").trim()
-                    if (rest.isNotEmpty()) {
-                        currentMathLines.add(rest)
-                    }
-                }
-                continue
-            }
-
-            // 3. Markdown Tables (lines containing pipes)
-            val isTableLine = (trimmed.startsWith("|") && trimmed.endsWith("|")) || (trimmed.contains("|") && trimmed.contains("-|-"))
-            if (isTableLine) {
-                flushList()
-                flushQuote()
-                currentTableLines.add(trimmed)
-                continue
-            } else {
-                flushTable()
-            }
-
-            // 4. Headings
-            val headingMatch = HEADING_1_2_REGEX.find(trimmed)
-            if (headingMatch != null) {
-                flushList()
-                flushQuote()
-                flushTable()
-                val headingText = headingMatch.groupValues[2].trim()
-                if (title.isEmpty()) {
-                    title = headingText
-                } else {
-                    // COR-5: a second `#`/`##` in one section (possible when the split
-                    // heuristic declines to split) used to fall through to the paragraph
-                    // branch and render with its literal `##` markers still attached.
-                    elements.add(SlideElement.Text(headingText, isLead = true))
-                }
-                continue
-            }
-
-            val h3Match = Regex("""^###\s+(.+)$""").find(trimmed)
-            if (h3Match != null) {
-                if (title.isEmpty()) {
-                    title = h3Match.groupValues[1].trim()
-                } else if (subtitle == null) {
-                    subtitle = h3Match.groupValues[1].trim()
-                } else {
-                    flushList()
-                    flushQuote()
-                    flushTable()
-                    elements.add(SlideElement.Text(h3Match.groupValues[1].trim(), isLead = true))
-                }
-                continue
-            }
-
-            // 5. Bullet lists
-            val listMatch = Regex("""^[-*+]\s+(.+)$""").find(trimmed)
-                ?: Regex("""^\d+\.\s+(.+)$""").find(trimmed)
-            if (listMatch != null) {
-                flushQuote()
-                flushTable()
-                currentListItems.add(listMatch.groupValues[1].trim())
-                continue
-            } else {
-                flushList()
-            }
-
-            // 6. Block quotes
-            if (trimmed.startsWith(">")) {
-                flushTable()
-                val quoteText = trimmed.removePrefix(">").trim()
-                currentQuoteLines.add(quoteText)
-                continue
-            } else {
-                flushQuote()
-            }
-
-            // 7. Standalone Image
-            val imageMatch = IMAGE_REGEX.find(trimmed)
-            if (imageMatch != null) {
-                flushTable()
-                val alt = imageMatch.groupValues[1]
-                val url = imageMatch.groupValues[2]
-                elements.add(SlideElement.Image(url = url, altText = alt))
-                continue
-            }
-
-            // 8. Standalone Big Metric (e.g. "99.99% Uptime" or "+140% Growth")
-            //
-            // COR-4: the value must carry a unit — a percent sign, a currency prefix, a
-            // magnitude suffix, an explicit sign, or an `x` multiplier. Without that,
-            // any paragraph opening with a number was captured, so an ordinary line like
-            // "2024 Roadmap Overview" rendered as a full-slide KPI.
-            val metricMatch = METRIC_REGEX.find(trimmed)
-            if (metricMatch != null && elements.isEmpty()) {
-                flushTable()
-                elements.add(SlideElement.Metric(metricMatch.groupValues[1], metricMatch.groupValues[2]))
-                continue
-            }
-
-            // 8b. Any remaining HTML comment is metadata, not content.
-            //
-            // Unrecognised comments used to fall through to the paragraph branch and render
-            // as literal `<!-- ... -->` text on the slide. That was already wrong for notes
-            // and parking-lot directives, and it becomes acute now that captured questions
-            // are written back into the deck — every one would show up on a slide.
-            if (trimmed.startsWith("<!--") && trimmed.endsWith("-->")) {
-                continue
-            }
-
-            // 9. Regular text paragraphs
-            if (trimmed.isNotBlank()) {
-                flushTable()
-                if (title.isEmpty()) {
-                    title = trimmed
-                } else {
-                    elements.add(SlideElement.Text(trimmed))
-                }
-            }
-        }
-
-        // Flush any pending elements
-        flushList()
-        flushQuote()
-        flushTable()
-        flushCode()
-        flushMath()
-
-        if (title.isEmpty()) {
-            title = if (isFirst) "Presentation Title" else "Slide ${index + 1}"
-        }
-
-        val layout = directives.layout ?: SmartLayoutClassifier.classify(title, elements, isFirst)
+        val title = context.title.ifEmpty { if (isFirst) "Presentation Title" else "Slide ${index + 1}" }
 
         return Slide(
             index = index,
             title = title,
-            subtitle = subtitle,
-            layoutType = layout,
-            elements = elements,
-            notes = notes,
-            customBackground = directives.background,
-            customTransition = directives.transition,
+            subtitle = context.subtitle,
+            layoutType = context.directives.layout
+                ?: SmartLayoutClassifier.classify(title, context.elements, isFirst),
+            elements = context.elements,
+            notes = context.notes,
+            customBackground = context.directives.background,
+            customTransition = context.directives.transition,
             sourceLineRange = sourceRange
         )
-    }
-
-    /**
-     * The directives one slide section declares.
-     *
-     * F-16: replaces the three setter lambdas [applyDirective] used to take. Those existed
-     * only because its targets were locals of a 364-line function — a smell that disappears
-     * as soon as the state is an object rather than a closure's captured variables.
-     */
-    private class SectionDirectives {
-        var layout: SlideLayoutType? = null
-        var background: String? = null
-        var transition: SlideTransition? = null
     }
 
     /**
@@ -500,7 +182,7 @@ object MarkdownSlideParser {
      *   call sites (HTML comment and bare line) sharing one implementation; they previously
      *   held identical seven-line copies that could drift apart.
      */
-    private fun applyDirective(
+    internal fun applyDirective(
         key: String,
         value: String,
         directives: SectionDirectives,
@@ -545,7 +227,7 @@ object MarkdownSlideParser {
         return null
     }
 
-    private fun parseLineHighlights(str: String?): Set<Int> {
+    internal fun parseLineHighlights(str: String?): Set<Int> {
         if (str.isNullOrBlank()) return emptySet()
         val result = mutableSetOf<Int>()
         for (part in str.split(Regex("[,|]"))) {
