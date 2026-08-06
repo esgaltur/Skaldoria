@@ -124,7 +124,9 @@ There is now a `SequenceStep.SectionDivider`, drawn as a dashed rule across the 
 "where do I land" semantics (`goTo` refuses an out-of-range index; `moveTo` clamps, because
 structural edits compute the landing index from a deck that has since been reparsed).
 
-`DeckDocument` is **not** done, and is the single remaining item.
+`DeckDocument` is **not** done. `ProjectSlideMap` is the first piece to land: COR-3's derived
+slide-to-file mapping, lifted out as pure functions and unit-tested, and adopted by
+`PresentationState`. It could move ahead of the rest because it touches no mutable state.
 
 Measured, not guessed: **122 of `PresentationState`'s 1094 lines touch the document cluster**
 (`markdownText`, `slides`, `activeProject`, `isPerSlideEditorMode`, the navigator, autosave)
