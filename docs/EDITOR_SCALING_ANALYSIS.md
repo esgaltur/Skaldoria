@@ -106,17 +106,42 @@ the single largest remaining item in the codebase's performance story.
 
 ## Bottleneck 2 — `extractFollowUpQuestions` (24%)
 
-A second full-document scan, run from `ParkingLotStore.reconcile` on every deck change, looking
-for `<!-- parking-lot: … -->` comments.
+A second full-document scan. The call path is confirmed: `PresentationState.kt:56-58` passes an
+`onChanged` callback into `DeckDocument` that calls `parkingLot.reconcile(combined)`, and
+`ParkingLotStore.kt:45-46` calls `extractFollowUpQuestions` unconditionally. Every mutation pays
+it.
 
-This one is different in kind from the other two: **it is almost entirely avoidable waste.** It
-runs at full cost on documents that contain no parking-lot directive at all — which is the
-overwhelmingly common case, including every deck that has never used the feature. A single
-`indexOf("parking-lot:")` pre-scan over the raw string would short-circuit it, and `indexOf` on a
-250 KB string is roughly two orders of magnitude cheaper than the current scan.
+This one is different in kind from the other two: **much of it is avoidable waste**, because most
+documents contain no follow-up items at all. But the short-circuit is not as simple as it first
+appears, and getting it wrong silently drops parking-lot items.
 
-This is already noted as known-and-unfixed in `PERFORMANCE_BASELINE.md`. The scaling data
-promotes it: at 24% of every keystroke it is the **best payoff-to-risk item on the list**.
+**`extractFollowUpQuestions` has two independent paths** (`MarkdownSlideParser.kt:299-351`):
+
+1. **Directive comments** — `<!-- parking-lot: … -->` and its `parking_lot` / `followup` /
+   `follow-up` aliases, via `PARKING_LOT_COMMENT_REGEX`.
+2. **Markdown task lists** — `CHECKBOX_LINE_REGEX` (`^-\s*\[([ xX])\]\s*(.+)$`) on any line that
+   also contains `?`, `Answer:`, or an em dash.
+
+The source comment labels path 2 *"task list lines in follow-up sections"*, but **it is not scoped
+to any section** — it runs against every line in the document. Two consequences:
+
+- A naive `indexOf("parking-lot:")` guard would **break path 2 entirely**, silently dropping every
+  checkbox-derived follow-up item. This was the first form of the recommendation below and it was
+  wrong.
+- Independently of performance: any task-list line anywhere in a deck that happens to contain a
+  question mark — `- [ ] Did we ship?` on an ordinary slide — is harvested as a parking-lot item.
+  Whether that is intended is a **correctness question outside the scope of this document**, but
+  it is worth resolving before anyone adds a guard, because the guard's predicate depends on the
+  answer.
+
+A sound guard must cover both paths: `<!--` for path 1, and a `-` followed by optional whitespace
+and `[` for path 2. Both are substring scans with no regex and no allocation, and both are orders
+of magnitude cheaper than the current per-line work. Separately, the function calls
+`markdown.lines()` and `trim()` per line — the same allocation pattern measured at 10% of the
+highlighter, and likely a larger share here since the surrounding work is lighter.
+
+`PERFORMANCE_BASELINE.md` already lists this as known-and-unfixed. The scaling data promotes it:
+at 24% of every keystroke it is the largest win available without an ADR.
 
 ---
 
@@ -237,9 +262,12 @@ object-level LRU), because `EditorWorkspace.kt:661` creates a new instance every
 **not** attempt this by remembering `TextFieldValue` — EDT-1 documents why that breaks the caret.
 
 ### 2. Pre-scan guard on `extractFollowUpQuestions`
-**Payoff:** removes 24% of every keystroke on documents with no parking-lot directive, which is
-most of them. **Risk:** low — one `indexOf` guard, with a test asserting reconcile still fires
-when the marker is present.
+**Payoff:** removes most of 24% of every keystroke on documents with no follow-up items.
+**Risk:** low-to-medium — higher than it looks. The guard must cover **both** extraction paths
+(`<!--` for directives, `-` … `[` for task lists); a `parking-lot:`-only guard silently drops
+checkbox-derived items. Land it behind the existing `ParkingLotDeleteTest` and `CompanionDeckTest`
+coverage, and resolve the path-2 scoping question in Bottleneck 2 first — if path 2 is meant to be
+section-scoped, the guard and the fix are the same change.
 
 ### 3. Incremental parse
 **Payoff:** the remaining 56%, and the only change that alters the *shape* of the curve rather

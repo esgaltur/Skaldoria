@@ -397,7 +397,7 @@ object MermaidParser {
     fun parse(code: String): ParsedDiagram {
         val lines = code.lines().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("%%") }
         if (lines.isEmpty()) {
-            return ParsedDiagram("flowchart", true, emptyList(), emptyList())
+            return ParsedDiagram("flowchart", FlowDirection.DEFAULT, emptyList(), emptyList())
         }
 
         val firstLine = lines.first().lowercase()
