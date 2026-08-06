@@ -147,6 +147,9 @@ fun FullscreenDeck(
                 when (KeyBindings.resolve(event, CommandScope.DECK)) {
                     AppCommands.NEXT_SLIDE -> state.next()
                     AppCommands.PREVIOUS_SLIDE -> state.prev()
+                    AppCommands.FIRST_SLIDE -> state.goToSlide(0)
+                    AppCommands.LAST_SLIDE -> state.goToSlide((state.slides.size - 1).coerceAtLeast(0))
+                    AppCommands.CYCLE_THEME -> state.cycleTheme()
                     AppCommands.BLACKOUT -> state.toggleBlackout()
                     AppCommands.WHITEOUT -> state.toggleWhiteout()
                     AppCommands.GRID_OVERVIEW -> state.toggleGridOverview()

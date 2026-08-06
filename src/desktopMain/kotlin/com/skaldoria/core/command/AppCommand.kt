@@ -87,8 +87,13 @@ object AppCommands {
     )
     val PREVIOUS_SLIDE = AppCommand(
         id = "deck.previous", label = "Previous Slide", scopes = setOf(CommandScope.DECK),
-        shortcuts = listOf(Shortcut("DirectionLeft"), Shortcut("PageUp"), Shortcut("DirectionUp"))
+        shortcuts = listOf(
+            Shortcut("DirectionLeft"), Shortcut("PageUp"), Shortcut("DirectionUp"), Shortcut("Backspace")
+        )
     )
+    val FIRST_SLIDE = AppCommand("deck.first", "Jump to First Slide", setOf(CommandScope.DECK), listOf(Shortcut("MoveHome")))
+    val LAST_SLIDE = AppCommand("deck.last", "Jump to Last Slide", setOf(CommandScope.DECK), listOf(Shortcut("MoveEnd")))
+    val CYCLE_THEME = AppCommand("deck.theme", "Cycle Color Themes", setOf(CommandScope.DECK), listOf(Shortcut("T")))
     val BLACKOUT = AppCommand("deck.blackout", "Blackout Screen", setOf(CommandScope.DECK), listOf(Shortcut("B")))
     val WHITEOUT = AppCommand("deck.whiteout", "Whiteout Screen", setOf(CommandScope.DECK), listOf(Shortcut("W")))
     val GRID_OVERVIEW = AppCommand("deck.grid", "Grid Overview", setOf(CommandScope.DECK), listOf(Shortcut("G")))
@@ -127,7 +132,8 @@ object AppCommands {
     val PRESENT = AppCommand("studio.present", "Launch Fullscreen Presentation", setOf(CommandScope.STUDIO), listOf(Shortcut("F5")))
 
     val ALL: List<AppCommand> = listOf(
-        NEXT_SLIDE, PREVIOUS_SLIDE, BLACKOUT, WHITEOUT, GRID_OVERVIEW,
+        NEXT_SLIDE, PREVIOUS_SLIDE, FIRST_SLIDE, LAST_SLIDE, CYCLE_THEME,
+        BLACKOUT, WHITEOUT, GRID_OVERVIEW,
         LASER_POINTER, PEN_DRAWING, CLEAR_ANNOTATIONS, UNDO_STROKE, EXIT_FULLSCREEN,
         OPEN, SAVE_AS, SAVE, EXPORT, FIND, REPLACE,
         FONT_INCREASE, FONT_DECREASE, FONT_RESET, COMMAND_PALETTE, PRESENT

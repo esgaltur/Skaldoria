@@ -82,8 +82,20 @@ reading the code rather than the README, and all small once found.
 | Was | Symptom | Closed by |
 | :--- | :--- | :--- |
 | **DEL-01** transitions | `SlideTransition` had four values, the parser accepted `transition: zoom`, `DeckProject` persisted it and the TopBar offered a picker — and `FullscreenDeck` hardcoded `fadeIn() togetherWith fadeOut()`. Picking "Zoom Scale" gave you a fade. | `TransitionResolver` + an exhaustive `transitionSpecFor` |
-| **AUT-01** shortcuts | The README documented `Ctrl+E`, `T`, `Home`/`End`, `Backspace`. None was bound — there was no `Key.E`, `Key.T`, `Key.MoveHome`, `Key.MoveEnd` or `Key.Backspace` anywhere in `src/desktopMain`. | All five bound |
+| **AUT-01** shortcuts | The README documented `Ctrl+E`, `T`, `Home`/`End`, `Backspace`. None was bound — there was no `Key.E`, `Key.T`, `Key.MoveHome`, `Key.MoveEnd` or `Key.Backspace` anywhere in `src/desktopMain`. | All five bound, now guarded by `DocumentedShortcutsTest` |
 | **AUT-03** find reveal | `findNext()` advanced an index; nothing scrolled to the match. The buttons looked dead. **Still open** — it needs the caret foundation (`AUT-05`). | ADR-004 Phase 3 |
+
+### It reopened once, which is the point
+
+Converting both key handlers to the `AppCommands` registry enumerated the commands by *reading*
+the old `when` blocks, and dropped four of these five again — `T`, `Home`, `End`, `Backspace`.
+The registry's own test stayed green throughout, because it asserts the table is
+*self-consistent* (no duplicate chords, no shadowing), which remained true while four
+documented shortcuts did nothing.
+
+`DocumentedShortcutsTest` now checks the registry against the **README table** — the
+user-visible contract — rather than against itself. It was verified to fail on the broken code
+before being kept.
 
 ### How this class of defect survives
 
