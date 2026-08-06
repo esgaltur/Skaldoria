@@ -13,7 +13,10 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.skaldoria.core.command.AppCommands
+import com.skaldoria.core.command.CommandScope
 import com.skaldoria.state.PresentationState
+import com.skaldoria.ui.KeyBindings
 import com.skaldoria.ui.components.ProvideDeckBaseDir
 import com.skaldoria.ui.screens.EditorWorkspace
 import com.skaldoria.ui.screens.FullscreenDeck
@@ -101,83 +104,29 @@ fun main() = application {
         title = "Skaldoria Studio — ${BuildInfo.DISPLAY_VERSION}",
         state = mainWindowState,
         onKeyEvent = { event ->
-            if (event.type == androidx.compose.ui.input.key.KeyEventType.KeyDown) {
-                val isCtrl = event.isCtrlPressed || event.isMetaPressed
-                when {
-                    isCtrl && (event.key == androidx.compose.ui.input.key.Key.Equals || event.key == androidx.compose.ui.input.key.Key.NumPadAdd || event.key == androidx.compose.ui.input.key.Key.Plus) -> {
-                        state.increaseEditorFontSize()
-                        true
-                    }
-                    isCtrl && (event.key == androidx.compose.ui.input.key.Key.Minus || event.key == androidx.compose.ui.input.key.Key.NumPadSubtract) -> {
-                        state.decreaseEditorFontSize()
-                        true
-                    }
-                    isCtrl && (event.key == androidx.compose.ui.input.key.Key.Zero || event.key == androidx.compose.ui.input.key.Key.NumPad0) -> {
-                        state.resetEditorFontSize()
-                        true
-                    }
-                    isCtrl && event.key == androidx.compose.ui.input.key.Key.O -> {
-                        state.openFile()
-                        true
-                    }
-                    // AUT-01: documented in the README shortcut table since before 1.2.0 and
-                    // never bound — there was no `Key.E` anywhere in the source.
-                    isCtrl && event.key == androidx.compose.ui.input.key.Key.E -> {
-                        com.skaldoria.export.DeckExporter.exportPdf(state) {}
-                        true
-                    }
-                    // AUT-04: undo/redo for structural slide edits. Shift+Ctrl+Z and Ctrl+Y
-                    // are both accepted because both conventions are in wide use.
-                    isCtrl && event.isShiftPressed && event.key == androidx.compose.ui.input.key.Key.Z -> {
-                        state.redo()
-                        true
-                    }
-                    isCtrl && event.key == androidx.compose.ui.input.key.Key.Z -> {
-                        state.undo()
-                        true
-                    }
-                    isCtrl && event.key == androidx.compose.ui.input.key.Key.Y -> {
-                        state.redo()
-                        true
-                    }
-                    // AUT-01: `T` cycles themes, but ONLY in the presentation window (see
-                    // FullscreenDeck). Binding a bare letter here would race the markdown
-                    // editor for the keystroke, and a shortcut that eats a character while
-                    // you type is far worse than a missing one. The README lists `T` beside
-                    // `B` and `W`, which are likewise delivery-only.
-                    // Shift first: Ctrl+Shift+S must not be swallowed by the plain Ctrl+S
-                    // branch below, which would silently save over the original file.
-                    isCtrl && event.isShiftPressed && event.key == androidx.compose.ui.input.key.Key.S -> {
-                        state.saveAsFile()
-                        true
-                    }
-                    isCtrl && event.key == androidx.compose.ui.input.key.Key.S -> {
-                        state.saveFile()
-                        true
-                    }
-                    isCtrl && (event.key == androidx.compose.ui.input.key.Key.K || event.key == androidx.compose.ui.input.key.Key.P) -> {
-                        state.isCommandPaletteOpen = !state.isCommandPaletteOpen
-                        true
-                    }
-                    isCtrl && event.key == androidx.compose.ui.input.key.Key.F -> {
-                        state.toggleFind(withReplace = false)
-                        true
-                    }
-                    isCtrl && event.key == androidx.compose.ui.input.key.Key.H -> {
-                        state.toggleFind(withReplace = true)
-                        true
-                    }
-                    event.key == androidx.compose.ui.input.key.Key.Escape && state.isFindOpen -> {
-                        state.closeFind()
-                        true
-                    }
-                    event.key == androidx.compose.ui.input.key.Key.F5 -> {
-                        state.startPresenting(presenterMode = false)
-                        true
-                    }
-                    else -> false
+            // F-19: one binding table, shared with the deck window and the tooltips.
+            when (KeyBindings.resolve(event, CommandScope.STUDIO)) {
+                AppCommands.FONT_INCREASE -> state.increaseEditorFontSize()
+                AppCommands.FONT_DECREASE -> state.decreaseEditorFontSize()
+                AppCommands.FONT_RESET -> state.resetEditorFontSize()
+                AppCommands.OPEN -> state.openFile()
+                AppCommands.SAVE_AS -> state.saveAsFile()
+                AppCommands.SAVE -> state.saveFile()
+                AppCommands.EXPORT -> com.skaldoria.export.DeckExporter.exportPdf(state) {}
+                AppCommands.COMMAND_PALETTE -> state.isCommandPaletteOpen = !state.isCommandPaletteOpen
+                AppCommands.FIND -> state.toggleFind(withReplace = false)
+                AppCommands.REPLACE -> state.toggleFind(withReplace = true)
+                AppCommands.PRESENT -> state.startPresenting(presenterMode = false)
+                else -> {
+                    // Escape is only ours while the find bar is up; otherwise it belongs to
+                    // whatever has focus, so it must not be swallowed here.
+                    val closingFind = event.type == androidx.compose.ui.input.key.KeyEventType.KeyDown &&
+                        event.key == androidx.compose.ui.input.key.Key.Escape &&
+                        state.isFindOpen
+                    if (closingFind) state.closeFind() else return@Window false
                 }
-            } else false
+            }
+            true
         }
     ) {
         // COR-10: relative image paths resolve against the deck's own folder, so

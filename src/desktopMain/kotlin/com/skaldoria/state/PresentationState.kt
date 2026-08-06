@@ -10,6 +10,7 @@ import com.skaldoria.config.ConfigManager
 import com.skaldoria.core.annotation.AnnotationLayer
 import com.skaldoria.core.audience.AudienceSession
 import com.skaldoria.core.deck.SampleDecks
+import com.skaldoria.core.deck.SlideNavigator
 import com.skaldoria.core.document.DeckHistory
 import com.skaldoria.core.document.SlideDocument
 import com.skaldoria.core.editor.FindReplaceController
@@ -46,8 +47,14 @@ class PresentationState(
     var slides by mutableStateOf(MarkdownSlideParser.parse(initialMarkdown))
         private set
 
-    override var currentSlideIndex by mutableStateOf(0)
-        private set
+    /**
+     * F-13: the cursor lives in [SlideNavigator]. Reading the deck length through a lambda
+     * matters — the deck is reparsed on every keystroke, so a captured size would be stale.
+     */
+    private val navigator = SlideNavigator { slides.size }
+
+    override val currentSlideIndex: Int
+        get() = navigator.currentIndex
 
     var currentTheme by mutableStateOf<PresentationTheme>(BuiltinThemes.SkaldoriaDark)
 
@@ -367,7 +374,7 @@ class PresentationState(
         activeProject = null
         currentFilePath = null
         updateMarkdown(draft)
-        currentSlideIndex = 0
+        navigator.reset()
         showWelcome = false
     }
 
@@ -536,7 +543,7 @@ class PresentationState(
         val combined = proj.compileCombinedMarkdown()
         markdownText = combined
         slides = MarkdownSlideParser.parse(combined)
-        currentSlideIndex = 0
+        navigator.reset()
         showWelcome = false
         parkingLot.reconcile(combined)
         ConfigManager.addRecentProject(proj.rootDir, proj.name, slides.size)
@@ -547,7 +554,7 @@ class PresentationState(
         currentFilePath = path
         activeProject = null
         updateMarkdown(content)
-        currentSlideIndex = 0
+        navigator.reset()
         showWelcome = false
         val firstTitle = slides.firstOrNull()?.title ?: "Presentation"
         ConfigManager.addRecentProject(path, firstTitle, slides.size)
@@ -577,33 +584,30 @@ class PresentationState(
     fun updateMarkdown(newMarkdown: String) {
         markdownText = newMarkdown
         slides = MarkdownSlideParser.parse(newMarkdown)
-        if (currentSlideIndex >= slides.size) {
-            currentSlideIndex = (slides.size - 1).coerceAtLeast(0)
-        }
+        navigator.clampToDeck()
         parkingLot.reconcile(newMarkdown)
         scheduleDraftSave(newMarkdown)
     }
 
-    val hasNext: Boolean
-        get() = currentSlideIndex < slides.size - 1
+    val hasNext: Boolean get() = navigator.hasNext
 
-    val hasPrev: Boolean
-        get() = currentSlideIndex > 0
+    val hasPrev: Boolean get() = navigator.hasPrevious
 
     override fun nextSlide() {
-        if (currentSlideIndex < slides.size - 1) {
-            currentSlideIndex++
-            isBlackoutActive = false
-            isWhiteoutActive = false
-        }
+        if (navigator.next()) clearScreenBlanking()
+    }
+
+    /**
+     * Advancing cancels a blackout or whiteout: the speaker blanked the screen to pull the
+     * room's attention off the deck, and moving on is the signal they want it back.
+     */
+    private fun clearScreenBlanking() {
+        isBlackoutActive = false
+        isWhiteoutActive = false
     }
 
     override fun previousSlide() {
-        if (currentSlideIndex > 0) {
-            currentSlideIndex--
-            isBlackoutActive = false
-            isWhiteoutActive = false
-        }
+        if (navigator.previous()) clearScreenBlanking()
     }
 
     fun next() = nextSlide()
@@ -637,17 +641,15 @@ class PresentationState(
         val combined = updated.compileCombinedMarkdown()
         markdownText = combined
         slides = MarkdownSlideParser.parse(combined)
-        currentSlideIndex = (slides.size - 1).coerceAtLeast(0)
+        navigator.moveTo(slides.size - 1)
         scheduleDraftSave(combined)
     }
 
     override fun goToSlide(index: Int) {
-        if (index in slides.indices) {
-            currentSlideIndex = index
-            isBlackoutActive = false
-            isWhiteoutActive = false
-            isGridOverviewOpen = false
-        }
+        if (!navigator.goTo(index)) return
+        clearScreenBlanking()
+        // A jump is how the grid overview is used, so landing dismisses it.
+        isGridOverviewOpen = false
     }
 
     fun addStroke(stroke: AnnotationStroke) = annotationLayer.add(currentSlideIndex, stroke)
@@ -863,7 +865,7 @@ class PresentationState(
         } else {
             updateMarkdown(snapshot.markdown)
         }
-        currentSlideIndex = snapshot.slideIndex.coerceIn(0, (slides.size - 1).coerceAtLeast(0))
+        navigator.moveTo(snapshot.slideIndex)
     }
 
     fun undo() {
@@ -902,7 +904,7 @@ class PresentationState(
         markdownText = combined
         slides = MarkdownSlideParser.parse(combined)
         if (currentSlideIndex >= slides.size) {
-            currentSlideIndex = (slides.size - 1).coerceAtLeast(0)
+            navigator.moveTo(slides.size - 1)
         }
         scheduleDraftSave(combined)
     }
@@ -940,13 +942,13 @@ class PresentationState(
                 val combined = updatedProj.compileCombinedMarkdown()
                 markdownText = combined
                 slides = MarkdownSlideParser.parse(combined)
-                currentSlideIndex = toIndex
+                navigator.moveTo(toIndex)
                 scheduleDraftSave(combined)
             } else if (ownerFileIndex(fromIndex) == ownerFileIndex(toIndex)) {
                 val local = localSlideIndex(fromIndex) ?: return
                 val localTo = localSlideIndex(toIndex) ?: return
                 if (editOwningFile(fromIndex) { doc, _ -> doc.move(local, localTo) }) {
-                    currentSlideIndex = toIndex
+                    navigator.moveTo(toIndex)
                 }
             }
             return
@@ -954,21 +956,21 @@ class PresentationState(
 
         val updated = document().move(fromIndex, toIndex) ?: return
         updateMarkdown(updated)
-        currentSlideIndex = toIndex
+        navigator.moveTo(toIndex)
     }
 
     fun duplicateSlide(index: Int) {
         rememberForUndo()
         if (isProjectMode) {
             if (editOwningFile(index) { doc, local -> doc.duplicate(local) }) {
-                currentSlideIndex = index + 1
+                navigator.moveTo(index + 1)
             }
             return
         }
 
         val updated = document().duplicate(index) ?: return
         updateMarkdown(updated)
-        currentSlideIndex = index + 1
+        navigator.moveTo(index + 1)
     }
 
     fun deleteSlide(index: Int) {
@@ -988,17 +990,17 @@ class PresentationState(
                 val combined = updatedProj.compileCombinedMarkdown()
                 markdownText = combined
                 slides = MarkdownSlideParser.parse(combined)
-                currentSlideIndex = (index - 1).coerceAtLeast(0)
+                navigator.moveTo(index - 1)
                 scheduleDraftSave(combined)
             } else if (editOwningFile(index) { doc, local -> doc.delete(local) }) {
-                currentSlideIndex = (index - 1).coerceAtLeast(0)
+                navigator.moveTo(index - 1)
             }
             return
         }
 
         val updated = document().delete(index) ?: return
         updateMarkdown(updated)
-        currentSlideIndex = (index - 1).coerceAtLeast(0)
+        navigator.moveTo(index - 1)
     }
 
     fun insertSlide(afterIndex: Int, layout: SlideLayoutType) {
@@ -1020,19 +1022,19 @@ class PresentationState(
 
         if (isProjectMode) {
             if (editOwningFile(afterIndex) { doc, local -> doc.insert(local, template) }) {
-                currentSlideIndex = (afterIndex + 1).coerceAtMost((slides.size - 1).coerceAtLeast(0))
+                navigator.moveTo(afterIndex + 1)
             }
             return
         }
 
         val newMarkdown = document().insert(afterIndex, template)
         updateMarkdown(newMarkdown)
-        currentSlideIndex = (afterIndex + 1).coerceIn(0, (slides.size - 1).coerceAtLeast(0))
+        navigator.moveTo(afterIndex + 1)
     }
 
     fun resetToSample() {
         updateMarkdown(DEFAULT_SAMPLE_MARKDOWN)
-        currentSlideIndex = 0
+        navigator.reset()
         resetTimer()
     }
 
@@ -1041,7 +1043,7 @@ class PresentationState(
         activeProject = null
         currentFilePath = null
         updateMarkdown(BLANK_STARTER_MARKDOWN)
-        currentSlideIndex = 0
+        navigator.reset()
         resetTimer()
         showWelcome = false
     }
