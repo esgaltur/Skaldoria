@@ -50,6 +50,44 @@ data class FlowchartScene(
         data class LabelBox(val center: Offset, val width: Float, val height: Float)
     }
 
+    /**
+     * This scene reflected along its primary axis — DIA-08's `RL` and `BT`.
+     *
+     * Edges are mirrored rather than re-derived, so an arrow still runs from its source to its
+     * target and simply points the other way. Reversing the *endpoints* instead would draw the
+     * arrowhead at the wrong end, which is the mistake that makes a reversed flowchart look
+     * right until you read it.
+     */
+    fun mirrored(horizontal: Boolean): FlowchartScene {
+        fun flip(point: Offset): Offset =
+            if (horizontal) Offset(width - point.x, point.y) else Offset(point.x, height - point.y)
+
+        fun flip(rect: Rect): Rect = if (horizontal) {
+            Rect(width - rect.right, rect.top, width - rect.left, rect.bottom)
+        } else {
+            Rect(rect.left, height - rect.bottom, rect.right, height - rect.top)
+        }
+
+        return copy(
+            nodes = nodes.mapValues { (_, node) -> node.copy(rect = flip(node.rect)) },
+            edges = edges.map { edge ->
+                edge.copy(
+                    path = edge.path.copy(
+                        startPoint = flip(edge.path.startPoint),
+                        endPoint = flip(edge.path.endPoint)
+                    ),
+                    labelBox = edge.labelBox?.let { it.copy(center = flip(it.center)) }
+                )
+            },
+            groups = groups.map { group ->
+                val rect = flip(group.rect)
+                // The title stays at the frame's top-left after mirroring, where a reader looks
+                // for it — mirroring the anchor would park it outside the frame on the far side.
+                group.copy(rect = rect, titleAnchor = Offset(rect.left + 10f, rect.top + 5f))
+            }
+        )
+    }
+
     companion object {
         fun arrange(
             layout: FlowchartLayoutEngine.Layout,
@@ -62,7 +100,13 @@ data class FlowchartScene(
             /** node id -> subgraph id. Absent means the node belongs to no subgraph. */
             groupOf: Map<String, String> = emptyMap(),
             /** Subgraphs to frame, in declaration order: id, title, member ids. */
-            groups: List<Triple<String, String, List<String>>> = emptyList()
+            groups: List<Triple<String, String, List<String>>> = emptyList(),
+            /**
+             * DIA-08: `RL` and `BT` run the *same* axis backwards, so they are laid out
+             * normally and mirrored. A second layout engine per sense would be four code paths
+             * where the geometry is one.
+             */
+            reversed: Boolean = false
         ): FlowchartScene {
             if (nodeIds.isEmpty()) return FlowchartScene(emptyMap(), emptyList(), 0, 0)
 
@@ -75,9 +119,10 @@ data class FlowchartScene(
             val edgePlacements =
                 arrangeEdgesWithLabels(edges, shifted, horizontal, labelWidths, groupPlacements)
 
-            return FlowchartScene(
+            val scene = FlowchartScene(
                 nodePlacements, edgePlacements, contentWidth, contentHeight, groupPlacements
             )
+            return if (reversed) scene.mirrored(horizontal) else scene
         }
 
         /** Breathing room between a frame and the nodes it contains. */
