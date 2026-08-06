@@ -3,8 +3,8 @@
 Companion to [ADR-003](./ADR_GOD_OBJECT_DECOMPOSITION.md). The ADR argues *why*; this file is
 the actionable list — one row per fix, ordered by **risk reduction per unit of change**.
 
-**Status — 2026-08-06.** 18 of 24 items are **done**, every one implemented test-first.
-The suite went from **235 to 402 tests, 0 failures**.
+**Status — 2026-08-06.** 21 of 24 items are **done**, every one implemented test-first.
+The suite went from **235 to 501 tests, 0 failures**.
 
 | | Item | Outcome |
 | :--- | :--- | :--- |
@@ -27,10 +27,10 @@ The suite went from **235 to 402 tests, 0 failures**.
 | ✅ | F-21 | Export docs corrected — it was **not** self-contained, contrary to three claims |
 | ✅ | F-22 | Doc test counts corrected |
 | ✅ | F-23 | Coroutines versions unified behind one variable |
-| ⬜ | F-13 | `DeckDocument` + `SlideNavigator` — the core of the god object |
+| ◐ | F-13 | `SlideNavigator` **done**; `DeckDocument` still outstanding — see below |
 | ⬜ | F-14 | Invert the remaining singleton dependencies |
 | ⬜ | F-18 | Split the oversized composables |
-| ⬜ | F-19 | One shortcut registry |
+| ✅ | F-19 | `AppCommands` registry; both key handlers dispatch through it |
 | ✅ | F-24 | All 8 uninspected renders looked at; 2 defects found, 1 fixed |
 
 ### Dead-code pass (2026-08-06)
@@ -73,6 +73,33 @@ New invariants registered in [`QUALITY_BASELINE.md`](./QUALITY_BASELINE.md): **S
 **COR-12**, **COR-13**, **DED-6**, **DED-7**, **DED-8**, **DED-9**; **PRF-4** extended. The `F-nn`
 identifiers in this file are backlog numbers only — code comments cite the permanent invariant
 ids, never these.
+
+### F-19 · one binding table (2026-08-06)
+
+`AppCommands` is now the single declaration of the keyboard surface, free of Compose types so
+it can be unit-tested; `KeyBindings` is the only place that knows about `Key`. Both `when`
+blocks dispatch through it — `Main.kt` went from 15 key comparisons to 1 (the `Escape`
+special case, which is conditional on the find bar rather than a binding), and
+`FullscreenDeck.kt` from 15 to 0.
+
+Two assertions exist because duplication kept breaking them: no chord bound twice in a scope,
+and no chord shadowed by a less-specific one — the exact fault that would let `Ctrl+Shift+S`
+be swallowed by `Ctrl+S`. `KeyBindingsTest` covers the seam the registry cannot see: a key
+name with no `Key` behind it compiles, reads correctly, and never fires.
+
+**A regression caught while wiring it.** Modelling `scope` as a single value silently dropped
+`Ctrl+K` from the deck window, where the palette had always worked. `scopes` is a set.
+
+### F-13 · half done
+
+`SlideNavigator` is extracted and tested — the cursor, its bounds, and the two distinct
+"where do I land" semantics (`goTo` refuses an out-of-range index; `moveTo` clamps, because
+structural edits compute the landing index from a deck that has since been reparsed).
+
+`DeckDocument` is **not** done, and is the last large piece. `PresentationState` has grown to
+1082 lines during this work — undo/redo and HUD visibility landed alongside it — so the
+extraction is now larger than when it was scoped, and it touches the file that is under active
+development. It wants its own session against a quiet tree.
 
 **One behaviour change found and preserved, not fixed.** The directive and note rules sit above
 `InCodeBlockRule`, so a `<!-- note: … -->` inside a fenced block is still consumed as a directive
@@ -132,7 +159,7 @@ Small, isolated, and each removes a real defect or a real risk.
 - **⚠ Unverified:** this is a reading of the code, not a reproduced bug. **Write the failing
   test first** — submit a question containing `%01`, then assert `/api/state` parses.
 - **Fix:** one small JSON writer (`JsonWriter.string(…)`, `.obj(…)`) with complete escaping
-  (` `–``); replace all 12 template sites.
+  (`U+0000`–`U+001F`); replace all 12 template sites.
 - **Guard:** `RemoteCompanionServerTest` — control characters round-trip and the response parses.
 - **Effort:** S–M · **Risk:** low
 

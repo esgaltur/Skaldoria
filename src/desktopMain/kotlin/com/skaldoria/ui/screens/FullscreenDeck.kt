@@ -46,7 +46,10 @@ import com.skaldoria.core.models.SlideTransition
 import com.skaldoria.core.presentation.HudVisibility
 import com.skaldoria.core.presentation.SlideNumberEntry
 import com.skaldoria.core.presentation.TransitionResolver
+import com.skaldoria.core.command.AppCommands
+import com.skaldoria.core.command.CommandScope
 import com.skaldoria.state.PresentationState
+import com.skaldoria.ui.KeyBindings
 import kotlinx.coroutines.delay
 import com.skaldoria.ui.components.AppTooltip
 import com.skaldoria.ui.components.CommandPalette
@@ -139,100 +142,29 @@ fun FullscreenDeck(
                 }
             }
             .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown) {
-                    val typed = event.utf16CodePoint.toChar()
-                    when {
-                        // DEL-08: digits accumulate; Enter commits. Checked before the
-                        // single-letter shortcuts so a slide number is never swallowed.
-                        typed.isDigit() -> {
-                            numberEntry = numberEntry.withDigit(typed)
-                            true
-                        }
-                        event.key == Key.Enter -> {
-                            numberEntry.targetIndex(state.slides.size)?.let { state.goToSlide(it) }
-                            numberEntry = numberEntry.cleared()
-                            true
-                        }
-                        // HUD-1: always recoverable without a mouse.
-                        event.key == Key.H -> {
-                            state.cycleHudVisibility()
-                            pointerActivity++
-                            true
-                        }
-                        // AUT-01: documented in the README shortcut table, never bound.
-                        event.key == Key.T -> {
-                            state.cycleTheme()
-                            true
-                        }
-                        event.key == Key.MoveHome -> {
-                            state.goToSlide(0)
-                            true
-                        }
-                        event.key == Key.MoveEnd -> {
-                            state.goToSlide((state.slides.size - 1).coerceAtLeast(0))
-                            true
-                        }
-                        event.key == Key.Backspace -> {
-                            state.prev()
-                            true
-                        }
-                        event.isCtrlPressed && event.key == Key.K -> {
-                            state.isCommandPaletteOpen = true
-                            true
-                        }
-                        event.isCtrlPressed && event.key == Key.Z -> {
-                            state.undoStroke()
-                            true
-                        }
-                        event.key == Key.B -> {
-                            state.toggleBlackout()
-                            true
-                        }
-                        event.key == Key.W -> {
-                            state.toggleWhiteout()
-                            true
-                        }
-                        event.key == Key.G -> {
-                            state.toggleGridOverview()
-                            true
-                        }
-                        event.key == Key.L -> {
-                            state.toggleLaserPointer()
-                            true
-                        }
-                        event.key == Key.P -> {
-                            state.togglePenDrawing()
-                            true
-                        }
-                        event.key == Key.C -> {
-                            state.clearAnnotations()
-                            true
-                        }
-                        event.key in listOf(Key.Spacebar, Key.DirectionRight, Key.DirectionDown, Key.PageDown) -> {
-                            state.next()
-                            true
-                        }
-                        event.key in listOf(Key.DirectionLeft, Key.DirectionUp, Key.PageUp) -> {
-                            state.prev()
-                            true
-                        }
-                        event.key == Key.Escape || event.key == Key.F11 -> {
-                            if (!numberEntry.isEmpty) {
-                                // Abandon a half-typed slide number before anything else, so
-                                // Escape never exits the deck with digits still pending.
-                                numberEntry = numberEntry.cleared()
-                            } else if (state.isCommandPaletteOpen) {
-                                state.isCommandPaletteOpen = false
-                            } else if (state.isGridOverviewOpen) {
-                                state.isGridOverviewOpen = false
-                            } else {
-                                state.isFullscreen = false
-                            }
-                            true
-                        }
-                        else -> false
+                // F-19: bindings come from AppCommands, so this window and the studio window
+                // cannot drift apart, and the tooltips quote the same table.
+                when (KeyBindings.resolve(event, CommandScope.DECK)) {
+                    AppCommands.NEXT_SLIDE -> state.next()
+                    AppCommands.PREVIOUS_SLIDE -> state.prev()
+                    AppCommands.BLACKOUT -> state.toggleBlackout()
+                    AppCommands.WHITEOUT -> state.toggleWhiteout()
+                    AppCommands.GRID_OVERVIEW -> state.toggleGridOverview()
+                    AppCommands.LASER_POINTER -> state.toggleLaserPointer()
+                    AppCommands.PEN_DRAWING -> state.togglePenDrawing()
+                    AppCommands.CLEAR_ANNOTATIONS -> state.clearAnnotations()
+                    AppCommands.UNDO_STROKE -> state.undoStroke()
+                    AppCommands.COMMAND_PALETTE -> state.isCommandPaletteOpen = true
+                    // Escape unwinds the innermost thing that is open, so it never drops the
+                    // speaker out of fullscreen while a dialog is still covering the deck.
+                    AppCommands.EXIT_FULLSCREEN -> when {
+                        state.isCommandPaletteOpen -> state.isCommandPaletteOpen = false
+                        state.isGridOverviewOpen -> state.isGridOverviewOpen = false
+                        else -> state.isFullscreen = false
                     }
-                } else false
+                    else -> return@onKeyEvent false
+                }
+                true
             },
         contentAlignment = Alignment.Center
     ) {
