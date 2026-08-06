@@ -208,9 +208,22 @@ object RemoteCompanionServer {
         /** A host-only / NAT adapter from a hypervisor — routable for the host, not for a phone. */
         val isLikelyVirtual: Boolean,
         /** The address the OS would actually use for outbound traffic. */
-        val isRouted: Boolean
+        val isRouted: Boolean,
+        /** How the phone would be attached over this interface (LNK-1). */
+        val kind: LinkKind = LinkKind.ORDINARY
     ) {
-        val label: String get() = if (isRouted) "$interfaceName (active)" else interfaceName
+        /**
+         * LNK-3 in spirit: the label names *why* an address is worth picking, so a speaker
+         * choosing manually is not guessing from an adapter name alone.
+         */
+        val label: String
+            get() = when (kind) {
+                LinkKind.HOTSPOT -> "$interfaceName (hotspot)"
+                LinkKind.TETHER -> "$interfaceName (USB tether)"
+                LinkKind.BLUETOOTH_PAN -> "$interfaceName (Bluetooth)"
+                LinkKind.VIRTUAL -> "$interfaceName (virtual)"
+                else -> if (isRouted) "$interfaceName (active)" else interfaceName
+            }
     }
 
     /**
@@ -222,23 +235,14 @@ object RemoteCompanionServer {
     var preferredAddress: String? = null
 
     /**
-     * Display names that mark a hypervisor or tunnelling adapter.
-     *
-     * `NetworkInterface.isVirtual` cannot be used for this: it reports whether the interface
-     * is a *sub-interface* (an alias), and is `false` for VirtualBox, VMware and Hyper-V
-     * adapters — which is exactly why they were being picked.
-     */
-    private val VIRTUAL_ADAPTER_HINTS = listOf(
-        "virtualbox", "vmware", "vmnet", "hyper-v", "vethernet", "docker",
-        "wsl", "loopback", "tunnel", "tap-", "tun", "npcap", "bluetooth", "vpn"
-    )
-
-    /**
      * The address the OS would use to reach the outside world.
      *
      * A connected UDP socket sends nothing — it only performs a route lookup — so this is
-     * cheap, needs no reachable internet, and reports the interface holding the default
-     * route. That is almost always the adapter a phone on the same wifi can reach.
+     * cheap, needs no reachable internet, and reports the interface holding the default route.
+     *
+     * LNK-1: this is a *hint*, not the ranking authority. A hotspot or tether interface holds
+     * no default route, so ranking on it alone put the laptop's own ethernet first — an
+     * address the phone attached to the hotspot has no path to. [LinkRanking] decides.
      */
     private fun routedAddress(): String? = runCatching {
         java.net.DatagramSocket().use { socket ->
@@ -258,22 +262,20 @@ object RemoteCompanionServer {
     fun availableAddresses(): List<NetworkCandidate> {
         val routed = routedAddress()
 
+        // Enumeration reads the live machine and cannot be unit tested; ranking is pure and
+        // lives in LinkRanking, which is where the guards are.
         val candidates = runCatching {
             NetworkInterface.getNetworkInterfaces().asSequence()
                 .filter { it.isUp && !it.isLoopback }
                 .flatMap { nif ->
-                    val virtual = VIRTUAL_ADAPTER_HINTS.any { hint ->
-                        nif.displayName?.contains(hint, ignoreCase = true) == true ||
-                            nif.name.contains(hint, ignoreCase = true)
-                    }
+                    val interfaceName = nif.displayName ?: nif.name
                     nif.inetAddresses.asSequence()
                         .filterIsInstance<java.net.Inet4Address>()
                         .filter { !it.isLoopbackAddress && !it.isLinkLocalAddress }
                         .map { addr ->
-                            NetworkCandidate(
+                            LinkRanking.Candidate(
                                 address = addr.hostAddress,
-                                interfaceName = nif.displayName ?: nif.name,
-                                isLikelyVirtual = virtual,
+                                interfaceName = interfaceName,
                                 isRouted = addr.hostAddress == routed
                             )
                         }
@@ -281,13 +283,16 @@ object RemoteCompanionServer {
                 .toList()
         }.getOrDefault(emptyList())
 
-        // Routed first (it is the one that actually works), then real adapters, then the
-        // hypervisor ones, which are kept only as a last resort rather than hidden.
-        return candidates.sortedWith(
-            compareByDescending<NetworkCandidate> { it.isRouted }
-                .thenBy { it.isLikelyVirtual }
-                .thenBy { it.address }
-        )
+        return LinkRanking.rank(candidates).map {
+            val kind = LinkRanking.classify(it.interfaceName, it.isRouted)
+            NetworkCandidate(
+                address = it.address,
+                interfaceName = it.interfaceName,
+                isLikelyVirtual = kind == LinkKind.VIRTUAL,
+                isRouted = it.isRouted,
+                kind = kind
+            )
+        }
     }
 
     fun getLocalIpAddress(): String {

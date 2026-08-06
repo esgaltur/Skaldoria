@@ -471,80 +471,34 @@ fun MermaidDiagramCanvas(
         }
     }
 
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, theme.cardBorder, RoundedCornerShape(16.dp)),
-        color = theme.surface
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            DiagramHeaderBar(
-                typeLabel = diagramTypeLabel,
-                showRawCode = showRawCode,
-                theme = theme,
-                onToggleRawCode = { showRawCode = !showRawCode }
-            )
-
-            if (showRawCode) {
-                RawCodeView(code = code)
-            } else {
-                DiagramContent(
-                    diagram = diagram,
-                    sequence = sequence,
-                    code = code,
-                    theme = theme
+    // ADR-002 step 3: the frame lives in DiagramCard, shared with MathFormulaRenderer.
+    DiagramCard(
+        title = diagramTypeLabel,
+        icon = Icons.Default.AccountTree,
+        iconDescription = "Mermaid Diagram",
+        theme = theme,
+        modifier = modifier,
+        trailing = {
+            IconButton(
+                onClick = { showRawCode = !showRawCode },
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Code,
+                    contentDescription = "Toggle Raw Mermaid Code",
+                    tint = if (showRawCode) theme.primary else theme.textMuted
                 )
             }
         }
-    }
-}
-
-/** Top bar: diagram-type label on the left, raw-code toggle on the right. */
-@Composable
-private fun DiagramHeaderBar(
-    typeLabel: String,
-    showRawCode: Boolean,
-    theme: PresentationTheme,
-    onToggleRawCode: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(44.dp)
-            .background(theme.surfaceVariant.copy(alpha = 0.5f))
-            .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.AccountTree,
-                contentDescription = "Mermaid Diagram",
-                tint = theme.primary,
-                modifier = Modifier.size(18.dp)
-            )
-            Text(
-                text = typeLabel,
-                color = theme.primary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 1.sp
-            )
-        }
-
-        IconButton(
-            onClick = onToggleRawCode,
-            modifier = Modifier.size(28.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Code,
-                contentDescription = "Toggle Raw Mermaid Code",
-                tint = if (showRawCode) theme.primary else theme.textMuted
+        if (showRawCode) {
+            RawCodeView(code = code)
+        } else {
+            DiagramContent(
+                diagram = diagram,
+                sequence = sequence,
+                code = code,
+                theme = theme
             )
         }
     }

@@ -4,7 +4,13 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** SEC-5 — vote deduplication and bounds on audience-supplied content. */
+/**
+ * SEC-5 — vote deduplication and bounds on audience-supplied content, exercised through
+ * `PresentationState`.
+ *
+ * `AudienceSessionTest` covers the same rules at the unit level; this keeps the assertions
+ * on the object the application actually wires together.
+ */
 class AudienceLimitsTest {
 
     @Test
@@ -68,16 +74,16 @@ class AudienceLimitsTest {
         val state = PresentationState()
 
         repeat(PresentationState.MAX_AUDIENCE_QUESTIONS + 25) { index ->
-            state.submitQuestion("Asker $index", "Question number $index")
+            state.audience.submit("Asker $index", "Question number $index")
         }
 
-        assertEquals(PresentationState.MAX_AUDIENCE_QUESTIONS, state.audienceQuestions.size)
+        assertEquals(PresentationState.MAX_AUDIENCE_QUESTIONS, state.audience.questions.size)
         assertTrue(
-            state.audienceQuestions.none { it.text.endsWith(" 0") },
+            state.audience.questions.none { it.text.endsWith(" 0") },
             "SEC-5: the oldest questions must be evicted, not the newest"
         )
         assertTrue(
-            state.audienceQuestions.any { it.text.contains("${PresentationState.MAX_AUDIENCE_QUESTIONS + 24}") },
+            state.audience.questions.any { it.text.contains("${PresentationState.MAX_AUDIENCE_QUESTIONS + 24}") },
             "the most recent question must survive"
         )
     }
@@ -86,7 +92,7 @@ class AudienceLimitsTest {
     fun `oversized question text and author are truncated`() {
         val state = PresentationState()
 
-        val question = state.submitQuestion("A".repeat(500), "Q".repeat(5_000))
+        val question = state.audience.submit("A".repeat(500), "Q".repeat(5_000))
 
         assertEquals(PresentationState.MAX_QUESTION_LENGTH, question.text.length)
         assertEquals(PresentationState.MAX_AUTHOR_LENGTH, question.author.length)
@@ -95,6 +101,6 @@ class AudienceLimitsTest {
     @Test
     fun `blank author falls back to Anonymous`() {
         val state = PresentationState()
-        assertEquals("Anonymous", state.submitQuestion("   ", "hello").author)
+        assertEquals("Anonymous", state.audience.submit("   ", "hello").author)
     }
 }

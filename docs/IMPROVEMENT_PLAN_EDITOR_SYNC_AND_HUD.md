@@ -1,6 +1,13 @@
 # Improvement Plan — Editor Synchronisation, Find Reveal, and HUD Visibility
 
-**Version:** 1.2.0 · **Drafted:** 2026-08-06 · **Status:** Not started · **Suite at drafting:** 235 tests, 0 failures
+**Version:** 1.2.0 · **Drafted:** 2026-08-06 · **Status:** Phase 1 shipped, Phases 2–6 open · **Suite:** 235 → 472 tests, 0 failures
+
+> **Phase 1 (HUD visibility) is done** and went further than planned — it is persisted across
+> launches, which the original plan listed as out of reach. Phases 2–6 are unchanged and still
+> accurate.
+>
+> **Start at Phase 2.** Everything else waits on it, and it must land on a quiet tree: its
+> failure mode is a caret that jumps to the end of the document on every keystroke.
 
 Companion to [ADR-004](./ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md). The ADR records *why*; this
 document is the *what, in what order, and how we know it worked*. Where the two disagree, the
@@ -263,16 +270,15 @@ A phase is done when all of the following hold:
 - [ ] The manual script below passes for the phase's rows.
 - [ ] Zero new Kotlin compiler warnings — the project is at zero today.
 
-### Documentation debt to clear alongside
+### Documentation debt — ✅ cleared 2026-08-06
 
-Three documents disagree with the actual suite size and with each other. Correct them in the
-same change rather than adding a fourth number:
+Three documents disagreed with the actual suite size and with each other (221 / 221 / 204
+against a real 235). All now read **472**, and `CHANGELOG.md`'s "70 to 221" is left alone
+because it is a historical statement about the 1.2.0 release, not a claim about today.
 
-| File | Says | Actual |
-| :--- | :--- | :--- |
-| `docs/QUALITY_BASELINE.md:3` | 221 tests | 235 |
-| `CHANGELOG.md:12` | 70 → 221 tests | 235 |
-| `docs/RENDERING_STATUS.md:4` | 204 tests | 235 |
+**The recurring hazard, not the individual numbers:** a hardcoded count in prose goes stale the
+moment anyone adds a test, and nothing fails when it does. If it drifts a third time, derive it
+in CI rather than correcting it by hand again.
 
 ---
 

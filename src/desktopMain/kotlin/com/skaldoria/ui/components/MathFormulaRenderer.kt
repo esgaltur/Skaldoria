@@ -40,56 +40,28 @@ fun MathFormulaRenderer(
     var showRawLatex by remember { mutableStateOf(false) }
     val cleanedFormula = remember(formula) { formula.trim().removeSurrounding("$$").removeSurrounding("$").trim() }
 
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, theme.cardBorder, RoundedCornerShape(16.dp)),
-        color = theme.surface
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Formula Header Bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(42.dp)
-                    .background(theme.surfaceVariant.copy(alpha = 0.5f))
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+    // ADR-002 step 3: the frame lives in DiagramCard, shared with MermaidDiagramCanvas.
+    // The header was 42.dp here and 44.dp there; unifying on the token is the point of
+    // having one, and 2px is the whole visual delta (checked against render-all/11_math.png).
+    DiagramCard(
+        title = "MATHEMATICAL SPECIFICATION",
+        icon = Icons.Default.Calculate,
+        iconDescription = "Math Equation",
+        theme = theme,
+        modifier = modifier,
+        trailing = {
+            IconButton(
+                onClick = { showRawLatex = !showRawLatex },
+                modifier = Modifier.size(28.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Calculate,
-                        contentDescription = "Math Equation",
-                        tint = theme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = "MATHEMATICAL SPECIFICATION",
-                        color = theme.primary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.sp
-                    )
-                }
-
-                IconButton(
-                    onClick = { showRawLatex = !showRawLatex },
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Code,
-                        contentDescription = "Toggle Raw LaTeX",
-                        tint = if (showRawLatex) theme.primary else theme.textMuted
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Code,
+                    contentDescription = "Toggle Raw LaTeX",
+                    tint = if (showRawLatex) theme.primary else theme.textMuted
+                )
             }
-
+        }
+    ) {
             if (showRawLatex) {
                 // Theme-adaptive Raw LaTeX Code Box
                 Box(
@@ -117,7 +89,6 @@ fun MathFormulaRenderer(
                     RenderLatexExpression(cleanedFormula, theme)
                 }
             }
-        }
     }
 }
 
@@ -508,9 +479,5 @@ object LatexSymbolMapper {
             result = result.replace(tex, unicode)
         }
         return result
-    }
-
-    fun replaceSymbols(input: String): String {
-        return preprocessDelimitersAndSymbols(input)
     }
 }

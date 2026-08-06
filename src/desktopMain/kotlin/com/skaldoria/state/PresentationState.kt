@@ -18,6 +18,7 @@ import com.skaldoria.core.pacing.Pacing
 import com.skaldoria.core.pacing.PacingCalculator
 import com.skaldoria.core.pacing.TalkTimer
 import com.skaldoria.core.parkinglot.ParkingLotStore
+import com.skaldoria.core.presentation.HudVisibility
 import com.skaldoria.core.parser.MarkdownSlideParser
 import com.skaldoria.remote.DeckControl
 import com.skaldoria.remote.RemoteCompanionServer
@@ -109,6 +110,22 @@ class PresentationState(
 
     val availableThemes: List<PresentationTheme>
         get() = if (isCorporateThemeUnlocked) BuiltinThemes.allWithCorporate else BuiltinThemes.publicThemes
+
+    /**
+     * Advances to the next theme (AUT-01, the `T` shortcut).
+     *
+     * Cycles [availableThemes] rather than every built-in, so a corporate theme behind the
+     * access-code gate is never handed out by pressing a key. A current theme that is not in
+     * the available list — locking the corporate theme while it is active — restarts from the
+     * beginning instead of sticking.
+     */
+    fun cycleTheme() {
+        val themes = availableThemes
+        if (themes.isEmpty()) return
+        val position = themes.indexOfFirst { it.id == currentTheme.id }
+        currentTheme = themes[(position + 1) % themes.size]
+        persistUiPreferences()
+    }
 
     fun unlockCorporateTheme(code: String): Boolean {
         if (BuiltinThemes.isCorporateCode(code)) {
@@ -250,8 +267,6 @@ class PresentationState(
     val findMatches: List<IntRange>
         get() = findReplace.matches
 
-    fun openFind(withReplace: Boolean = false) = findReplace.open(withReplace)
-
     fun closeFind() = findReplace.close()
 
     fun toggleReplaceRow() = findReplace.toggleReplaceRow()
@@ -361,9 +376,23 @@ class PresentationState(
         ConfigManager.clearDraft()
     }
 
+    /**
+     * DEL-02: how the presentation HUD behaves.
+     *
+     * Held here rather than in `FullscreenDeck` so it outlives the presentation window and
+     * can be persisted — a speaker who pins the toolbar should not have to pin it again on
+     * the next launch, which is the DED-2 defect this setting would otherwise repeat.
+     */
+    var hudVisibility by mutableStateOf(HudVisibility.DEFAULT)
+
+    fun cycleHudVisibility() {
+        hudVisibility = hudVisibility.next()
+        persistUiPreferences()
+    }
+
     /** DED-2: persist the settings that were modelled and parsed but never actually saved. */
     fun persistUiPreferences() {
-        ConfigManager.saveUiPreferences(currentTheme.id, editorFontSize)
+        ConfigManager.saveUiPreferences(currentTheme.id, editorFontSize, hudVisibility.storageValue)
     }
 
     /** DED-2: restore them at startup. Unknown theme ids fall back to the default. */
@@ -371,6 +400,7 @@ class PresentationState(
         val config = ConfigManager.loadConfig()
         editorFontSize = config.editorFontSize.coerceIn(10, 32)
         BuiltinThemes.allWithCorporate.firstOrNull { it.id == config.lastThemeId }?.let { currentTheme = it }
+        hudVisibility = HudVisibility.fromStorage(config.hudVisibility)
     }
 
     /** Releases the background timer and flushes preferences. Call when the app shuts down. */
@@ -394,9 +424,6 @@ class PresentationState(
      */
     override fun <T> applyFromBackgroundThread(mutation: () -> T): T =
         Snapshot.withMutableSnapshot(mutation)
-
-    /** Consistent point-in-time copy of the audience queue, safe to read off-thread. */
-    fun audienceQuestionsSnapshot(): List<AudienceQuestion> = audience.snapshot()
 
     // ------------------------------------------------------------------
     // DeckControl (F-08) — the narrow port the companion server depends on.
@@ -625,8 +652,6 @@ class PresentationState(
 
     fun addStroke(stroke: AnnotationStroke) = annotationLayer.add(currentSlideIndex, stroke)
 
-    fun updateLastStroke(point: Offset) = annotationLayer.extendLastStroke(currentSlideIndex, point)
-
     fun undoStroke() = annotationLayer.undo(currentSlideIndex)
 
     fun toggleLaserPointer() {
@@ -640,8 +665,6 @@ class PresentationState(
     }
 
     fun clearAnnotations() = annotationLayer.clear(currentSlideIndex)
-
-    fun clearAllAnnotations() = annotationLayer.clearAll()
 
     fun openFile() {
         // Routes through openPath so a manifest opens as a project rather than as its own
@@ -725,12 +748,6 @@ class PresentationState(
         audience.recordVote(slideIndex, optionIndex, voterKey)
 
     fun getVotesForSlide(slideIndex: Int): Map<Int, Int> = audience.votesForSlide(slideIndex)
-
-    fun resetVotesForSlide(slideIndex: Int) = audience.resetVotes(slideIndex)
-
-    fun submitQuestion(author: String, text: String): AudienceQuestion = audience.submit(author, text)
-
-    fun upvoteQuestion(questionId: String) = audience.upvote(questionId)
 
     fun markQuestionAnswered(questionId: String) = audience.markAnswered(questionId)
 

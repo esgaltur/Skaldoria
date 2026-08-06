@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -140,6 +141,61 @@ fun TopBar(
                         imageVector = Icons.Default.Save,
                         contentDescription = "Save File or Project",
                         tint = state.currentTheme.textSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // Save As — the function existed but nothing reached it, so a deck could only
+            // ever be written back to the file it came from. Hidden in project mode, where
+            // "save a copy" would have to mean copying a whole directory tree.
+            if (!state.isProjectMode) {
+                AppTooltip(text = "Save Markdown File As…", theme = state.currentTheme, shortcut = "Ctrl+Shift+S") {
+                    IconButton(
+                        onClick = { state.saveAsFile() },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SaveAs,
+                            contentDescription = "Save File As",
+                            tint = state.currentTheme.textSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            // AUT-04: undo/redo for structural slide edits. Present as buttons and not only
+            // as a shortcut, because the action they reverse — deleting a slide — is a single
+            // click on the filmstrip, and the user who needs undo is the one who did not mean
+            // to click it.
+            AppTooltip(text = "Undo Slide Change", theme = state.currentTheme, shortcut = "Ctrl+Z") {
+                IconButton(
+                    onClick = { state.undo() },
+                    enabled = state.canUndo,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Undo,
+                        contentDescription = "Undo Slide Change",
+                        tint = if (state.canUndo) state.currentTheme.textSecondary
+                        else state.currentTheme.textMuted.copy(alpha = 0.3f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            AppTooltip(text = "Redo Slide Change", theme = state.currentTheme, shortcut = "Ctrl+Shift+Z") {
+                IconButton(
+                    onClick = { state.redo() },
+                    enabled = state.canRedo,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Redo,
+                        contentDescription = "Redo Slide Change",
+                        tint = if (state.canRedo) state.currentTheme.textSecondary
+                        else state.currentTheme.textMuted.copy(alpha = 0.3f),
                         modifier = Modifier.size(18.dp)
                     )
                 }

@@ -246,7 +246,15 @@ class CharacterizationTest {
         assertTrue(html.contains("Next-Gen Multiplatform Systems"), "first slide title present")
         assertTrue(html.contains("Performance Comparison"), "table slide title present")
         assertTrue(html.contains("<table>"), "table element rendered")
-        assertTrue(html.contains("class='mermaid'"), "mermaid block rendered")
+        // OUT-01 changed this deliberately, and this assertion is what made the change
+        // visible rather than silent — which is why the pin exists.
+        //
+        // Was: `class='mermaid'`, a div holding raw Mermaid source for a CDN-loaded script to
+        // render in the browser. An exported deck therefore showed source, not a diagram, on
+        // any machine without internet. Diagrams are now rendered by Skaldoria at export time
+        // and embedded, so the file is self-contained.
+        assertTrue(html.contains("class='diagram'"), "diagram block rendered")
+        assertFalse(html.contains("cdn.jsdelivr.net"), "OUT-01: the export loads nothing remotely")
         assertTrue(html.contains("@page { size: 16in 9in; margin: 0; }"), "print stylesheet present")
 
         // Code content must be HTML-escaped, not injected raw.

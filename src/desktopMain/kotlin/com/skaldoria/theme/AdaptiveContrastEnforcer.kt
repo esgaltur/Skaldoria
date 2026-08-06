@@ -78,20 +78,4 @@ object AdaptiveContrastEnforcer : IContrastEnforcer {
             return bestColor
         }
     }
-
-    /**
-     * Enforces minimum visible border separation for surfaces.
-     */
-    fun computeSurfaceBorder(surface: Color): Color {
-        val luminance = ColorScience.relativeLuminance(surface)
-        val hsl = ColorScience.colorToHsl(surface)
-
-        return if (luminance > 0.5f) {
-            // Light surface: Darken border
-            ColorScience.hslToColor(hsl[0], hsl[1], (hsl[2] - 0.18f).coerceAtLeast(0.1f))
-        } else {
-            // Dark surface: Lighten border
-            ColorScience.hslToColor(hsl[0], hsl[1], (hsl[2] + 0.14f).coerceAtMost(0.9f))
-        }
-    }
 }

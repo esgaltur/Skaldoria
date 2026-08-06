@@ -95,10 +95,9 @@ fun FullscreenDeck(
         focusRequester.requestFocus()
     }
 
-    // DEL-02 / HUD-1. Session-scoped: persisting this across restarts (DED-2) needs a field on
-    // PresentationState + ConfigManager, both of which are mid-refactor elsewhere. Set once at
-    // the start of a talk, which is when a speaker actually makes this choice.
-    var hudVisibility by remember { mutableStateOf(HudVisibility.DEFAULT) }
+    // DEL-02 / HUD-1. Owned by PresentationState so the choice outlives this window and is
+    // persisted across launches (DED-2).
+    val hudVisibility = state.hudVisibility
     var pointerActivity by remember { mutableStateOf(0L) }
     var isPointerIdle by remember { mutableStateOf(false) }
 
@@ -156,8 +155,13 @@ fun FullscreenDeck(
                         }
                         // HUD-1: always recoverable without a mouse.
                         event.key == Key.H -> {
-                            hudVisibility = hudVisibility.next()
+                            state.cycleHudVisibility()
                             pointerActivity++
+                            true
+                        }
+                        // AUT-01: documented in the README shortcut table, never bound.
+                        event.key == Key.T -> {
+                            state.cycleTheme()
                             true
                         }
                         event.key == Key.MoveHome -> {
@@ -463,7 +467,7 @@ fun FullscreenDeck(
             ) {
                 IconButton(
                     onClick = {
-                        hudVisibility = hudVisibility.next()
+                        state.cycleHudVisibility()
                         pointerActivity++
                     },
                     modifier = Modifier.size(32.dp)

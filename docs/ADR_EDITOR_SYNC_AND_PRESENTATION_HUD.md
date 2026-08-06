@@ -2,9 +2,28 @@
 ## ADR-004: Editor Caret Model, Slide Synchronisation, and Presentation HUD Visibility
 
 ### Status
-**Proposed** (2026-08-06)
+**Partially implemented** (2026-08-06)
 
-> This ADR is a design proposal. No code has been changed. It records three reported defects,
+| Phase | Item | State |
+| :--- | :--- | :--- |
+| 1 | HUD visibility (`DEL-02`, HUD-1/2/3) | ✅ **Shipped** — `HudVisibility`, `H` binding, idle fade, persisted (DED-2) |
+| 2 | Caret foundation (`AUT-05`, EDT-1/EDT-5) | ⬜ Not started — **the blocker for everything below** |
+| 3 | Find reveal (`AUT-03`, EDT-4) | ⬜ Not started |
+| 4 | Slide → editor sync (`AUT-02`, EDT-3) | ⬜ Not started |
+| 5 | Editor → slide sync (EDT-2) | ⬜ Not started |
+| 6 | Deck-wide search | ⬜ Deferred |
+
+> Phase 1 was independent and shipped first, as planned. **Phases 2–5 remain open**, and the
+> analysis below is unchanged and still accurate: the source pane is still the `String`
+> overload of `TextField`, `FindReplaceController.findNext()` still only advances an index, and
+> the find buttons still look dead on any deck longer than one screen.
+>
+> Phase 2 has been deferred deliberately, not forgotten. Its failure mode — a caret that jumps
+> to the end of the document on every keystroke — lands in the control the user types into all
+> day, and `PresentationState` has been under concurrent modification by the god-object
+> decomposition (ADR-003). Land it alone, on a quiet tree.
+
+> This ADR records three reported defects,
 > establishes that **two of the three share a single root cause**, and proposes the structure
 > that removes that class of defect rather than patching each symptom. Implementation order is
 > deliberately *not* the order the defects were reported in; the reasoning is in

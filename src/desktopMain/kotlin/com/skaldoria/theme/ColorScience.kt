@@ -56,14 +56,6 @@ object ColorScience {
     fun isWcagAa(foreground: Color, background: Color, minCr: Float = 4.5f): Boolean {
         return contrastRatio(foreground, background) >= minCr
     }
-
-    /**
-     * Checks if contrast ratio meets WCAG AAA standard (CR >= 7.0 for normal text).
-     */
-    fun isWcagAaa(foreground: Color, background: Color): Boolean {
-        return contrastRatio(foreground, background) >= 7.0f
-    }
-
     /**
      * Converts a Compose Color to HSL array: [0] = Hue in degrees [0..360], [1] = Saturation [0..1], [2] = Lightness [0..1].
      */

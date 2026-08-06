@@ -44,11 +44,4 @@ data class DeckProject(
         }
         return owners
     }
-
-    /**
-     * Finds the index of a slide file by path.
-     */
-    fun indexOfFile(path: String): Int {
-        return slideFiles.indexOfFirst { it.absolutePath == path || it.relativePath == path }
-    }
 }

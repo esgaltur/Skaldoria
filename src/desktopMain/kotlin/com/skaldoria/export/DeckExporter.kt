@@ -410,8 +410,27 @@ object DeckExporter {
                     is SlideElement.CodeBlock -> "<pre><code>${escapeHtml(el.code)}</code></pre>"
                     is SlideElement.Table -> "<table><thead><tr>" + el.headers.joinToString("") { "<th>${escapeHtml(it)}</th>" } + "</tr></thead><tbody>" + el.rows.joinToString("") { r -> "<tr>" + r.joinToString("") { "<td>${escapeHtml(it)}</td>" } + "</tr>" } + "</tbody></table>"
                     is SlideElement.Image -> "<img src='${sanitizeUrl(el.url)}' alt='${escapeHtml(el.altText)}' />"
-                    is SlideElement.MermaidDiagram -> "<div class='mermaid'>${escapeHtml(el.code)}</div>"
-                    is SlideElement.MathFormula -> "<div class='math-block'>$$${escapeHtml(el.formula)}$$</div>"
+                    // OUT-01: rendered by the application at export time and embedded, so the
+                    // file needs no network. The source is kept as alt text and a <details>
+                    // fallback — it is the only description a screen reader has, and the only
+                    // way an author recovers the diagram from an exported file.
+                    is SlideElement.MermaidDiagram -> {
+                        val uri = ElementImageRenderer.diagramToDataUri(el.code, theme)
+                        if (uri != null) {
+                            "<figure class='diagram'><img src='$uri' alt='${escapeHtml(el.code)}' />" +
+                                "<details><summary>Diagram source</summary><pre><code>${escapeHtml(el.code)}</code></pre></details></figure>"
+                        } else {
+                            "<pre class='diagram-source'><code>${escapeHtml(el.code)}</code></pre>"
+                        }
+                    }
+                    is SlideElement.MathFormula -> {
+                        val uri = ElementImageRenderer.mathToDataUri(el.formula, el.isBlock, theme)
+                        if (uri != null) {
+                            "<figure class='math-block'><img src='$uri' alt='${escapeHtml(el.formula)}' /></figure>"
+                        } else {
+                            "<div class='math-block'><code>${escapeHtml(el.formula)}</code></div>"
+                        }
+                    }
                     is SlideElement.Poll -> "<div class='poll-container'><h4>📊 ${escapeHtml(el.question.ifBlank { "Live Poll" })}</h4><div class='poll-options'>" + el.options.mapIndexed { idx, opt -> "<div class='poll-opt'><span class='opt-badge'>${('A' + idx)}</span><span>${escapeHtml(opt)}</span></div>" }.joinToString("") + "</div></div>"
                 }
             }
@@ -445,25 +464,13 @@ object DeckExporter {
 <head>
     <meta charset="UTF-8">
     <title>Skaldoria Presentation</title>
-    <!-- KaTeX Support for Mathematical Formulas -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
-    <!-- Mermaid.js Support for Flowcharts & Diagrams -->
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            mermaid.initialize({ startOnLoad: true, theme: 'dark' });
-            if (window.renderMathInElement) {
-                renderMathInElement(document.body, {
-                    delimiters: [
-                        {left: '$$', right: '$$', display: true},
-                        {left: '$', right: '$', display: false}
-                    ]
-                });
-            }
-        });
-    </script>
+    <!--
+      OUT-01: this document is self-contained and loads nothing over the network.
+      Maths and diagrams are rendered by Skaldoria itself at export time and embedded as
+      images, so the deck displays identically on an air-gapped machine. It previously pulled
+      KaTeX and Mermaid from a CDN, which meant an exported deck degraded to raw source in
+      exactly the situation an offline export is for.
+    -->
     <style>
         @page { size: 16in 9in; margin: 0; }
         * { box-sizing: border-box; margin: 0; padding: 0; }

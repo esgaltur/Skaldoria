@@ -1,7 +1,7 @@
 # Slide Rendering — verified status
 
 **Last updated:** 2026-08-06
-**Suite:** 402 tests, 0 failures
+**Suite:** 472 tests, 0 failures
 **Architecture:** ✅ **ADR-002 implemented** (steps 1–6) + code quality refactored — Geometry refactored to pure, testable `arrange()` functions with centralized `DesignTokens`; cognitive complexity reduced via extraction; build stable and verified
 **Evidence:** slides rendered headless via `ImageComposeScene`; PNGs in `build/render-all/` and `build/render-check/`.
 
@@ -22,10 +22,13 @@ Regenerate with:
 
 | | Count |
 |---|---|
-| ✅ Verified working | 8 |
-| ❌ Confirmed broken | 0 |
-| ❓ Rendered, not inspected | 5 |
+| ✅ Verified working | 16 |
+| ⚠️ Renders, with a defect | 2 |
+| ❓ Rendered, not inspected | 0 |
 | 🔲 Not implemented | 0 |
+
+**2026-08-06:** the eight outstanding ❓ cases were regenerated and **looked at**. All eight
+render; two carry defects that only a human eye would catch, recorded below.
 
 ---
 
@@ -117,23 +120,48 @@ This allows multi-line labels with proper ellipsis for overflow instead of silen
 
 ---
 
-## ❓ Rendered but not inspected
+## ⚠️ Renders, with a defect
 
-These PNGs exist in `build/render-all/` and were **not** looked at. They are neither confirmed working nor confirmed broken — treat as unknown.
+### `else` in an `alt` block is drawn as a box, not a divider
 
-| File | Layout |
-|---|---|
-| `04_sequence_blocks.png` | sequence with `loop` / `alt` / `else` frames and a self-call |
-| `06_table.png` | `DATA_TABLE` |
-| `07_code.png` | `SPLIT_TEXT_CODE` |
-| `08_quote.png` | `BIG_QUOTE` |
-| `09_metric.png` | `BIG_METRIC` |
-| `10_hero.png` | `HERO_TITLE` |
-| `11_math.png` | `MATH_FORMULA` |
-| `12_poll.png` | `POLL` |
+**Evidence:** `render-all/04_sequence_blocks.png`.
 
-(`05_vertical_flowchart`, `13_td_midlabel` and `14_lr_hexagon` have now been visually
-inspected — see ✅ Verified working.)
+Everything else in that diagram is right — the `loop` frame and its label, `participant … as`
+aliases resolved to `User`/`Service`, solid calls versus dashed replies, the `--x` terminator
+drawn as an ✕, and the `U->>U` self-call as a loop-back. But `else failure` renders as a
+**centred filled box** in the middle of the `ALT` frame, which reads as a message or a note.
+Mermaid draws it as a dashed horizontal divider with the label in the compartment corner.
+
+Not wrong in ordering or content — a viewer sees both branches — but easy to misread as a
+message that was never in the source.
+
+### A poll slide silently drops everything except the poll
+
+**Evidence:** `render-all/12_poll.png`, generated from a deck containing `- Vote now`.
+
+The poll itself is correct: lettered option badges, per-option counts and percentages, the
+pairing QR, the audience URL and a running total. The bullet is **absent**, because
+`PollSlide` does `slide.elements.filterIsInstance<SlideElement.Poll>().firstOrNull()` and
+renders nothing else.
+
+Same class as EXP-3, where tables, images and polls vanished from the image export: the parser
+produces the elements, the layout quietly discards them. An author who adds context bullets to
+a poll slide sees them disappear with no indication.
+
+---
+
+## ✅ Verified working (2026-08-06 pass)
+
+| Case | Evidence | Notes |
+|---|---|---|
+| **Data table** | `render-all/06_table.png` | Header row, three data rows, alternating row shading, columns aligned, footer intact. |
+| **Split text & code** | `render-all/07_code.png` | Kotlin syntax highlighting, line numbers, language badge, window chrome. *Cosmetic:* the bullet column is bottom-weighted while the code sits top-right, so the two halves look unbalanced. |
+| **Big quote** | `render-all/08_quote.png` | Serif italic quote, decorative opening mark, attribution in its own pill. |
+| **Big metric** | `render-all/09_metric.png` | `120 FPS` at display size with the label beneath, centred in its card. |
+| **Hero title** | `render-all/10_hero.png` | Eyebrow pill, title, subtitle and the trailing paragraph all present and centred. |
+| **Math formula** | `render-all/11_math.png` | `Δt = t_elapsed − T/N · i` — Greek delta, subscript, a real fraction bar with numerator over denominator, centre dot. Matches the probe input exactly (which has no subscripts inside the fraction). |
+| **Live poll** | `render-all/12_poll.png` | See the defect above; the poll element itself renders correctly. |
+| **Sequence blocks** | `render-all/04_sequence_blocks.png` | See the defect above; frames, arrows and the self-call are correct. |
 
 ---
 
