@@ -1,8 +1,5 @@
 package com.skaldoria.core.models
 
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-
 /**
  * Slide layout types inferred automatically by the Smart Layout Engine
  * or overridden via directives.
@@ -53,15 +50,6 @@ data class AudienceQuestion(
     val upvotes: Int = 0,
     val isAnswered: Boolean = false,
     val timestamp: Long = System.currentTimeMillis()
-)
-
-/**
- * Drawing stroke for presentation annotations.
- */
-data class AnnotationStroke(
-    val points: List<Offset>,
-    val color: Color = Color(0xFFFF5252),
-    val strokeWidth: Float = 4f
 )
 
 /**

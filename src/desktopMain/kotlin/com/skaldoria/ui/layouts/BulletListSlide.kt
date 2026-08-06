@@ -43,7 +43,7 @@ fun BulletListSlide(
         if (!slide.subtitle.isNullOrBlank()) {
             Spacer(Modifier.height(4.dp))
             Text(
-                text = slide.subtitle,
+                text = slide.subtitle.orEmpty(),
                 color = theme.primary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium

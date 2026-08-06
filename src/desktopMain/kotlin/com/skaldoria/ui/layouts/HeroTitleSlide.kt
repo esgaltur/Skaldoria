@@ -69,7 +69,7 @@ fun HeroTitleSlide(
             if (!slide.subtitle.isNullOrBlank()) {
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    text = slide.subtitle,
+                    text = slide.subtitle.orEmpty(),
                     color = theme.primary,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
