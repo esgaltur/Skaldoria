@@ -22,8 +22,8 @@ Regenerate with:
 
 | | Count |
 |---|---|
-| ✅ Verified working | 16 |
-| ⚠️ Renders, with a defect | 2 |
+| ✅ Verified working | 17 |
+| ⚠️ Renders, with a defect | 1 |
 | ❓ Rendered, not inspected | 0 |
 | 🔲 Not implemented | 0 |
 
@@ -122,19 +122,6 @@ This allows multi-line labels with proper ellipsis for overflow instead of silen
 
 ## ⚠️ Renders, with a defect
 
-### `else` in an `alt` block is drawn as a box, not a divider
-
-**Evidence:** `render-all/04_sequence_blocks.png`.
-
-Everything else in that diagram is right — the `loop` frame and its label, `participant … as`
-aliases resolved to `User`/`Service`, solid calls versus dashed replies, the `--x` terminator
-drawn as an ✕, and the `U->>U` self-call as a loop-back. But `else failure` renders as a
-**centred filled box** in the middle of the `ALT` frame, which reads as a message or a note.
-Mermaid draws it as a dashed horizontal divider with the label in the compartment corner.
-
-Not wrong in ordering or content — a viewer sees both branches — but easy to misread as a
-message that was never in the source.
-
 ### A poll slide silently drops everything except the poll
 
 **Evidence:** `render-all/12_poll.png`, generated from a deck containing `- Vote now`.
@@ -161,7 +148,7 @@ a poll slide sees them disappear with no indication.
 | **Hero title** | `render-all/10_hero.png` | Eyebrow pill, title, subtitle and the trailing paragraph all present and centred. |
 | **Math formula** | `render-all/11_math.png` | `Δt = t_elapsed − T/N · i` — Greek delta, subscript, a real fraction bar with numerator over denominator, centre dot. Matches the probe input exactly (which has no subscripts inside the fraction). |
 | **Live poll** | `render-all/12_poll.png` | See the defect above; the poll element itself renders correctly. |
-| **Sequence blocks** | `render-all/04_sequence_blocks.png` | See the defect above; frames, arrows and the self-call are correct. |
+| **Sequence blocks** | `render-all/04_sequence_blocks.png` | `loop` frame and label, `participant … as` aliases resolved, solid calls versus dashed replies, the `--x` terminator as an ✕, the `U->>U` self-call as a loop-back — and `else failure` now a dashed divider with `[failure]` in the corner, where it used to draw a centred box indistinguishable from a note. |
 
 ---
 

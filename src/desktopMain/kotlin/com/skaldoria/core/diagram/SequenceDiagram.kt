@@ -120,4 +120,14 @@ sealed interface SequenceStep {
     }
 
     data class Activation(val participantId: String, val active: Boolean) : SequenceStep
+
+    /**
+     * The boundary between two branches of an `alt`/`else` or `par`/`and` block.
+     *
+     * Emitted when a [Block]'s sections are flattened for drawing. It exists because the
+     * renderer previously turned each section label into a [Note] — so `else failure` drew a
+     * centred filled box, indistinguishable from a note the author never wrote. Mermaid draws
+     * a divider line with the label in the compartment corner, and so do we.
+     */
+    data class SectionDivider(val label: String) : SequenceStep
 }

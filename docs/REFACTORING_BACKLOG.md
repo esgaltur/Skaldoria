@@ -3,8 +3,8 @@
 Companion to [ADR-003](./ADR_GOD_OBJECT_DECOMPOSITION.md). The ADR argues *why*; this file is
 the actionable list — one row per fix, ordered by **risk reduction per unit of change**.
 
-**Status — 2026-08-06.** 21 of 24 items are **done**, every one implemented test-first.
-The suite went from **235 to 501 tests, 0 failures**.
+**Status — 2026-08-06.** 23 of 24 items are **done**, every one implemented test-first.
+The suite went from **235 to 506 tests, 0 failures**.
 
 | | Item | Outcome |
 | :--- | :--- | :--- |
@@ -28,8 +28,8 @@ The suite went from **235 to 501 tests, 0 failures**.
 | ✅ | F-22 | Doc test counts corrected |
 | ✅ | F-23 | Coroutines versions unified behind one variable |
 | ◐ | F-13 | `SlideNavigator` **done**; `DeckDocument` still outstanding — see below |
-| ⬜ | F-14 | Invert the remaining singleton dependencies |
-| ⬜ | F-18 | Split the oversized composables |
+| ✅ | F-14 | `ProjectRepository`, `FileDialogs`, `CompanionServerPort` injected |
+| ✅ | F-18 | `PresenterView` body 597 → ~285 lines across six named composables |
 | ✅ | F-19 | `AppCommands` registry; both key handlers dispatch through it |
 | ✅ | F-24 | All 8 uninspected renders looked at; 2 defects found, 1 fixed |
 
@@ -90,16 +90,77 @@ name with no `Key` behind it compiles, reads correctly, and never fires.
 **A regression caught while wiring it.** Modelling `scope` as a single value silently dropped
 `Ctrl+K` from the deck window, where the palette had always worked. `scopes` is a set.
 
+### F-14 · ports (2026-08-06)
+
+`PresentationState` reached four singletons by fully-qualified name *inside method bodies*.
+Now `ProjectRepository`, `FileDialogs` and `CompanionServerPort` arrive as constructor
+parameters defaulting to the existing objects, so no call site changed. `InjectedPortsTest`
+drives opening, saving, project adoption and the companion lifecycle with fakes — none of
+which was testable before, because "open a file" could only be exercised by opening a **modal
+native dialog**, which hangs a test rather than failing it.
+
+### F-18 · presenter console (2026-08-06)
+
+The body went from 597 lines to ~285, split into `PresenterHeader`, `PresenterTab`,
+`NotesPanel`, `AudienceQaPanel` and the existing `PresenterPacingRibbon`. Three copy-pasted
+20-line tab buttons collapsed into one parameterised composable driven by a list.
+
+The point was not line count. `state.elapsedSeconds` was read in the top-level body, which made
+the **entire composable the invalidation scope for a value that changes five times a second** —
+including both `SlideSurface` previews, which cannot be skipped because `Slide` carries a
+`List<SlideElement>` and Compose treats that as unstable. The clock is now read inside
+`PresenterHeader`, so a tick repaints one row.
+
+### Sequence `else` divider (2026-08-06)
+
+Fixed. `flatten` turned each `alt`/`par` section label into a `SequenceStep.Note`, so
+`else failure` drew a centred filled box indistinguishable from a note the author never wrote.
+There is now a `SequenceStep.SectionDivider`, drawn as a dashed rule across the frame with
+`[failure]` in the corner — Mermaid's convention. Verified in `render-all/04_sequence_blocks.png`.
+
 ### F-13 · half done
 
 `SlideNavigator` is extracted and tested — the cursor, its bounds, and the two distinct
 "where do I land" semantics (`goTo` refuses an out-of-range index; `moveTo` clamps, because
 structural edits compute the landing index from a deck that has since been reparsed).
 
-`DeckDocument` is **not** done, and is the last large piece. `PresentationState` has grown to
-1082 lines during this work — undo/redo and HUD visibility landed alongside it — so the
-extraction is now larger than when it was scoped, and it touches the file that is under active
-development. It wants its own session against a quiet tree.
+`DeckDocument` is **not** done, and is the single remaining item.
+
+Measured, not guessed: **122 of `PresentationState`'s 1094 lines touch the document cluster**
+(`markdownText`, `slides`, `activeProject`, `isPerSlideEditorMode`, the navigator, autosave)
+and there are **25 undo/redo touch points** through `rememberForUndo`/`history`/`snapshot`.
+
+The boundary cannot be drawn smaller. Extracting only the structural edits was tried and
+rejected: `writeProjectFile` reaches `activeProject`, `markdownText`, `slides`, the navigator
+*and* `scheduleDraftSave`, so a `SlideStructureEditor` would need six callbacks — more coupling
+than it removes, not less.
+
+**The shape it wants:**
+
+```kotlin
+class DeckDocument(
+    initialMarkdown: String,
+    private val onDeckChanged: (String) -> Unit  // reconcile parking lot, autosave, clamp cursor
+) {
+    val markdown: String; val slides: List<Slide>; val project: DeckProject?
+    var perSlideEditing: Boolean
+    fun editorTextFor(slideIndex: Int): String
+    fun replaceAll(markdown: String)
+    fun updateEditorContent(slideIndex: Int, content: String)
+    fun adopt(project: DeckProject); fun loadFlat(markdown: String)
+    // structural edits return the index the cursor should land on, instead of moving it
+    fun move(from: Int, to: Int): Int?
+    fun duplicate(index: Int): Int?
+    fun delete(index: Int): Int?
+    fun insert(afterIndex: Int, template: String): Int?
+}
+```
+
+Having the structural edits *return* the landing index rather than move the cursor is what
+decouples them from `SlideNavigator` — and `moveTo` already exists to receive it.
+
+Guards that must stay green: `SlideDocumentTest`, `CompanionDeckTest`, `PresentationStateTest`,
+`CharacterizationTest`, `DeckProjectManagerTest`, plus whatever covers undo/redo.
 
 **One behaviour change found and preserved, not fixed.** The directive and note rules sit above
 `InCodeBlockRule`, so a `<!-- note: … -->` inside a fenced block is still consumed as a directive

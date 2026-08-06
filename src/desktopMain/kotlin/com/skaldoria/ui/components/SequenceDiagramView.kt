@@ -105,7 +105,7 @@ private fun flatten(steps: List<SequenceStep>, depth: Int = 0): List<Row> {
                 rows.add(Row(step, depth))
                 rows.addAll(flatten(step.children, depth + 1))
                 for (section in step.sections) {
-                    rows.add(Row(SequenceStep.Note(NotePlacement.OVER, emptyList(), section.label), depth))
+                    rows.add(Row(SequenceStep.SectionDivider(section.label), depth))
                     rows.addAll(flatten(section.children, depth + 1))
                 }
             }
@@ -249,6 +249,30 @@ private fun DrawScope.drawSequence(
                     style = Stroke(width = 1f)
                 )
                 drawCenteredLabel(measurer, step.text, centerX, y - 7f, theme.textSecondary, noteWidth - 10f)
+            }
+
+            is SequenceStep.SectionDivider -> {
+                // A dashed rule spanning the enclosing frame, with the branch name in the
+                // corner — the shape a reader already knows from Mermaid.
+                val left = SIDE_PADDING * 0.6f
+                val right = size.width - SIDE_PADDING * 0.6f
+                drawLine(
+                    color = theme.primary.copy(alpha = 0.45f),
+                    start = Offset(left, y - ROW_HEIGHT * 0.35f),
+                    end = Offset(right, y - ROW_HEIGHT * 0.35f),
+                    strokeWidth = 1f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))
+                )
+                if (step.label.isNotBlank()) {
+                    drawLabel(
+                        measurer,
+                        "[${step.label}]",
+                        Offset(left + 6f, y - ROW_HEIGHT * 0.35f + 3f),
+                        theme.primary,
+                        10f,
+                        bold = true
+                    )
+                }
             }
 
             else -> Unit

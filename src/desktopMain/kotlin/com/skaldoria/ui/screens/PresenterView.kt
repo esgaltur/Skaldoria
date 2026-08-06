@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,111 +56,20 @@ fun PresenterView(
         SlideGridOverviewDialog(state = state, onDismiss = { state.isGridOverviewOpen = false })
     }
 
-    val minutes = state.elapsedSeconds / 60
-    val seconds = state.elapsedSeconds % 60
-    val timerFormatted = String.format("%02d:%02d", minutes, seconds)
+    // F-18: `state.elapsedSeconds` is deliberately NOT read here.
+    //
+    // It changes five times a second, and a state read in this body makes the entire
+    // 789-line composable the invalidation scope for it — including both SlideSurface
+    // previews, which are not skippable because `Slide` carries a `List<SlideElement>` and
+    // Compose treats that as unstable. The clock is read inside [PresenterHeader] instead,
+    // so a tick repaints the header and nothing else.
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(state.currentTheme.background)
     ) {
-        // Speaker Header (Clock, Stopwatch, Controls)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp)
-                .background(state.currentTheme.surface)
-                .border(1.dp, state.currentTheme.cardBorder)
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Wall Clock & Slide Count
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Schedule,
-                        contentDescription = "Clock",
-                        tint = state.currentTheme.textMuted,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = currentTime,
-                        color = state.currentTheme.textPrimary,
-                        fontSize = 15.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Text(
-                    text = "•  Slide ${state.currentSlideIndex + 1} of ${state.slides.size}",
-                    color = state.currentTheme.textSecondary,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-
-            // Stopwatch Timer with Play/Pause & Reset
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = "ELAPSED:",
-                    color = state.currentTheme.textMuted,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = timerFormatted,
-                    color = if (state.isTimerRunning) state.currentTheme.primary else state.currentTheme.warning,
-                    fontSize = 20.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Black
-                )
-
-                IconButton(
-                    onClick = { state.toggleTimer() },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = if (state.isTimerRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = "Toggle Timer",
-                        tint = state.currentTheme.primary
-                    )
-                }
-
-                IconButton(
-                    onClick = { state.resetTimer() },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Reset Timer",
-                        tint = state.currentTheme.textMuted
-                    )
-                }
-            }
-
-            // Close Presenter View Button
-            Button(
-                onClick = onClose,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = state.currentTheme.surfaceVariant,
-                    contentColor = state.currentTheme.textPrimary
-                ),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text("Exit Presenter View", fontSize = 12.sp)
-            }
-        }
+        PresenterHeader(state = state, currentTime = currentTime, onClose = onClose)
 
         // Pacing & Rehearsal Gauge Ribbon
         PresenterPacingRibbon(state = state)
@@ -254,8 +164,21 @@ fun PresenterView(
                     .border(1.dp, state.currentTheme.cardBorder, RoundedCornerShape(14.dp))
                     .padding(16.dp)
             ) {
-                // 3-Way Tab Switcher (Notes, Live Q&A, Parking Lot)
+                // F-18: three copy-pasted 20-line Buttons differing only by index, icon,
+                // label and accent colour. One parameterised composable, driven by a list.
                 val openParkingLotCount = state.followUpQuestions.count { !it.isAnswered }
+                val tabs = listOf(
+                    PresenterTabSpec(0, "Notes", Icons.AutoMirrored.Filled.Notes, 1f, state.currentTheme.primary),
+                    PresenterTabSpec(1, "Q&A (${state.audienceQuestions.size})", Icons.Default.QuestionAnswer, 1.1f, state.currentTheme.accent),
+                    PresenterTabSpec(
+                        index = 2,
+                        label = if (openParkingLotCount > 0) "Parking Lot ($openParkingLotCount)" else "Parking Lot",
+                        icon = Icons.Default.Checklist,
+                        weight = 1.2f,
+                        activeColor = state.currentTheme.primary
+                    )
+                )
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -264,257 +187,23 @@ fun PresenterView(
                         .padding(4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Notes Tab Button
-                    Button(
-                        onClick = { selectedRightTab = 0 },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (selectedRightTab == 0) state.currentTheme.surfaceVariant else Color.Transparent,
-                            contentColor = if (selectedRightTab == 0) state.currentTheme.primary else state.currentTheme.textMuted
-                        ),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(vertical = 6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.Notes, null, modifier = Modifier.size(13.dp))
-                            Text("Notes", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    // Q&A Tab Button
-                    Button(
-                        onClick = { selectedRightTab = 1 },
-                        modifier = Modifier.weight(1.1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (selectedRightTab == 1) state.currentTheme.surfaceVariant else Color.Transparent,
-                            contentColor = if (selectedRightTab == 1) state.currentTheme.accent else state.currentTheme.textMuted
-                        ),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(vertical = 6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(Icons.Default.QuestionAnswer, null, modifier = Modifier.size(13.dp))
-                            Text("Q&A (${state.audienceQuestions.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    // Parking Lot Tab Button
-                    Button(
-                        onClick = { selectedRightTab = 2 },
-                        modifier = Modifier.weight(1.2f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (selectedRightTab == 2) state.currentTheme.surfaceVariant else Color.Transparent,
-                            contentColor = if (selectedRightTab == 2) state.currentTheme.primary else state.currentTheme.textMuted
-                        ),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(vertical = 6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(Icons.Default.Checklist, null, modifier = Modifier.size(13.dp))
-                            Text(
-                                if (openParkingLotCount > 0) "Parking Lot ($openParkingLotCount)" else "Parking Lot",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                    tabs.forEach { tab ->
+                        PresenterTab(
+                            spec = tab,
+                            selected = selectedRightTab == tab.index,
+                            theme = state.currentTheme,
+                            modifier = Modifier.weight(tab.weight),
+                            onClick = { selectedRightTab = tab.index }
+                        )
                     }
                 }
 
                 Spacer(Modifier.height(12.dp))
 
-                if (selectedRightTab == 0) {
-                    // Speaker Notes Header with Zoom Controls
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "SLIDE NOTES",
-                            color = state.currentTheme.textMuted,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-
-                        // Font Zoom Controls for Notes
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            IconButton(
-                                onClick = { if (notesFontSize.value > 12) notesFontSize = (notesFontSize.value - 2).sp },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(Icons.Default.Remove, "Smaller Notes", tint = state.currentTheme.textMuted, modifier = Modifier.size(14.dp))
-                            }
-
-                            Text(
-                                text = "${notesFontSize.value.toInt()}pt",
-                                color = state.currentTheme.textSecondary,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-
-                            IconButton(
-                                onClick = { if (notesFontSize.value < 36) notesFontSize = (notesFontSize.value + 2).sp },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(Icons.Default.Add, "Larger Notes", tint = state.currentTheme.textMuted, modifier = Modifier.size(14.dp))
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    // Scrollable Notes Body
-                    val currentNotes = state.currentSlide?.notes ?: emptyList()
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        if (currentNotes.isEmpty()) {
-                            Box(
-                                modifier = Modifier.fillMaxSize().padding(top = 40.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "No speaker notes for this slide.\n(Add <!-- note: ... --> in markdown)",
-                                    color = state.currentTheme.textMuted.copy(alpha = 0.6f),
-                                    fontSize = 13.sp,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                )
-                            }
-                        } else {
-                            currentNotes.forEach { note ->
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(state.currentTheme.surfaceVariant.copy(alpha = 0.4f))
-                                        .padding(12.dp)
-                                ) {
-                                    Text(
-                                        text = note,
-                                        color = state.currentTheme.textPrimary,
-                                        fontSize = notesFontSize,
-                                        lineHeight = (notesFontSize.value + 6).sp,
-                                        fontFamily = FontFamily.SansSerif
-                                    )
-                                }
-                            }
-                        }
-                    }
-                } else if (selectedRightTab == 1) {
-                    // Live Audience Q&A Stream
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        if (state.audienceQuestions.isEmpty()) {
-                            Box(
-                                modifier = Modifier.fillMaxSize().padding(top = 40.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "No audience questions yet.\nAudience can submit via the companion portal.",
-                                    color = state.currentTheme.textMuted.copy(alpha = 0.6f),
-                                    fontSize = 13.sp,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                )
-                            }
-                        } else {
-                            state.audienceQuestions.forEach { q ->
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(if (q.isAnswered) state.currentTheme.background.copy(alpha = 0.5f) else state.currentTheme.surfaceVariant.copy(alpha = 0.5f))
-                                        .border(1.dp, if (q.isAnswered) state.currentTheme.cardBorder.copy(alpha = 0.3f) else state.currentTheme.primary.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
-                                        .padding(12.dp)
-                                ) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = q.author,
-                                                color = state.currentTheme.primary,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(12.dp))
-                                                    .background(state.currentTheme.accent.copy(alpha = 0.2f))
-                                                    .padding(horizontal = 8.dp, vertical = 2.dp)
-                                             ) {
-                                                Text(
-                                                    text = "👍 ${q.upvotes}",
-                                                    color = state.currentTheme.accent,
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontFamily = FontFamily.Monospace
-                                                )
-                                            }
-                                        }
-
-                                        Text(
-                                            text = q.text,
-                                            color = if (q.isAnswered) state.currentTheme.textMuted else state.currentTheme.textPrimary,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.End,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            TextButton(
-                                                onClick = { state.convertAudienceQuestionToParkingLot(q.id) },
-                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                                            ) {
-                                                Text("📌 Park for Later", fontSize = 11.sp, color = state.currentTheme.accent)
-                                            }
-                                            if (!q.isAnswered) {
-                                                TextButton(
-                                                    onClick = { state.markQuestionAnswered(q.id) },
-                                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text("Mark Answered", fontSize = 11.sp, color = state.currentTheme.success)
-                                                }
-                                            }
-                                            TextButton(
-                                                onClick = { state.dismissQuestion(q.id) },
-                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                                            ) {
-                                                Text("Dismiss", fontSize = 11.sp, color = Color(0xFFEF4444))
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // Parking Lot & Unanswered Questions Follow-Up Tab
-                    ParkingLotView(
+                when (selectedRightTab) {
+                    0 -> NotesPanel(state = state, notesFontSize = notesFontSize, onFontSizeChange = { notesFontSize = it })
+                    1 -> AudienceQaPanel(state = state)
+                    else -> ParkingLotView(
                         state = state,
                         theme = state.currentTheme,
                         modifier = Modifier.fillMaxSize()
@@ -782,6 +471,355 @@ private fun PresenterPacingRibbon(
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
+                }
+            }
+        }
+    }
+}
+
+/** One tab in the presenter console's right-hand panel. */
+private data class PresenterTabSpec(
+    val index: Int,
+    val label: String,
+    val icon: ImageVector,
+    val weight: Float,
+    val activeColor: Color
+)
+
+@Composable
+private fun PresenterTab(
+    spec: PresenterTabSpec,
+    selected: Boolean,
+    theme: com.skaldoria.theme.PresentationTheme,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (selected) theme.surfaceVariant else Color.Transparent,
+            contentColor = if (selected) spec.activeColor else theme.textMuted
+        ),
+        shape = RoundedCornerShape(6.dp),
+        contentPadding = PaddingValues(vertical = 6.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(spec.icon, null, modifier = Modifier.size(13.dp))
+            Text(spec.label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+/**
+ * The console's top strip: wall clock, talk clock, transport and exit.
+ *
+ * F-18: extracted so that reading `state.elapsedSeconds` — which changes every 200 ms —
+ * invalidates this row alone rather than the whole presenter console.
+ */
+@Composable
+private fun PresenterHeader(
+    state: PresentationState,
+    currentTime: String,
+    onClose: () -> Unit
+) {
+    val minutes = state.elapsedSeconds / 60
+    val seconds = state.elapsedSeconds % 60
+    val timerFormatted = String.format("%02d:%02d", minutes, seconds)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(60.dp)
+            .background(state.currentTheme.surface)
+            .border(1.dp, state.currentTheme.cardBorder)
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Wall Clock & Slide Count
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Schedule,
+                    contentDescription = "Clock",
+                    tint = state.currentTheme.textMuted,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = currentTime,
+                    color = state.currentTheme.textPrimary,
+                    fontSize = 15.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Text(
+                text = "•  Slide ${state.currentSlideIndex + 1} of ${state.slides.size}",
+                color = state.currentTheme.textSecondary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        // Stopwatch Timer with Play/Pause & Reset
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "ELAPSED:",
+                color = state.currentTheme.textMuted,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = timerFormatted,
+                color = if (state.isTimerRunning) state.currentTheme.primary else state.currentTheme.warning,
+                fontSize = 20.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Black
+            )
+
+            IconButton(
+                onClick = { state.toggleTimer() },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = if (state.isTimerRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = "Toggle Timer",
+                    tint = state.currentTheme.primary
+                )
+            }
+
+            IconButton(
+                onClick = { state.resetTimer() },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Reset Timer",
+                    tint = state.currentTheme.textMuted
+                )
+            }
+        }
+
+        // Close Presenter View Button
+        Button(
+            onClick = onClose,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = state.currentTheme.surfaceVariant,
+                contentColor = state.currentTheme.textPrimary
+            ),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Text("Exit Presenter View", fontSize = 12.sp)
+        }
+    }
+}
+
+
+/**
+ * Speaker notes for the current slide, with their own zoom control.
+ *
+ * F-18: extracted from the console body. The font size is hoisted to the caller so the
+ * setting survives a tab switch.
+ */
+@Composable
+private fun NotesPanel(
+    state: PresentationState,
+    notesFontSize: androidx.compose.ui.unit.TextUnit,
+    onFontSizeChange: (androidx.compose.ui.unit.TextUnit) -> Unit
+) {
+    // Speaker Notes Header with Zoom Controls
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "SLIDE NOTES",
+            color = state.currentTheme.textMuted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+        )
+
+        // Font Zoom Controls for Notes
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            IconButton(
+                onClick = { if (notesFontSize.value > 12) onFontSizeChange((notesFontSize.value - 2).sp) },
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(Icons.Default.Remove, "Smaller Notes", tint = state.currentTheme.textMuted, modifier = Modifier.size(14.dp))
+            }
+
+            Text(
+                text = "${notesFontSize.value.toInt()}pt",
+                color = state.currentTheme.textSecondary,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace
+            )
+
+            IconButton(
+                onClick = { if (notesFontSize.value < 36) onFontSizeChange((notesFontSize.value + 2).sp) },
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(Icons.Default.Add, "Larger Notes", tint = state.currentTheme.textMuted, modifier = Modifier.size(14.dp))
+            }
+        }
+    }
+
+    Spacer(Modifier.height(10.dp))
+
+    // Scrollable Notes Body
+    val currentNotes = state.currentSlide?.notes ?: emptyList()
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (currentNotes.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(top = 40.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No speaker notes for this slide.\n(Add <!-- note: ... --> in markdown)",
+                    color = state.currentTheme.textMuted.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        } else {
+            currentNotes.forEach { note ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(state.currentTheme.surfaceVariant.copy(alpha = 0.4f))
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = note,
+                        color = state.currentTheme.textPrimary,
+                        fontSize = notesFontSize,
+                        lineHeight = (notesFontSize.value + 6).sp,
+                        fontFamily = FontFamily.SansSerif
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The live audience question stream, with the speaker's moderation actions. */
+@Composable
+private fun AudienceQaPanel(state: PresentationState) {
+    // Live Audience Q&A Stream
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (state.audienceQuestions.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(top = 40.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No audience questions yet.\nAudience can submit via the companion portal.",
+                    color = state.currentTheme.textMuted.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        } else {
+            state.audienceQuestions.forEach { q ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (q.isAnswered) state.currentTheme.background.copy(alpha = 0.5f) else state.currentTheme.surfaceVariant.copy(alpha = 0.5f))
+                        .border(1.dp, if (q.isAnswered) state.currentTheme.cardBorder.copy(alpha = 0.3f) else state.currentTheme.primary.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                        .padding(12.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = q.author,
+                                color = state.currentTheme.primary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(state.currentTheme.accent.copy(alpha = 0.2f))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                             ) {
+                                Text(
+                                    text = "👍 ${q.upvotes}",
+                                    color = state.currentTheme.accent,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = q.text,
+                            color = if (q.isAnswered) state.currentTheme.textMuted else state.currentTheme.textPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = { state.convertAudienceQuestionToParkingLot(q.id) },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("📌 Park for Later", fontSize = 11.sp, color = state.currentTheme.accent)
+                            }
+                            if (!q.isAnswered) {
+                                TextButton(
+                                    onClick = { state.markQuestionAnswered(q.id) },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text("Mark Answered", fontSize = 11.sp, color = state.currentTheme.success)
+                                }
+                            }
+                            TextButton(
+                                onClick = { state.dismissQuestion(q.id) },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("Dismiss", fontSize = 11.sp, color = Color(0xFFEF4444))
+                            }
+                        }
+                    }
                 }
             }
         }
