@@ -170,7 +170,7 @@ class CharacterizationTest {
     }
 
     /**
-     * COR-1 — FIXED. HR_REGEX accepts `-{3,}` so the parser split on `----`, but the old
+     * COR-1 — FIXED. SLIDE_BREAK_RULE accepts `-{3,}` so the parser split on `----`, but the old
      * chunker matched only an exact `---`.
      */
     @Test

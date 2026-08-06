@@ -15,6 +15,11 @@ data class FenceInfo(
 )
 
 /**
+ * **Category: shared grammar.** Every consumer must agree with this — the parser, the block
+ * rules and the editor's highlighter all call it, and `FenceLexerAgreementTest` fails if any of
+ * them starts answering differently. Contrast `MarkdownSlideParser.SLIDE_HEADING`, which is
+ * *policy*: the highlighter is expected to disagree with that one.
+ *
  * The single authority on what opens and closes a fenced block.
  *
  * Before this existed, four places each decided independently:

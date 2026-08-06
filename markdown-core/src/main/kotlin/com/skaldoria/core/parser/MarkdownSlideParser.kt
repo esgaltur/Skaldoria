@@ -14,8 +14,26 @@ import java.util.UUID
  */
 object MarkdownSlideParser {
 
-    internal val HR_REGEX = Regex("""^(\*{3,}|-{3,}|_{3,})\s*$""")
-    internal val HEADING_1_2_REGEX = Regex("""^(#{1,2})\s+(.+)$""")
+    // ---- Slide-structure policy ----
+    //
+    // These two answer "where does a slide begin and end", which is *this parser's* question and
+    // nobody else's. The editor's highlighter asks a different one — "what colour is this line" —
+    // and is expected to answer differently. It colours `### Sub` and `#hashtag`; neither starts a
+    // slide. That is two correct answers, not a divergence, and these names now say so.
+    //
+    // Contrast with `FenceRules`, which is shared grammar: every consumer must agree with it, and
+    // `FenceLexerAgreementTest` fails if they stop. See docs/MARKDOWN_UNIFICATION_PLAN.md, Phase E.
+
+    /** A thematic break that ends the current slide. Deliberately broader than the editor styles. */
+    internal val SLIDE_BREAK_RULE = Regex("""^(\*{3,}|-{3,}|_{3,})\s*$""")
+
+    /**
+     * A heading at the level that defines a slide — it both starts one and titles it.
+     *
+     * The `{1,2}` is policy, not grammar: deeper headings are still headings, they just do not
+     * begin a new slide.
+     */
+    internal val SLIDE_HEADING = Regex("""^(#{1,2})\s+(.+)$""")
     // CODE_FENCE_START was removed in Phase B. It recognised backtick fences only, and only
     // with an info string of the form `lang [1,3-5]`, which is what silently dropped the
     // language on ordinary markdown like ```js {highlight=2}. FenceRules replaced it.
@@ -85,8 +103,8 @@ object MarkdownSlideParser {
             }
 
             // Slide split conditions: Horizontal Rule '---' or top-level headings '# ' or '## '
-            val isHr = HR_REGEX.matches(trimmed)
-            val isHeading1or2 = HEADING_1_2_REGEX.matches(trimmed)
+            val isHr = SLIDE_BREAK_RULE.matches(trimmed)
+            val isHeading1or2 = SLIDE_HEADING.matches(trimmed)
 
             if (isHr) {
                 // The rule itself belongs to no slide; it is regenerated on reassembly.
@@ -96,7 +114,7 @@ object MarkdownSlideParser {
 
             if (isHeading1or2 && currentLines.any { it.isNotBlank() }) {
                 // If the section already has content or a heading, split it
-                val hasExistingHeading = currentLines.any { HEADING_1_2_REGEX.matches(it.trim()) }
+                val hasExistingHeading = currentLines.any { SLIDE_HEADING.matches(it.trim()) }
                 if (hasExistingHeading || currentLines.size > 2) {
                     flushSection(lineIndex)
                 }

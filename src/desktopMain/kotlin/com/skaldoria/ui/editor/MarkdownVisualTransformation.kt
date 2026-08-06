@@ -34,6 +34,15 @@ class MarkdownVisualTransformation(
 
     companion object {
         /**
+         * **Category: display only.** These decide what gets coloured, nothing else. They are
+         * allowed — expected — to be looser than the parser: this file styles `### Sub` and
+         * `#hashtag` as headings, neither of which begins a slide, and that is correct for both.
+         *
+         * The rules that must *not* diverge are the shared-grammar ones in `:markdown-core`
+         * (`FenceRules`), which this file calls rather than reimplements. See
+         * `docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase E, for the three that still disagree in ways
+         * that are genuine bugs — horizontal rules, table rows and `$$` blocks.
+         *
          * PRF-5: compiled once.
          *
          * These three were `Regex(...)` literals *inside* the per-line loop, so every call

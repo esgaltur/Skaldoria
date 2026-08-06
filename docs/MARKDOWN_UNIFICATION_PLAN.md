@@ -1,6 +1,6 @@
 # Markdown Core — Extraction, Convergence, and Speed
 
-**Opened:** 2026-08-06 · **Status:** Phases 0–1, A, B, C complete; D optional · **Baseline:** `2e40c02`
+**Opened:** 2026-08-06 · **Status:** Phases 0–1, A, B, C, E complete; D optional · **Baseline:** `2e40c02`
 
 ## Decision summary — read this first
 
@@ -280,6 +280,71 @@ From [`EDITOR_SCALING_ANALYSIS.md`](./EDITOR_SCALING_ANALYSIS.md). Independent o
 - [ ] **Guard `extractFollowUpQuestions`.** The guard must cover **both** extraction paths —
       `<!--` for directives, `-` … `[` for task lists. A `parking-lot:`-only guard silently drops
       checkbox-derived items.
+
+---
+
+## Phase E — Make each rule's purpose visible
+
+### The correction this phase exists because of
+
+This document previously claimed the three lexers "each hold a private opinion about markdown and
+nothing makes them agree", and listed seven duplicated primitives to unify. **That was too strong,
+and one entry was simply wrong.**
+
+`HEADING_1_2_REGEX` and the highlighter's `startsWith("#")` are not duplicates. They answer
+*different questions*:
+
+- the parser asks **"does this line start a new slide?"** — only levels 1–2 do
+- the highlighter asks **"what colour is this line?"** — every level gets one
+
+`### Sub` should be coloured and should not split. Two correct answers, no defect. The useful test
+is not "do these look similar" but:
+
+> **Are they asking the same question and getting different answers?**
+
+Re-sorted on that basis, the seven become three:
+
+| Rule | Verdict |
+| :--- | :--- |
+| Heading | **Different questions** — split boundary vs. colour level. Both correct. |
+| HTML comment | **Different questions** — the parser distinguishes `layout:` from `note:` because it acts on them; the highlighter greys them all alike. |
+| List item, block quote | Same question, rules look close — confirm before touching |
+| **Horizontal rule** | **Genuine.** Parser splits on `***`, `___`, `----`; highlighter styles only exact `---`. A `***` line splits the deck with no visual indication in the editor. |
+| **Table row** | **Genuine.** Highlighter needs leading *and* trailing `\|`; the parser is looser. |
+| **Math** | **Genuine.** The highlighter tracks no `$$` block state at all — it styles the delimiters and treats the body as prose. |
+
+**None of the three are the dangerous class.** The fence bug was severe because fence state carried
+forward and corrupted everything after it. These are per-line and self-contained — wrong colours,
+not a mangled deck. Real, worth fixing, not urgent.
+
+### The actual defect: category is invisible
+
+Three kinds of rule are indistinguishable in the source today:
+
+| Kind | Must it agree with the other consumers? |
+| :--- | :--- |
+| **Shared grammar** — what the syntax *is* | **Yes, always** (`FenceRules`) |
+| **Parser policy** — what the parser does about it | No, it may be stricter |
+| **Display only** — what the editor colours | No, it may be looser |
+
+The fence rules *had* to agree and nothing said so. The heading rules did *not* have to, and
+nothing said that either. That ambiguity is what produced both the shipped bug and, later, a wrong
+entry in this very document.
+
+- [x] `HEADING_1_2_REGEX` → `SLIDE_HEADING` — names the job (a heading that defines a slide),
+      not the syntax (one or two hashes)
+- [x] `HR_REGEX` → `SLIDE_BREAK_RULE`
+- [x] Category marked on each: `FenceRules` as **shared grammar** with a pointer to
+      `FenceLexerAgreementTest`; the parser's two as **slide-structure policy**; the
+      highlighter's regexes as **display only**, stating that being looser than the parser is
+      correct there
+
+Compiler-checked, no behaviour change, build green at **78 test classes**.
+
+**Why this was worth half an hour.** The old name described the syntax and hid the job, and that
+is not a hypothetical readability concern — it produced a wrong entry in this document, which was
+then used to argue for unifying two rules that are *supposed* to differ. A name that answers
+"what question does this rule ask?" makes the next such argument unnecessary.
 
 ---
 
