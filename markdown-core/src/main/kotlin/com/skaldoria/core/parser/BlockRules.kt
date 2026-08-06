@@ -233,10 +233,10 @@ internal object TableRule : BlockRule {
 
 internal object HeadingRule : BlockRule {
     override fun matches(line: String, context: SectionContext) =
-        MarkdownSlideParser.HEADING_1_2_REGEX.containsMatchIn(line)
+        MarkdownSlideParser.SLIDE_HEADING.containsMatchIn(line)
 
     override fun consume(line: String, raw: String, context: SectionContext) {
-        MarkdownSlideParser.HEADING_1_2_REGEX.find(line)?.let {
+        MarkdownSlideParser.SLIDE_HEADING.find(line)?.let {
             context.addHeading(it.groupValues[2].trim())
         }
     }
