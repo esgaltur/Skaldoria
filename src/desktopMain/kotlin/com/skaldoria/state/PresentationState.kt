@@ -9,6 +9,7 @@ import com.skaldoria.config.ConfigManager
 import com.skaldoria.core.annotation.AnnotationLayer
 import com.skaldoria.core.audience.AudienceSession
 import com.skaldoria.core.deck.SampleDecks
+import com.skaldoria.core.deck.ProjectSlideMap
 import com.skaldoria.core.deck.SlideNavigator
 import com.skaldoria.core.document.DeckHistory
 import com.skaldoria.core.document.SlideDocument
@@ -884,16 +885,13 @@ class PresentationState(
 
     private fun document(): SlideDocument = SlideDocument.of(markdownText)
 
-    /** Index of the project file that produced the slide at [slideIndex], or null. */
+    // F-13, first step: COR-3's derived slide-to-file mapping is pure, so it moves out
+    // ahead of the rest of the document cluster. See [ProjectSlideMap].
     private fun ownerFileIndex(slideIndex: Int): Int? =
-        activeProject?.slideOwnerFileIndices()?.getOrNull(slideIndex)
+        ProjectSlideMap.ownerFileIndex(activeProject, slideIndex)
 
-    /** Position of [slideIndex] within its own file, for editing that file in isolation. */
-    private fun localSlideIndex(slideIndex: Int): Int? {
-        val owners = activeProject?.slideOwnerFileIndices() ?: return null
-        val fileIndex = owners.getOrNull(slideIndex) ?: return null
-        return slideIndex - owners.indexOf(fileIndex)
-    }
+    private fun localSlideIndex(slideIndex: Int): Int? =
+        ProjectSlideMap.localSlideIndex(activeProject, slideIndex)
 
     private fun writeProjectFile(fileIndex: Int, newContent: String) {
         val proj = activeProject ?: return
@@ -936,7 +934,7 @@ class PresentationState(
             // is only well defined when each file holds exactly one slide.
             val proj = activeProject ?: return
             val owners = proj.slideOwnerFileIndices()
-            val oneSlidePerFile = owners.size == proj.slideFiles.size
+            val oneSlidePerFile = ProjectSlideMap.isOneSlidePerFile(proj)
             if (oneSlidePerFile) {
                 if (fromIndex !in proj.slideFiles.indices || toIndex !in proj.slideFiles.indices) return
                 val reordered = proj.slideFiles.toMutableList()
@@ -986,7 +984,7 @@ class PresentationState(
 
             // Last slide in its file: remove the file from the deck rather than leaving
             // an empty one behind. The file itself is left on disk.
-            if (owners.count { it == fileIndex } <= 1) {
+            if (ProjectSlideMap.slideCountInFile(proj, fileIndex) <= 1) {
                 if (proj.slideFiles.size <= 1) return
                 val remaining = proj.slideFiles.toMutableList().apply { removeAt(fileIndex) }
                 val updatedProj = proj.copy(slideFiles = remaining)
