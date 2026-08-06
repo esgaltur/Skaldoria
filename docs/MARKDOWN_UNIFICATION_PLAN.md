@@ -1,6 +1,6 @@
 # Markdown Core — Extraction, Convergence, and Speed
 
-**Opened:** 2026-08-06 · **Status:** Phases 0–1, A complete; B next · **Baseline:** `2e40c02`
+**Opened:** 2026-08-06 · **Status:** Phases 0–1, A, B complete; C next · **Baseline:** `2e40c02`
 
 ## Decision summary — read this first
 
@@ -144,18 +144,56 @@ boundary made the missing abstraction visible by refusing to compile without it.
 `DocumentedSyntaxTest` stayed in the app module: it reads files from `docs/` and its paths resolve
 against the root project directory. Moving it needs a path fix, not just a `git mv`.
 
-## Phase B — One shared fence primitive (1 day)
+## Phase B — One shared fence primitive ✅ *complete*
 
 The correctness win from the cancelled rewrite, at a tenth of the cost.
 
-- [ ] `FenceRules.isFenceOpen(line): FenceInfo?` — single authority, in `:markdown-core`
-- [ ] Handles backtick **and** tilde fences, arbitrary info strings, and fence-length matching
-- [ ] `MarkdownSlideParser` and `MarkdownVisualTransformation` both call it; neither keeps a
-      private opinion
-- [ ] Both `DEFECT` assertions in `FenceLexerDivergenceTest` invert — update them deliberately and
-      note it in the commit
+- [x] `FenceRules.openingFence(line): FenceInfo?` and `FenceRules.closes(line, open)` — the single
+      authority, in `:markdown-core`
+- [x] Backtick **and** tilde fences, any length ≥ 3, arbitrary info strings, and closing-fence
+      matching (same marker, at least as long, no info string)
+- [x] `MarkdownSlideParser.CODE_FENCE_START` **deleted** — it was the source of the language-loss
+      defect
+- [x] `FenceLexerDivergenceTest` → `FenceLexerAgreementTest`: it now asserts the two lexers *agree*
+      line-for-line across backtick, tilde, and nested-longer fences
 
-Fixes both pinned defects and makes the divergence structurally impossible to reintroduce.
+**It was four call sites, not three.** The count in this document was wrong until the work was
+done. `MarkdownSlideParser` held *two* independent notions internally: `startsWith("```")` toggling
+in the slide-split scan, and the anchored `CODE_FENCE_START` regex for language extraction. They
+could and did disagree with each other inside the same class.
+
+| Site | Was | Now |
+| :--- | :--- | :--- |
+| `MarkdownSlideParser` split scan | `startsWith("```")`, toggled | `FenceRules` |
+| `MarkdownSlideParser.CODE_FENCE_START` | anchored regex, backticks only | deleted |
+| `BlockRules.CodeFenceRule` | `startsWith("```")` | `FenceRules` |
+| `MarkdownVisualTransformation` | `startsWith("```")`, toggled | `FenceRules` |
+
+`SectionContext` gained `openFence: FenceInfo?` so a fence can only be closed by a *matching*
+terminator — which is what makes a ` ``` ` nested inside a ` ```` ` block stay code instead of
+ending the outer fence.
+
+### Both pinned defects fixed
+
+| Defect | Before | After |
+| :--- | :--- | :--- |
+| Language lost on unusual info string | ` ```js {highlight=2} ` → `language="kotlin"` | `language="js"` |
+| Tilde fences invisible | `~~~python` parsed and styled as prose | code in both lexers |
+
+### Cost: the predicted give-back, and it is small
+
+Phase 0 noted that part of the parser's speed advantage came from cases it failed to handle, and
+that fixing them would cost some of it back. Measured:
+
+| | Before | After |
+| :--- | ---: | ---: |
+| `parse` | 1.30 ms | 1.32 ms |
+| `highlightMarkdown` | 538 µs | 559 µs |
+
+Roughly 2–4%, for correct CommonMark fence handling in every consumer at once. The advantage over
+the AST library (2.65 µs/line) is untouched.
+
+**538 tests, 76 classes, green.**
 
 ## Phase C — The two cheap wins (1 day)
 

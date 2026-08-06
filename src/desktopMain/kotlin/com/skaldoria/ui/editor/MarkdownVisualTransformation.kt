@@ -11,6 +11,8 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.sp
+import com.skaldoria.core.parser.FenceInfo
+import com.skaldoria.core.parser.FenceRules
 import com.skaldoria.theme.AdaptiveContrastEnforcer
 import com.skaldoria.theme.PresentationTheme
 
@@ -61,7 +63,12 @@ class MarkdownVisualTransformation(
 
                 val lines = text.split("\n")
                 var currentOffset = 0
-                var insideCodeFence = false
+
+                // Phase B: fence state comes from the same authority the parser uses, so the
+                // editor cannot colour a block the parser does not consider code. This was a
+                // private `startsWith("```")` toggle, which made tilde fences invisible here and
+                // disagreed with the parser on any unusual info string.
+                var openFence: FenceInfo? = null
 
                 val baseBg = theme.surface
 
@@ -78,9 +85,15 @@ class MarkdownVisualTransformation(
                     val lineEnd = lineStart + line.length
                     val trimmed = line.trim()
 
-                    // Code Fences (```)
-                    if (trimmed.startsWith("```")) {
-                        insideCodeFence = !insideCodeFence
+                    // Fence markers: ``` or ~~~, of any length, with any info string.
+                    val currentFence = openFence
+                    val isFenceMarker = if (currentFence != null) {
+                        FenceRules.closes(trimmed, currentFence).also { if (it) openFence = null }
+                    } else {
+                        FenceRules.openingFence(trimmed)?.also { openFence = it } != null
+                    }
+
+                    if (isFenceMarker) {
                         addStyle(
                             SpanStyle(
                                 color = theme.accent,
@@ -94,7 +107,7 @@ class MarkdownVisualTransformation(
                         continue
                     }
 
-                    if (insideCodeFence) {
+                    if (openFence != null) {
                         // Apply base code styling
                         addStyle(
                             SpanStyle(

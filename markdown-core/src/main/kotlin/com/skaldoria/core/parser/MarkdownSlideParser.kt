@@ -16,18 +16,9 @@ object MarkdownSlideParser {
 
     internal val HR_REGEX = Regex("""^(\*{3,}|-{3,}|_{3,})\s*$""")
     internal val HEADING_1_2_REGEX = Regex("""^(#{1,2})\s+(.+)$""")
-    /**
-     * Public, deliberately: this is the seam between the parser and the editor's highlighter.
-     *
-     * It went from `internal` to public when `:markdown-core` was extracted, because
-     * `FenceLexerDivergenceTest` lives in the app module — it has to reach both this and the
-     * Compose-dependent `MarkdownVisualTransformation` to assert the two agree.
-     *
-     * Phase B replaces it with a shared `FenceRules` primitive that both callers use, at which
-     * point fence recognition becomes a real public API of this module rather than a regex the
-     * highlighter happens to be allowed to see. See `docs/MARKDOWN_UNIFICATION_PLAN.md`.
-     */
-    val CODE_FENCE_START = Regex("""^```([a-zA-Z0-9_-]*)(?:\s*\[([0-9,\-|]+)\])?\s*$""")
+    // CODE_FENCE_START was removed in Phase B. It recognised backtick fences only, and only
+    // with an info string of the form `lang [1,3-5]`, which is what silently dropped the
+    // language on ordinary markdown like ```js {highlight=2}. FenceRules replaced it.
     internal val IMAGE_REGEX = Regex("""!\[(.*?)\]\((.*?)\)""")
     internal val NOTE_COMMENT_REGEX = Regex("""<!--\s*(?:note|speaker):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
     internal val NOTE_QUOTE_REGEX = Regex("""^>\s*note:\s*(.+)$""", RegexOption.IGNORE_CASE)
@@ -70,19 +61,25 @@ object MarkdownSlideParser {
             currentStart = -1
         }
 
-        var inCodeFence = false
+        // COR-1: fence state decides whether a `---` splits the deck or is part of a code
+        // sample. Tracked through FenceRules so this scan, the block rules and the editor's
+        // highlighter cannot drift apart — previously this toggled on any "```" prefix and
+        // therefore disagreed with all of them.
+        var openFence: FenceInfo? = null
 
         for ((lineIndex, line) in lines.withIndex()) {
             val trimmed = line.trim()
 
-            // Handle code block state
-            if (trimmed.startsWith("```")) {
-                inCodeFence = !inCodeFence
+            val currentFence = openFence
+            if (currentFence != null) {
+                if (FenceRules.closes(trimmed, currentFence)) openFence = null
                 appendLine(lineIndex, line)
                 continue
             }
 
-            if (inCodeFence) {
+            val opening = FenceRules.openingFence(trimmed)
+            if (opening != null) {
+                openFence = opening
                 appendLine(lineIndex, line)
                 continue
             }

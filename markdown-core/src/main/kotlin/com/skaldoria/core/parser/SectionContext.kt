@@ -43,6 +43,14 @@ internal class SectionContext {
 
     var inCodeBlock: Boolean = false
         private set
+
+    /**
+     * The fence currently held open, so [CodeFenceRule] can require a *matching* terminator
+     * rather than accepting any line that starts with a marker. Null whenever [inCodeBlock] is
+     * false.
+     */
+    var openFence: FenceInfo? = null
+        private set
     var inMathBlock: Boolean = false
         private set
 
@@ -77,8 +85,9 @@ internal class SectionContext {
 
     fun addCodeLine(line: String) = codeLines.add(line)
 
-    fun openCodeBlock(language: String, highlights: Set<Int>) {
+    fun openCodeBlock(language: String, highlights: Set<Int>, fence: FenceInfo? = null) {
         inCodeBlock = true
+        openFence = fence
         codeLanguage = language
         highlightedLines = highlights
         codeLines = mutableListOf()
@@ -209,6 +218,7 @@ internal class SectionContext {
         )
         codeLines = mutableListOf()
         inCodeBlock = false
+        openFence = null
     }
 
     private fun splitCells(raw: String): List<String> =
