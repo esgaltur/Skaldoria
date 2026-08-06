@@ -11,6 +11,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The talk stopwatch: run, pause, resume, reset.
@@ -117,7 +118,7 @@ class TalkTimer(
         tickerJob = scope.launch {
             while (isActive) {
                 elapsedSeconds = currentElapsedSeconds()
-                delay(tickIntervalMillis)
+                delay(tickIntervalMillis.milliseconds)
             }
         }
     }

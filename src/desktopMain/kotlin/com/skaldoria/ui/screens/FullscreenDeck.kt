@@ -1,21 +1,34 @@
 package com.skaldoria.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,15 +37,52 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.skaldoria.core.models.SlideTransition
+import com.skaldoria.core.presentation.HudVisibility
+import com.skaldoria.core.presentation.SlideNumberEntry
+import com.skaldoria.core.presentation.TransitionResolver
 import com.skaldoria.state.PresentationState
+import kotlinx.coroutines.delay
 import com.skaldoria.ui.components.AppTooltip
 import com.skaldoria.ui.components.CommandPalette
 import com.skaldoria.ui.components.SlideAnnotationOverlay
 import com.skaldoria.ui.components.SlideGridOverviewDialog
 import com.skaldoria.ui.components.SlideSurface
+
+/** How long the pointer must rest before an auto-hiding HUD fades out. */
+private const val HUD_IDLE_MILLIS = 2500L
+
+/**
+ * Maps a [SlideTransition] onto the animation that performs it.
+ *
+ * DEL-01: this `when` is exhaustive over a closed enum on purpose. Adding a transition value
+ * becomes a compile error here rather than silently rendering as a fade — which is precisely
+ * how all four values came to be ignored.
+ */
+private fun transitionSpecFor(transition: SlideTransition): ContentTransform {
+    val spec = tween<Float>(durationMillis = 320)
+    return when (transition) {
+        SlideTransition.FADE ->
+            fadeIn(spec) togetherWith fadeOut(spec)
+
+        SlideTransition.SLIDE_HORIZONTAL ->
+            (slideInHorizontally(tween(320)) { it } + fadeIn(spec)) togetherWith
+                (slideOutHorizontally(tween(320)) { -it } + fadeOut(spec))
+
+        SlideTransition.VERTICAL_SLIDE ->
+            (slideInVertically(tween(320)) { it } + fadeIn(spec)) togetherWith
+                (slideOutVertically(tween(320)) { -it } + fadeOut(spec))
+
+        SlideTransition.ZOOM ->
+            (scaleIn(spec, initialScale = 0.88f) + fadeIn(spec)) togetherWith
+                (scaleOut(spec, targetScale = 1.08f) + fadeOut(spec))
+    }
+}
 
 @Composable
 fun FullscreenDeck(
@@ -45,6 +95,30 @@ fun FullscreenDeck(
         focusRequester.requestFocus()
     }
 
+    // DEL-02 / HUD-1. Session-scoped: persisting this across restarts (DED-2) needs a field on
+    // PresentationState + ConfigManager, both of which are mid-refactor elsewhere. Set once at
+    // the start of a talk, which is when a speaker actually makes this choice.
+    var hudVisibility by remember { mutableStateOf(HudVisibility.DEFAULT) }
+    var pointerActivity by remember { mutableStateOf(0L) }
+    var isPointerIdle by remember { mutableStateOf(false) }
+
+    // DEL-08: digits typed during delivery, committed with Enter.
+    var numberEntry by remember { mutableStateOf(SlideNumberEntry()) }
+
+    // Annotating counts as being at the controls, so the HUD stays put while a pen or laser is
+    // active — otherwise it fades out mid-stroke, exactly when it is about to be needed.
+    val holdHudOpen = state.isPenDrawingActive || state.isLaserPointerActive
+
+    LaunchedEffect(pointerActivity, hudVisibility, holdHudOpen) {
+        isPointerIdle = false
+        if (hudVisibility == HudVisibility.AUTO && !holdHudOpen) {
+            delay(HUD_IDLE_MILLIS)
+            isPointerIdle = true
+        }
+    }
+
+    val isHudOnScreen = hudVisibility.isOnScreen(isIdle = isPointerIdle)
+
     if (state.isGridOverviewOpen) {
         SlideGridOverviewDialog(state = state, onDismiss = { state.isGridOverviewOpen = false })
     }
@@ -55,9 +129,49 @@ fun FullscreenDeck(
             .background(state.currentTheme.background)
             .focusRequester(focusRequester)
             .focusable()
+            // Any pointer event counts as activity, observed on the Initial pass so a child
+            // consuming the gesture (the annotation overlay) does not hide it from the timer.
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial)
+                        pointerActivity++
+                    }
+                }
+            }
             .onKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown) {
+                    val typed = event.utf16CodePoint.toChar()
                     when {
+                        // DEL-08: digits accumulate; Enter commits. Checked before the
+                        // single-letter shortcuts so a slide number is never swallowed.
+                        typed.isDigit() -> {
+                            numberEntry = numberEntry.withDigit(typed)
+                            true
+                        }
+                        event.key == Key.Enter -> {
+                            numberEntry.targetIndex(state.slides.size)?.let { state.goToSlide(it) }
+                            numberEntry = numberEntry.cleared()
+                            true
+                        }
+                        // HUD-1: always recoverable without a mouse.
+                        event.key == Key.H -> {
+                            hudVisibility = hudVisibility.next()
+                            pointerActivity++
+                            true
+                        }
+                        event.key == Key.MoveHome -> {
+                            state.goToSlide(0)
+                            true
+                        }
+                        event.key == Key.MoveEnd -> {
+                            state.goToSlide((state.slides.size - 1).coerceAtLeast(0))
+                            true
+                        }
+                        event.key == Key.Backspace -> {
+                            state.prev()
+                            true
+                        }
                         event.isCtrlPressed && event.key == Key.K -> {
                             state.isCommandPaletteOpen = true
                             true
@@ -99,7 +213,11 @@ fun FullscreenDeck(
                             true
                         }
                         event.key == Key.Escape || event.key == Key.F11 -> {
-                            if (state.isCommandPaletteOpen) {
+                            if (!numberEntry.isEmpty) {
+                                // Abandon a half-typed slide number before anything else, so
+                                // Escape never exits the deck with digits still pending.
+                                numberEntry = numberEntry.cleared()
+                            } else if (state.isCommandPaletteOpen) {
                                 state.isCommandPaletteOpen = false
                             } else if (state.isGridOverviewOpen) {
                                 state.isGridOverviewOpen = false
@@ -125,7 +243,11 @@ fun FullscreenDeck(
             ) {
                 AnimatedContent(
                     targetState = currentSlide,
-                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    // DEL-01/DEL-10: the slide being animated *to* decides the transition, so
+                    // a `transition:` directive describes the slide's own entrance.
+                    transitionSpec = {
+                        transitionSpecFor(TransitionResolver.resolve(targetState, state.transition))
+                    },
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) { slide ->
@@ -154,10 +276,19 @@ fun FullscreenDeck(
             Box(modifier = Modifier.fillMaxSize().background(Color.White))
         }
 
-        // Floating Bottom HUD Bar
+        // Floating Bottom HUD Bar.
+        //
+        // HUD-2: this stays an overlay and is never given reserved layout space. Reserving
+        // space would shrink the slide canvas and change the fit-to-canvas scale, so the
+        // projected deck would stop matching the exported one.
+        AnimatedVisibility(
+            visible = isHudOnScreen,
+            enter = fadeIn(tween(180)),
+            exit = fadeOut(tween(220)),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
         Row(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
                 .padding(bottom = 24.dp)
                 .shadow(12.dp, CircleShape)
                 .clip(CircleShape)
@@ -324,6 +455,36 @@ fun FullscreenDeck(
 
             VerticalDivider(modifier = Modifier.height(18.dp), color = state.currentTheme.cardBorder)
 
+            // HUD Visibility Toggle (H)
+            AppTooltip(
+                text = "Toolbar: ${hudVisibility.displayName}",
+                theme = state.currentTheme,
+                shortcut = "H"
+            ) {
+                IconButton(
+                    onClick = {
+                        hudVisibility = hudVisibility.next()
+                        pointerActivity++
+                    },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = when (hudVisibility) {
+                            HudVisibility.PINNED -> Icons.Default.PushPin
+                            HudVisibility.AUTO -> Icons.Default.Visibility
+                            HudVisibility.HIDDEN -> Icons.Default.VisibilityOff
+                        },
+                        contentDescription = "Toolbar Visibility",
+                        tint = if (hudVisibility == HudVisibility.PINNED) {
+                            state.currentTheme.primary
+                        } else {
+                            state.currentTheme.textMuted
+                        },
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
             // Close Fullscreen Button
             AppTooltip(text = "Exit Fullscreen", theme = state.currentTheme, shortcut = "Esc") {
                 IconButton(
@@ -338,6 +499,50 @@ fun FullscreenDeck(
                     )
                 }
             }
+        }
+        }
+
+        // DEL-08: feedback while a slide number is being typed. Without it the digits are
+        // invisible and the feature is indistinguishable from a dead keyboard.
+        if (!numberEntry.isEmpty) {
+            val target = numberEntry.targetIndex(state.slides.size)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .shadow(20.dp, RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(state.currentTheme.surface.copy(alpha = 0.96f))
+                    .border(
+                        1.dp,
+                        if (target == null) Color(0xFFEF4444) else state.currentTheme.primary,
+                        RoundedCornerShape(16.dp)
+                    )
+                    .padding(horizontal = 28.dp, vertical = 18.dp)
+            ) {
+                Text(
+                    text = if (target == null) "${numberEntry.buffer}  ✕" else "→ ${numberEntry.buffer}",
+                    color = if (target == null) Color(0xFFEF4444) else state.currentTheme.textPrimary,
+                    fontSize = 34.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+
+        // HUD-1: when the HUD is off screen, say how to get it back. Without this a speaker
+        // who hides it mid-talk has no visible way to recover.
+        AnimatedVisibility(
+            visible = !isHudOnScreen,
+            enter = fadeIn(tween(400)),
+            exit = fadeOut(tween(150)),
+            modifier = Modifier.align(Alignment.BottomEnd)
+        ) {
+            Text(
+                text = "H — toolbar",
+                color = state.currentTheme.textMuted.copy(alpha = 0.35f),
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(end = 20.dp, bottom = 16.dp)
+            )
         }
 
         // Command Palette Modal Overlay

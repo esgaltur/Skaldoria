@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.skaldoria.core.layout.SlideCanvasFit
 import com.skaldoria.core.models.Slide
 import com.skaldoria.core.models.SlideLayoutType
+import com.skaldoria.core.presentation.SlideFooterLabel
 import com.skaldoria.theme.PresentationTheme
 import com.skaldoria.ui.layouts.*
 
@@ -137,9 +139,20 @@ fun SlideSurface(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Layout Type Pill
+                        // Layout Type Pill.
+                        //
+                        // DIA-06 / R-2: a diagram slide reports what it actually holds. This
+                        // read `slide.layoutType.displayName`, so a sequence diagram was
+                        // labelled "ARCHITECTURE / FLOW DIAGRAM" while the diagram canvas
+                        // above it correctly said "SEQUENCE DIAGRAM" — the same slide
+                        // contradicting itself.
+                        val footerLabel = remember(slide) {
+                            SlideFooterLabel.forSlide(slide) { code ->
+                                MermaidParser.parse(code).type
+                            }
+                        }
                         Text(
-                            text = slide.layoutType.displayName.uppercase(),
+                            text = footerLabel.uppercase(),
                             color = theme.textMuted.copy(alpha = 0.5f),
                             fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace,
