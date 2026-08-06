@@ -382,6 +382,7 @@ report · `AUT-08`/`AUT-09` autocomplete and diagnostics · `DIA-05` nested subg
 | Document | Covers |
 | :--- | :--- |
 | [`QUALITY_BASELINE.md`](./QUALITY_BASELINE.md) | Invariants that constrain every feature here. Read the known-limitations table before sizing anything. |
+| [`PERFORMANCE_BASELINE.md`](./PERFORMANCE_BASELINE.md) | What the per-keystroke paths cost, measured. Read it before sizing anything that runs while the user types — and note the incremental-parse item, which is the largest open performance question. |
 | [`FUNCTIONAL_SPECIFICATION.md`](../FUNCTIONAL_SPECIFICATION.md) | What already ships, as `FR-*` requirements. |
 | [`ADR-004`](./ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md) + [plan](./IMPROVEMENT_PLAN_EDITOR_SYNC_AND_HUD.md) | `AUT-02`, `AUT-03`, `AUT-05`, `DEL-02`. |
 | [`ADR-003`](./ADR_GOD_OBJECT_DECOMPOSITION.md) + [`REFACTORING_BACKLOG.md`](./REFACTORING_BACKLOG.md) | Internal quality — the other axis. Several features here get cheaper after it. |

@@ -1,6 +1,6 @@
 # Quality Baseline
 
-**Version:** 1.3.0 · **Last reviewed:** 2026-08-06 · **Suite:** 583 tests, 0 failures
+**Version:** 1.4.0 · **Last reviewed:** 2026-08-06 · **Suite:** 588 tests, 0 failures
 
 This document is the reference for the invariants this codebase holds, established during a
 systematic pre-release review of `src/desktopMain`. Every entry has a stable identifier, and
@@ -125,6 +125,8 @@ Entries without a **Rationale** are self-evident and need none.
 | EDT-5 | Editor | Selection is clamped to the new text length before it reaches the field | `EditorRevealTest` |
 | CLK-1 | Presentation | The key codes an off-the-shelf presenter clicker emits reach a deck command | `PresenterClickerTest` |
 | KEY-1 | Presentation | Every window that hosts the deck answers to the whole `DECK` keyboard surface — asserted by sending keys into a real composition, not by resolving the registry | `FullscreenDeckKeyTest` |
+| PRF-5 | Performance | No `Regex` is constructed inside a per-line or per-frame loop, and no per-keystroke path allocates the whole document to answer a question about part of it | `PerformanceProbe` (measured, not asserted — see [`PERFORMANCE_BASELINE.md`](./PERFORMANCE_BASELINE.md)) |
+| PRF-6 | Performance | The slide→file map is cached per project change; a stale map is COR-3, the editor writing to the wrong file | `DeckDocumentTest` |
 
 ---
 

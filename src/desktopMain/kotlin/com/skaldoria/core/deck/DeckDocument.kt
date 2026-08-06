@@ -54,12 +54,30 @@ class DeckDocument(
     // ---- reading ----
 
     /**
+     * PRF-5: the slide→file map, computed once per project change.
+     *
+     * `DeckProject.slideOwnerFileIndices()` **reparses every file in the project** on each
+     * call, and nothing cached it. [fileFor] calls it, [editorTextFor] calls [fileFor], and
+     * `currentEditorText` is read on every composition of the editor — so in project mode
+     * simply displaying the text reparsed the whole deck, several times a frame, measured at
+     * 1.1 ms per call for a twenty-file project.
+     *
+     * The cache lives here rather than on [DeckProject] because this class is the one that
+     * knows when the project changed: every mutation goes through [writeProject] or [adopt].
+     * A cache on the data class would have to guess, and `slideFiles` is mutable.
+     */
+    private var ownerFileIndices: List<Int>? = null
+
+    private fun ownerFileIndices(proj: DeckProject): List<Int> =
+        ownerFileIndices ?: proj.slideOwnerFileIndices().also { ownerFileIndices = it }
+
+    /**
      * COR-3: the file owning [slideIndex], resolved through the derived map rather than by
      * indexing `slideFiles` positionally. See [ProjectSlideMap].
      */
     fun fileFor(slideIndex: Int): SlideFileEntry? {
         val proj = project ?: return null
-        val fileIndex = ProjectSlideMap.ownerFileIndex(proj, slideIndex)
+        val fileIndex = ownerFileIndices(proj).getOrNull(slideIndex)
             ?: return proj.slideFiles.lastOrNull()
         return proj.slideFiles.getOrNull(fileIndex)
     }
@@ -86,6 +104,7 @@ class DeckDocument(
     /** Drops project mode and takes [newMarkdown] as a loose document. */
     fun loadFlat(newMarkdown: String) {
         project = null
+        ownerFileIndices = null
         replaceAll(newMarkdown)
     }
 
@@ -207,6 +226,10 @@ class DeckDocument(
 
     /** COR-2: the combined markdown is always recompiled from the files, never edited. */
     private fun recompileFromProject(proj: DeckProject) {
+        // PRF-5: the file contents just changed, so the slide→file map must be recomputed.
+        // This is the single point every project mutation passes through, which is why the
+        // cache is safe to hold at all.
+        ownerFileIndices = null
         val combined = proj.compileCombinedMarkdown()
         markdown = combined
         slides = MarkdownSlideParser.parse(combined)
