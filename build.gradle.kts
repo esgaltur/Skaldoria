@@ -16,6 +16,9 @@ group = "com.skaldoria"
 val appVersion = "1.2.0"
 version = appVersion
 
+/** Single version for every coroutines artifact, so `-core` and `-swing` cannot drift. */
+val coroutinesVersion = "1.11.0"
+
 /**
  * Emits `BuildInfo.kt` so the version is available at runtime.
  *
@@ -67,9 +70,13 @@ kotlin {
                 // JetBrains Official Markdown AST parser
                 implementation("org.jetbrains:markdown:0.7.8")
 
-                // Coroutines & Desktop Swing dispatcher
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.1.0")
+                // Coroutines & Desktop Swing dispatcher.
+                //
+                // Both must move together. `-swing` was pinned at 1.1.0 (2018) against a
+                // 1.11.0 core: harmless in practice, because the coroutines BOM lifted it,
+                // but it read as a live version and hid that the two had drifted.
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutinesVersion")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:$coroutinesVersion")
             }
         }
         val desktopTest = getByName("desktopTest") {

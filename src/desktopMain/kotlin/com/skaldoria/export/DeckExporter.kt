@@ -13,6 +13,8 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -52,7 +54,23 @@ object DeckExporter {
         }
     }
 
+    /**
+     * PRF-5: export work runs here rather than on the UI thread.
+     *
+     * F-20: `SupervisorJob` keeps one failed export from killing the others, but nothing
+     * cancelled this scope, so the work had no owner and shutdown could not reclaim it.
+     * [dispose] is called from the composition root when the app closes.
+     */
     private val exportScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    /** True while the exporter can still accept work. */
+    val isActive: Boolean
+        get() = exportScope.isActive
+
+    /** Cancels any in-flight export. Call at application shutdown. */
+    fun dispose() {
+        exportScope.cancel()
+    }
 
     private fun exportPdfTo(dir: String, filename: String, state: PresentationState, onSaved: (File) -> Unit) {
         val targetPdf = File(dir, if (filename.endsWith(".pdf", ignoreCase = true)) filename else "$filename.pdf")
