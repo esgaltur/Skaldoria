@@ -20,7 +20,12 @@ data class AppConfig(
     val lastThemeId: String = "nord-dark",
     val lastTransition: String = "fade",
     val editorFontSize: Int = 14,
-    val autoSaveDraft: String? = null
+    val autoSaveDraft: String? = null,
+    /**
+     * DEL-02: how the presentation HUD behaves. Stored as the enum's `storageValue` rather
+     * than its name so renaming a constant does not invalidate everyone's saved preference.
+     */
+    val hudVisibility: String? = null
 )
 
 /**
@@ -136,14 +141,6 @@ object ConfigManager {
         ) + existing
         saveConfig(current.copy(recentProjects = updated.take(15)))
     }
-
-    @Synchronized
-    fun removeRecentProject(path: String) {
-        val current = loadConfig()
-        val updated = current.recentProjects.filterNot { it.path == path }
-        saveConfig(current.copy(recentProjects = updated))
-    }
-
     @Synchronized
     fun saveDraft(content: String) {
         try {
@@ -157,9 +154,17 @@ object ConfigManager {
      * never actually saved — so theme and editor font size reset on every launch.
      */
     @Synchronized
-    fun saveUiPreferences(themeId: String, editorFontSize: Int) {
+    fun saveUiPreferences(themeId: String, editorFontSize: Int, hudVisibility: String? = null) {
         val current = loadConfig()
-        saveConfig(current.copy(lastThemeId = themeId, editorFontSize = editorFontSize))
+        saveConfig(
+            current.copy(
+                lastThemeId = themeId,
+                editorFontSize = editorFontSize,
+                // Null means "unchanged", so callers that do not know about the HUD cannot
+                // erase the setting by omitting it.
+                hudVisibility = hudVisibility ?: current.hudVisibility
+            )
+        )
     }
 
     @Synchronized
@@ -190,6 +195,11 @@ object ConfigManager {
         sb.append("  \"lastThemeId\": \"").append(escapeJson(config.lastThemeId)).append("\",\n")
         sb.append("  \"lastTransition\": \"").append(escapeJson(config.lastTransition)).append("\",\n")
         sb.append("  \"editorFontSize\": ").append(config.editorFontSize).append(",\n")
+        // Omitted entirely when unset, so an untouched preference stays absent from the file
+        // rather than being written as a literal null the parser then has to special-case.
+        config.hudVisibility?.let {
+            sb.append("  \"hudVisibility\": \"").append(escapeJson(it)).append("\",\n")
+        }
         sb.append("  \"recentProjects\": [\n")
         config.recentProjects.forEachIndexed { index, project ->
             sb.append("    {\n")
@@ -222,6 +232,12 @@ object ConfigManager {
         val fontMatch = Regex("\"editorFontSize\"\\s*:\\s*(\\d+)").find(json)
         if (fontMatch != null) editorFontSize = fontMatch.groupValues[1].toIntOrNull() ?: 14
 
+        // Absent in any config written before DEL-02; stays null and the caller applies the
+        // default, so an older file loads without special handling.
+        val hudVisibility = Regex("\"hudVisibility\"\\s*:\\s*\"([^\"]+)\"").find(json)
+            ?.groupValues?.get(1)
+            ?.let(::unescapeJson)
+
         val projectBlocks = json.split(Regex("\\{[\\s\\r\\n]*\"path\""))
         for (i in 1 until projectBlocks.size) {
             val block = "{\"path\"" + projectBlocks[i]
@@ -246,7 +262,8 @@ object ConfigManager {
             recentProjects = recentList,
             lastThemeId = lastThemeId,
             lastTransition = lastTransition,
-            editorFontSize = editorFontSize
+            editorFontSize = editorFontSize,
+            hudVisibility = hudVisibility
         )
     }
 

@@ -5,6 +5,48 @@ All notable changes to **Skaldoria** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Roadmap and delivery work. The candidate feature set is catalogued in
+[`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md); the connectivity design is
+[ADR-005](./docs/ADR_COMPANION_LINK_ESTABLISHMENT.md).
+Test suite: **235 to 472 tests**, zero compiler warnings.
+
+### Added
+- **Undo/redo for structural slide edits.** Deleting a slide was a single click on the
+  filmstrip with no way back — the only undo in the application was for annotation strokes.
+  Delete, move, duplicate and insert are now reversible in both single-file and project mode
+  (<kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Shift+Z</kbd> / <kbd>Ctrl+Y</kbd>, plus toolbar buttons).
+- **Presentation toolbar visibility.** The HUD covered the bottom of every slide — the last
+  lines of a full-bleed code slide and the deck's own footer — and could not be hidden. It now
+  auto-hides when the pointer rests, cycles with <kbd>H</kbd>, and the choice persists.
+- **Jump to a slide by number** during a presentation: type the number, press <kbd>Enter</kbd>.
+- **CI pipeline** (`.github/workflows/ci.yml`): compile and test on Linux, Windows and macOS,
+  with a job that fails the build on any Kotlin compiler warning.
+
+### Fixed
+- **Slide transitions had no effect.** All four `SlideTransition` values were parsed, persisted
+  and offered in a picker while the renderer hardcoded a fade. Every value now renders as
+  itself, and a per-slide `transition:` directive overrides the deck default.
+- **Five documented keyboard shortcuts did not exist.** <kbd>Ctrl+E</kbd>, <kbd>T</kbd>,
+  <kbd>Home</kbd>, <kbd>End</kbd> and <kbd>Backspace</kbd> were in the README shortcut table and
+  bound nowhere in the source.
+- **Exported HTML required internet access.** KaTeX and Mermaid were loaded from a CDN, so an
+  exported deck degraded to raw source offline — the situation the export exists for. Maths and
+  diagrams are now rendered by Skaldoria at export time and embedded, with the source preserved
+  as alt text and a `<details>` fallback.
+- **The companion advertised unreachable addresses.** Ranking followed the default route, which
+  a hotspot or tether interface never holds, so the pairing QR pointed at the laptop's own
+  ethernet. Bluetooth PAN — which carries IP and needs no new code — was additionally excluded
+  by a name-based denylist.
+- **The slide footer misreported diagram slides**, labelling a sequence diagram
+  "Architecture / Flow Diagram" while the diagram's own header said otherwise.
+
+### Known gaps
+- Editor ⇄ slide synchronisation and find-result reveal remain open; both wait on the caret
+  foundation in [ADR-004](./docs/ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md) Phase 2.
+- The CI workflow has never been executed.
+
 ## [1.2.0] - 2026-08-05
 
 A correctness and hardening release, following a systematic pre-release review of the codebase.

@@ -1,7 +1,6 @@
 package com.skaldoria.core.annotation
 
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.ui.geometry.Offset
 import com.skaldoria.core.models.AnnotationStroke
 
 /**
@@ -24,16 +23,6 @@ class AnnotationLayer {
         strokesBySlide.getOrPut(slideIndex) { mutableListOf() }.add(stroke)
     }
 
-    /**
-     * Appends a point to the stroke in progress — the drag handler's per-frame call.
-     * Silently does nothing when no stroke is open, so a stray drag cannot crash delivery.
-     */
-    fun extendLastStroke(slideIndex: Int, point: Offset) {
-        val strokes = strokesBySlide[slideIndex] ?: return
-        val last = strokes.lastOrNull() ?: return
-        strokes[strokes.size - 1] = last.copy(points = last.points + point)
-    }
-
     fun undo(slideIndex: Int) {
         val strokes = strokesBySlide[slideIndex] ?: return
         if (strokes.isNotEmpty()) strokes.removeAt(strokes.size - 1)
@@ -41,9 +30,5 @@ class AnnotationLayer {
 
     fun clear(slideIndex: Int) {
         strokesBySlide.remove(slideIndex)
-    }
-
-    fun clearAll() {
-        strokesBySlide.clear()
     }
 }

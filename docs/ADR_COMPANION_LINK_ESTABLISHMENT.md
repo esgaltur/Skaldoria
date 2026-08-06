@@ -2,9 +2,26 @@
 ## ADR-005: Companion Connectivity Without a Shared LAN
 
 ### Status
-**Proposed** (2026-08-06)
+**Partially implemented** (2026-08-06)
 
-> This ADR is a design proposal. No code has been changed. It addresses the case the companion
+| Phase | Item | State |
+| :--- | :--- | :--- |
+| 0 | Verify BLE clicker (`AUD-08`) | ⬜ Needs hardware — likely already works, see below |
+| 1 | Fix ranking, LNK-A/LNK-B (`AUD-09`) | ✅ **Shipped** — `LinkRanking` + `LinkKind`, extracted pure and guarded by `LinkRankingTest` |
+| 2 | Guide the user (`AUD-10`) | ⬜ Not started |
+| 3 | Wi-Fi credential QR (`AUD-11`) | ⬜ Not started |
+| 4 | Automate hotspot creation (`AUD-12`) | ⬜ Optional, deliberately last |
+
+> Phase 1 removed the two defects that blocked every option below a shared LAN, so a hotspot,
+> USB tether or Bluetooth PAN link is now ranked and advertised correctly **once the user has
+> established it manually**. Phase 2 — telling the user how, and refusing to show a QR that
+> cannot work (LNK-3) — is the remaining gap between "supported" and "usable".
+>
+> One implementation finding worth carrying forward: Windows names its hotspot adapter
+> *"Microsoft Wi-Fi Direct **Virtual** Adapter"*, so the direct-link classification must run
+> **before** the virtual denylist or the fix cancels itself. Guarded.
+
+> This ADR addresses the case the companion
 > cannot serve today — presenter and audience have no shared network — and concludes that the
 > answer is **not a new transport**. The correct abstraction is *how the phone acquires an IP
 > route to the laptop*, which leaves [ADR-001](./ADR_COMPANION_SERVER_ARCHITECTURE.md) entirely

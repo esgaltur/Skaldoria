@@ -97,6 +97,36 @@ fun PollSlide(
             )
         }
 
+        // Supporting copy the author wrote alongside the poll.
+        //
+        // This layout used to render the Poll element and nothing else, so bullets and
+        // paragraphs on a poll slide vanished with no indication — the parser produced them
+        // and the layout discarded them. Same class as EXP-3, found by looking at
+        // `render-all/12_poll.png` rather than by a passing test.
+        val supportingText = slide.elements.mapNotNull { element ->
+            when (element) {
+                is SlideElement.BulletList -> element.items
+                is SlideElement.Text -> listOf(element.content)
+                else -> null
+            }
+        }.flatten()
+
+        if (supportingText.isNotEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                supportingText.forEach { line ->
+                    Text(
+                        text = line,
+                        color = theme.textSecondary,
+                        fontSize = 18.sp,
+                        fontFamily = FontFamily.SansSerif
+                    )
+                }
+            }
+        }
+
         // Animated Voting Bars
         Column(
             modifier = Modifier.fillMaxWidth(),

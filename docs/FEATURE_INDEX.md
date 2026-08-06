@@ -70,45 +70,42 @@ Note `EXP` is taken by export *invariants*, which is why export *features* here 
 
 ---
 
-## The highest-value finding: features already paid for
+## The pattern worth remembering: features already paid for
 
-Surveying the codebase for this roadmap turned up work that is complete everywhere except
-where the user meets it. Each is the same shape as the find-and-replace defect in ADR-004 — a
-correct model with no last mile — and each is small.
+**Resolved 2026-08-06 — kept because the *pattern* keeps recurring, and the next survey should
+look for it first.**
 
-### DEL-01 · Slide transitions are modelled, selectable, and never rendered 🟡
+Surveying the codebase for this roadmap turned up work that was complete everywhere except
+where the user meets it: a correct model with no last mile. Three instances, all found by
+reading the code rather than the README, and all small once found.
 
-`SlideTransition` has four values (`FADE`, `SLIDE_HORIZONTAL`, `ZOOM`, `VERTICAL_SLIDE`). The
-parser accepts `transition: zoom` and friends (`MarkdownSlideParser.kt:513-516`). `Slide` carries
-`customTransition` (`SlideModels.kt:135`), `PresentationState` carries `transition`
-(`PresentationState.kt:76`), `DeckProject` persists it, and the TopBar offers a picker over all
-four (`TopBar.kt:289`).
-
-The renderer ignores every one of them. `FullscreenDeck.kt:128` is hardcoded:
-
-```kotlin
-transitionSpec = { fadeIn() togetherWith fadeOut() },
-```
-
-Neither `state.transition` nor `slide.customTransition` is read anywhere in the rendering path.
-A user who picks "Zoom Scale" from the menu, or writes `transition: zoom` in their markdown,
-gets a fade. **Size: S.** This is the single best ratio of user-visible value to effort in this
-document.
-
-### AUT-01 · Four documented keyboard shortcuts do not exist 🟡
-
-The README shortcut table (`README.md:184`) documents these; none is bound anywhere in
-`src/desktopMain` — there is no `Key.E`, `Key.T`, `Key.MoveHome`, `Key.MoveEnd` or
-`Key.Backspace` in the codebase:
-
-| Documented | Action | Reality |
+| Was | Symptom | Closed by |
 | :--- | :--- | :--- |
-| `Ctrl+E` | Export to HTML / PDF | Export exists; the shortcut does not. |
-| `T` | Cycle colour themes | Not bound. |
-| `Home` / `End` | Jump to first / last slide | Not bound. |
-| `Backspace` | Previous slide | Not bound (`←`, `PageUp`, `↑` work). |
+| **DEL-01** transitions | `SlideTransition` had four values, the parser accepted `transition: zoom`, `DeckProject` persisted it and the TopBar offered a picker — and `FullscreenDeck` hardcoded `fadeIn() togetherWith fadeOut()`. Picking "Zoom Scale" gave you a fade. | `TransitionResolver` + an exhaustive `transitionSpecFor` |
+| **AUT-01** shortcuts | The README documented `Ctrl+E`, `T`, `Home`/`End`, `Backspace`. None was bound — there was no `Key.E`, `Key.T`, `Key.MoveHome`, `Key.MoveEnd` or `Key.Backspace` anywhere in `src/desktopMain`. | All five bound |
+| **AUT-03** find reveal | `findNext()` advanced an index; nothing scrolled to the match. The buttons looked dead. **Still open** — it needs the caret foundation (`AUT-05`). | ADR-004 Phase 3 |
 
-Either bind them or correct the table. Binding is `S` and is the better answer for all four.
+### How this class of defect survives
+
+Each one had a **passing test suite around it.** `EditorFindAndReplaceTest` asserts
+`currentMatchIndex` advances — which it does — and will keep passing however broken the visible
+behaviour is. The transition picker had a model, a parser, persistence and a UI, and no test
+anywhere asked whether the animation changed.
+
+This is the same failure shape `QUALITY_BASELINE` already records for **OVF-1**, the regression
+that blanked every slide while the suite stayed green. The countermeasure is written into the
+guards added since: assert the *user-visible* outcome, never the intermediate variable.
+
+### Where to look next
+
+Two candidates were noticed while working and are not yet investigated:
+
+- **`SlideElement.Poll` and `Table` in the PNG export.** `DeckExporter` draws Mermaid diagrams
+  as a `g.drawString("MERMAID DIAGRAM: [...]")` placeholder rather than a diagram. EXP-3 claims
+  every slide element reaches the image export; that claim deserves re-testing now that
+  `ElementImageRenderer` exists and could render them properly.
+- **`Slide.customBackground`** is parsed and stored. Whether it reaches any renderer is
+  unverified — see `THM-07`.
 
 ---
 
@@ -119,10 +116,10 @@ spends in it. It is a single `TextField` with a syntax-highlighting `VisualTrans
 
 | ID | Feature | Status | Size | Depends | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **AUT-01** | Bind the four documented-but-absent shortcuts | 🟡 | S | — | `Ctrl+E`, `Home`, `End`, `Backspace` **shipped**. `T` (cycle themes) still unbound — it needs a `PresentationState` change, which was blocked by a concurrent refactor. |
+| **AUT-01** | Bind the four documented-but-absent shortcuts | ✅ | S | — | `Ctrl+E`, `Home`, `End`, `Backspace`, `T`. `T` is bound in the presentation window only — a bare letter in the studio window would race the markdown editor for the keystroke. |
 | **AUT-02** | Editor ⇄ slide synchronisation | 📋 | M | — | Specified in ADR-004. |
 | **AUT-03** | Find reveal — scroll the match into view | 📋 | S | AUT-05 | Specified in ADR-004. |
-| **AUT-04** | **Undo/redo for structural edits** | 📋 | M | — | The only undo in the app is `undoStroke()` for annotation strokes. Deleting a slide is a one-click destructive action on the filmstrip with **no way back**. Highest-risk gap in the product. |
+| **AUT-04** | **Undo/redo for structural edits** | ✅ | M | — | `DeckHistory` + snapshot/restore in `PresentationState`. Covers delete, move, duplicate, insert in both single-file and project mode; `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` plus TopBar buttons. Does **not** cover free-text editing (the `TextField` has its own undo). |
 | **AUT-05** | Caret & selection model | 📋 | M | — | ADR-004 Phase 2. Unblocks AUT-02/03/06/07. |
 | **AUT-06** | Line-number gutter with slide-boundary markers | 📋 | M | AUT-05 | Makes deck structure legible in a long single-file deck. |
 | **AUT-07** | Outline panel — navigate by heading | 📋 | M | AUT-05 | Complements the filmstrip for text-heavy decks. |
@@ -143,7 +140,7 @@ spends in it. It is a single `TextField` with a syntax-highlighting `VisualTrans
 | ID | Feature | Status | Size | Depends | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **DEL-01** | Honour the transition model | ✅ | S | — | `TransitionResolver` + exhaustive `transitionSpecFor`. All four values now render. |
-| **DEL-02** | HUD show/hide | ✅ | S | — | `HudVisibility` (AUTO/PINNED/HIDDEN), `H` binding, idle fade, HUD button, recovery hint. **Not persisted** — see note below. |
+| **DEL-02** | HUD show/hide | ✅ | S | — | `HudVisibility` (AUTO/PINNED/HIDDEN), `H` binding, idle fade, HUD button, recovery hint. Persisted across launches (DED-2). |
 | **DEL-03** | **Incremental reveals (bullet builds)** | 📋 | L | — | The most-requested feature of any presentation tool that lacks it. Code blocks already support `highlightedLines` step highlighting (FR-DIAG / §3.7), so the *concept* exists for code but not for bullets. Needs a directive, a per-slide step counter, and step-aware navigation in both windows and the companion. |
 | **DEL-04** | Rehearsal mode with per-slide timing | 📋 | M | — | The pacing engine (FR-PRES-06) computes whether you are ahead or behind against a target. It cannot tell you *which slides* cost you the time. Record per-slide dwell, show it afterwards. |
 | **DEL-05** | Auto-advance / kiosk loop | 📋 | S | — | Booths, lobby screens, unattended demos. |
@@ -208,7 +205,7 @@ A design proposal already exists:
 
 | ID | Feature | Status | Size | Depends | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **OUT-01** | **Offline self-contained HTML export** | 📋 | M | — | Exported HTML loads KaTeX and Mermaid from a CDN, so an exported deck does not render maths or diagrams without network access — precisely the conference-wifi situation the export is for. Inline the assets. High value, contained work. |
+| **OUT-01** | **Offline self-contained HTML export** | ✅ | M | — | Maths and diagrams are rendered by the app at export time via `ImageComposeScene` and embedded as `data:` URIs; both CDN dependencies removed. Chose rendering over vendoring ~3.5 MB of KaTeX + Mermaid — the app is already the renderer, and vendoring would have shipped a second implementation of what it can already draw. Source is kept as `alt` text and a `<details>` fallback. |
 | **OUT-02** | PPTX export | 🕓 | XL | — | Frequently asked for, rarely satisfying: the fidelity gap between a Compose-rendered slide and an OOXML shape tree is large. An image-per-slide PPTX is `M` and honest; a native-shape PPTX is `XL` and will disappoint. |
 | **OUT-03** | Import from Marp / reveal.js | 📋 | M | — | Both are markdown-based; the adapter is a directive translation. Cheapest credible migration path onto Skaldoria. |
 | **OUT-04** | Import from PPTX | ❌ | — | — | See [Rejected](#rejected-with-reasons). |
@@ -230,7 +227,7 @@ A design proposal already exists:
 | **AUD-06** | Attendance count / session analytics | 🕓 | M | — | Privacy implications; needs a decision on what is retained. |
 | **AUD-07** | Companion UI localisation | 🕓 | M | PLT-03 | |
 | **AUD-08** | **Verify BLE presenter clickers work** | 📋 | S | — | `FullscreenDeck.kt:93/97` already consumes `PageUp`/`PageDown`, which is what an off-the-shelf clicker emits at OS level. Likely works today with zero code. Test and document. [ADR-005](./ADR_COMPANION_LINK_ESTABLISHMENT.md) Phase 0. |
-| **AUD-09** | **Link ranking for non-LAN interfaces** | 📋 | M | — | Fixes LNK-A and LNK-B: the `isRouted` sort actively deprioritises a SoftAP address, and `"bluetooth"` on the virtual-adapter denylist rules out Bluetooth PAN. Blocks every option below shared LAN. ADR-005 Phase 1. |
+| **AUD-09** | **Link ranking for non-LAN interfaces** | ✅ | M | — | `LinkRanking` + `LinkKind`, extracted pure so it is testable. LNK-A and LNK-B both fixed: a hotspot/tether/PAN link now outranks an unreachable routed adapter, and Bluetooth PAN is classified as a transport rather than denylisted. |
 | **AUD-10** | **SoftAP pairing guidance** | 📋 | M | AUD-09 | Detect the isolated-network case, explain the remedy per platform, never show a QR that cannot work. The only path that serves the *audience* portal without venue infrastructure. ADR-005 Phase 2. |
 | **AUD-11** | Wi-Fi credential QR (`WIFI:T:WPA;…`) | 📋 | S | AUD-10 | Phone joins the hotspot by camera, then chains to the portal QR. `QrCodeGenerator.encode` already takes arbitrary text — no generator change. ADR-005 Phase 3. |
 | **AUD-12** | Automated hotspot creation | 🕓 | L | AUD-10 | Per-platform native integration; the only step that would compromise ADR-001's portability argument. Explicitly last and optional. ADR-005 Phase 4. |
@@ -256,7 +253,7 @@ A design proposal already exists:
 
 | ID | Feature | Status | Size | Depends | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **PLT-01** | **CI pipeline** | 📋 | S | — | There is no `.github/`, no CI config of any kind. Six installer formats are declared in `build.gradle.kts` and only the Windows path is exercised locally. The suite is strong; nothing runs it automatically. Highest-leverage item in this section. |
+| **PLT-01** | **CI pipeline** | ✅ | S | — | `.github/workflows/ci.yml` — compile + test on Linux/Windows/macOS (Xvfb for the headless render guards), test reports and rendered PNGs uploaded, plus a job that **fails the build on any Kotlin warning**, which is what makes the zero-warning NFR a policy rather than a wish. Never executed here — needs a first push to verify. |
 | **PLT-02** | Verify macOS and Linux packaging | 📋 | M | PLT-01 | `.dmg`, `.pkg`, `.deb`, `.rpm` targets are declared and unproven. |
 | **PLT-03** | UI localisation | 🕓 | L | — | Every string is inline today. |
 | **PLT-04** | Screen-reader semantics and keyboard-only operation | 📋 | M | — | The project holds itself to WCAG 2.1 AA for *contrast* and has real machinery for it. Contrast is one clause of one guideline; navigability is untested. |
@@ -271,24 +268,45 @@ A design proposal already exists:
 An opinionated ordering. The principle: **finish what is already built before building more**,
 then remove the sharpest edges, then extend.
 
-### Now — finish the last mile
+> **Revised 2026-08-06.** The original "Now" tier has shipped. What follows is the re-planned
+> ordering; see [Shipped so far](#shipped-so-far) for what moved.
 
-Nothing here is larger than `S`/`M`, and each closes a gap a user can already hit.
+### Shipped so far
 
-`DEL-01` transitions · `AUT-01` missing shortcuts · `DEL-02` HUD · `AUT-03` find reveal ·
-`AUT-02` editor sync · `DIA-06` diagram footer label · `PLT-01` CI · `AUD-08` verify BLE clickers
+Every 🟡 "already paid for" item is closed, plus the two highest-risk gaps.
+
+`DEL-01`/`DEL-10` transitions · `AUT-01` the five missing shortcuts · `DEL-02` HUD visibility ·
+`DEL-08` jump to slide · `DIA-06` diagram footer · `AUT-04` undo/redo · `AUD-09` link ranking ·
+`OUT-01` offline HTML export · `PLT-01` CI *(written, never executed)*
+
+Suite: **235 → 472 tests**, zero compiler warnings throughout.
+
+### Now — the editor, and proving CI works
+
+The editor is the least-developed surface relative to time spent in it, and everything in it
+waits on one change.
+
+| | Item | Note |
+| :--- | :--- | :--- |
+| 1 | **`PLT-01` run CI** | Written but never executed. Push and watch it go green before trusting it — an unrun workflow is a guess. |
+| 2 | **`AUT-05` caret foundation** | ADR-004 Phase 2. Blocks 02/03/06/07/11. **Land alone**; its failure mode is a caret that jumps to the end of the document on every keystroke. |
+| 3 | **`AUT-03` find reveal** | Smallest consumer of the foundation. Proves the reveal mechanism on one call site. |
+| 4 | **`AUT-02` editor ⇄ slide sync** | The originally reported defect. |
+| 5 | `AUD-08` verify BLE clickers | Possibly zero code. Cheapest item in the document. |
+| 6 | `PLT-02` verify macOS/Linux packaging | Four installer formats are declared and unproven; CI makes this checkable. |
 
 ### Next — remove the sharpest edges
 
-`AUT-04` undo for structural edits · `OUT-01` offline HTML export · `AUD-09`/`AUD-10` companion
-link establishment · `AUT-10` drag-and-drop reordering · `THM-01` font themes · `AUT-12`
-clipboard image paste · `DEL-08` jump to slide · `PLT-02` cross-platform packaging
+`AUT-10` drag-and-drop reordering · `THM-01` font themes · `AUT-12` clipboard image paste ·
+`AUD-10` SoftAP pairing guidance · `AUT-06` line-number gutter · `MED-02` SVG images ·
+`DEL-04` rehearsal timings · `MED-04` image sizing directives
 
 ### Later — extend the product
 
 `DEL-03` incremental reveals · `DIA-01`/`DIA-02` state and class diagrams · `THM-02`–`THM-04`
 Beamer-style structural themes · `AUD-02`/`AUD-03` open text and quizzes · `OUT-07` post-talk
-report · `AUT-08`/`AUT-09` autocomplete and diagnostics
+report · `AUT-08`/`AUT-09` autocomplete and diagnostics · `DIA-05` nested subgraphs ·
+`DIA-07` Mermaid style directives
 
 ### Watchlist — revisit when a trigger fires
 

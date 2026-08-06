@@ -12,11 +12,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,6 +78,38 @@ fun WelcomeScreen(state: PresentationState) {
             )
 
             Spacer(Modifier.height(40.dp))
+
+            // DED-1: offer back work that was never saved.
+            //
+            // The recovery functions existed and were correct, but nothing called them — so
+            // a crash mid-talk still lost the deck, which is exactly what the invariant was
+            // written to prevent. Read once per composition of this screen: it touches the
+            // disk, and the answer cannot change while the screen is up.
+            var recoveredDraft by remember { mutableStateOf(state.recoverableDraft()) }
+
+            recoveredDraft?.let { draft ->
+                WelcomeAction(
+                    icon = Icons.Filled.Restore,
+                    title = "Recover Unsaved Work",
+                    subtitle = "${draft.lineSequence().count()} lines autosaved before the app last closed",
+                    theme = theme,
+                    primary = true,
+                    onClick = { state.restoreDraft(draft) }
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Discard it",
+                    color = theme.textMuted,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .clickable {
+                            state.discardDraft()
+                            recoveredDraft = null
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+                Spacer(Modifier.height(14.dp))
+            }
 
             WelcomeAction(
                 icon = Icons.Filled.Add,

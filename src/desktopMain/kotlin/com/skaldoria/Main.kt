@@ -140,6 +140,17 @@ fun main() = application {
                         state.redo()
                         true
                     }
+                    // AUT-01: `T` cycles themes, but ONLY in the presentation window (see
+                    // FullscreenDeck). Binding a bare letter here would race the markdown
+                    // editor for the keystroke, and a shortcut that eats a character while
+                    // you type is far worse than a missing one. The README lists `T` beside
+                    // `B` and `W`, which are likewise delivery-only.
+                    // Shift first: Ctrl+Shift+S must not be swallowed by the plain Ctrl+S
+                    // branch below, which would silently save over the original file.
+                    isCtrl && event.isShiftPressed && event.key == androidx.compose.ui.input.key.Key.S -> {
+                        state.saveAsFile()
+                        true
+                    }
                     isCtrl && event.key == androidx.compose.ui.input.key.Key.S -> {
                         state.saveFile()
                         true

@@ -1,6 +1,6 @@
 # Quality Baseline
 
-**Version:** 1.2.0 · **Last reviewed:** 2026-08-06 · **Suite:** 402 tests, 0 failures
+**Version:** 1.2.0 · **Last reviewed:** 2026-08-06 · **Suite:** 472 tests, 0 failures
 
 This document is the reference for the invariants this codebase holds, established during a
 systematic pre-release review of `src/desktopMain`. Every entry has a stable identifier, and
@@ -26,6 +26,7 @@ the identifier.
 - [Document model and editing](#document-model-and-editing)
 - [Rendering and layout](#rendering-and-layout)
 - [Export](#export)
+- [Presentation, delivery and connectivity](#presentation-delivery-and-connectivity)
 - [Concurrency and performance](#concurrency-and-performance)
 - [Design decisions worth preserving](#design-decisions-worth-preserving)
 - [Verification approach](#verification-approach)
@@ -105,7 +106,18 @@ Entries without a **Rationale** are self-evident and need none.
 | DED-9 | Companion | The request parser is pure, so SEC-7's caps are unit-tested | `HttpRequestParserTest` |
 | SEC-8 | Companion | Every route declares its method and scope; policy is derived from them | `RouteTableSecurityTest` |
 | R-1 | Diagrams | Sequence diagrams scale to fit | `SlideRenderingTest` |
-| R-2 | Diagrams | The diagram header reflects the parsed type | — |
+| R-2 | Diagrams | The diagram header **and footer** reflect the parsed type | `SlideFooterLabelTest` |
+| HUD-1 | Presentation | The HUD can always be brought back without a mouse | `HudVisibilityTest` |
+| HUD-2 | Presentation | HUD visibility never changes the slide canvas or its fit scale | `HudVisibilityTest` |
+| HUD-3 | Presentation | The progress indicator is not part of the HUD | — |
+| DEL-1 | Presentation | Every `SlideTransition` value renders as itself | `TransitionResolverTest` |
+| DEL-2 | Presentation | A per-slide `transition:` beats the deck default | `TransitionResolverTest` |
+| UND-1 | Editing | Every structural slide edit is undoable | `StructuralUndoTest` |
+| UND-2 | Editing | Undo history never crosses a deck boundary | `StructuralUndoTest` |
+| UND-3 | Editing | A snapshot captures per-file content, not just the combined markdown | `DeckHistoryTest` |
+| LNK-1 | Companion | The advertised address is one the *client* can reach; the default route is a hint, not the authority | `LinkRankingTest` |
+| LNK-2 | Companion | An interface is judged by whether it carries a usable address, not by its name | `LinkRankingTest` |
+| OUT-1 | Export | An exported deck renders with no network access | `OfflineHtmlExportTest` |
 
 ---
 
@@ -425,6 +437,94 @@ cannot detect this; the guard uses a Cyrillic and emoji payload.
 
 ---
 
+## Presentation, delivery and connectivity
+
+### HUD-2 — The HUD never changes the canvas
+
+**Invariant.** Showing or hiding the presentation HUD leaves the slide canvas and its
+fit-to-canvas scale untouched.
+
+**Implementation.** The HUD stays an overlay inside the root `Box`, wrapped in
+`AnimatedVisibility`. It is never given reserved layout space.
+
+**Rationale.** Reserving space is the obvious fix and the wrong one: it shrinks the 16:9
+canvas, which changes the fit scale, which makes the projected deck geometrically different
+from the exported one. The overlay was covering the bottom ~68dp of every slide — the last
+lines of a `FULL_CODE` slide and the deck's own footer — but the fix is *when* it draws, not
+*where* the slide lives.
+
+**Guard.** `HudVisibilityTest`.
+
+### DEL-1 — Every transition value renders as itself
+
+**Invariant.** Each `SlideTransition` produces a visually distinct animation.
+
+**Implementation.** `TransitionResolver.resolve` picks the value; `transitionSpecFor` maps it to
+a `ContentTransform` with an **exhaustive `when` over the closed enum**.
+
+**Rationale.** All four values were modelled, parsed, persisted and offered in a picker, and the
+renderer hardcoded a fade — so choosing "Zoom Scale" did nothing. The `when` is exhaustive
+deliberately: adding a fifth value must be a compile error, not a silent fade. This is the same
+argument that keeps `SlideLayoutContent` an exhaustive `when` rather than a registry.
+
+**Guard.** `TransitionResolverTest`.
+
+### UND-3 — A snapshot is the whole deck
+
+**Invariant.** An undo snapshot captures per-file content, not only the combined markdown.
+
+**Rationale.** Project-mode structural edits rewrite `activeProject.slideFiles` and can add or
+remove whole files. Restoring `markdownText` alone leaves `activeProject` holding the pre-edit
+files, and the next recompile overwrites the restored text — the undo silently undoes itself.
+`DeckHistory` is generic over the snapshot type precisely so the caller decides what "the deck"
+means in each mode.
+
+**Guard.** `DeckHistoryTest`, `StructuralUndoTest`.
+
+### LNK-1 — Advertise what the *client* can reach
+
+**Invariant.** Address ranking is decided by how the phone is attached, not by which adapter
+holds this machine's default route.
+
+**Implementation.** `LinkRanking.classify` labels each interface (`HOTSPOT`, `TETHER`,
+`BLUETOOTH_PAN`, `ROUTED_LAN`, `ORDINARY`, `VIRTUAL`); `priorityOf` ranks direct links above the
+routed LAN.
+
+**Rationale.** `routedAddress()` finds the interface holding the default route, which is almost
+always right on a shared wifi — and exactly wrong the moment a hotspot exists. A hotspot or
+tether interface carries *no* default route, so ranking on it put the laptop's own ethernet
+first: an address the phone, now attached to the hotspot, has no path to. A direct link exists
+only because the user deliberately created it, and whatever is on the other end is reachable by
+construction.
+
+Two traps are guarded because both were live: `"bluetooth"` was on the virtual-adapter denylist,
+which ruled out Bluetooth PAN — the one Bluetooth mode that carries IP and needs no new code at
+all (LNK-2); and Windows names its hotspot adapter *"Microsoft Wi-Fi Direct **Virtual**
+Adapter"*, so the direct-link checks must run **before** the virtual denylist or the fix defeats
+itself.
+
+See [ADR-005](./ADR_COMPANION_LINK_ESTABLISHMENT.md).
+
+**Guard.** `LinkRankingTest`.
+
+### OUT-1 — An exported deck needs no network
+
+**Invariant.** Exported HTML loads nothing over the network.
+
+**Implementation.** `ElementImageRenderer` renders maths and diagrams through
+`ImageComposeScene` at export time and embeds them as `data:` URIs.
+
+**Rationale.** The export pulled KaTeX and Mermaid from a CDN, so an exported deck degraded to
+raw LaTeX and raw Mermaid source on any machine without internet — precisely the conference-wifi
+case an offline export exists for. The alternative was vendoring ~3.5 MB of JavaScript, which
+would have shipped a *second* implementation of what the application already draws natively.
+The trade-off accepted: maths and diagrams are images rather than selectable text, so the source
+is preserved in `alt` text and a `<details>` fallback.
+
+**Guard.** `OfflineHtmlExportTest`, plus the re-pinned assertion in `CharacterizationTest`.
+
+---
+
 ## Concurrency and performance
 
 ### PRF-1 — Snapshot boundary
@@ -558,6 +658,6 @@ decks, so a change to slide splitting or classification is visible rather than s
 | Diagrams | Nested subgraphs are flattened — a node joins the innermost group that declares it. |
 | Diagrams | The slide footer label reports the layout type rather than the parsed diagram type. |
 | Editing | Moving a slide between files requires one slide per file. |
-| Export | Exported HTML loads KaTeX and Mermaid from a CDN, so rendering maths and diagrams in an exported deck requires network access. |
+| Export | ~~Exported HTML loads KaTeX and Mermaid from a CDN.~~ **Resolved (OUT-01):** both are rendered at export time and embedded, so an exported deck needs no network. Maths and diagrams are now images rather than selectable text. |
 | Media | Video is not supported; only raster images. |
 | Build | `./gradlew --warning-mode all` reports one Gradle deprecation (`archives configuration`) originating in the Kotlin Multiplatform plugin. Present through Kotlin 2.3.10; requires an upstream fix. See [CONTRIBUTING](../CONTRIBUTING.md). |

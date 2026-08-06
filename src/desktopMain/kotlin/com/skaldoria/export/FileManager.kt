@@ -27,14 +27,6 @@ object FileManager {
             }
         }
     }
-
-    fun openMarkdownFile(onFileLoaded: (String, String) -> Unit) {
-        openFileOrProject { file ->
-            val content = file.readText()
-            onFileLoaded(file.absolutePath, content)
-        }
-    }
-
     fun saveMarkdownFile(currentPath: String?, content: String, onSaved: (String) -> Unit) {
         if (currentPath != null) {
             val file = File(currentPath)

@@ -202,10 +202,13 @@ cd skaldoria
 | <kbd>→</kbd> / <kbd>Space</kbd> / <kbd>PageDown</kbd>           | Next Slide                                                                                             |
 | <kbd>←</kbd> / <kbd>Backspace</kbd> / <kbd>PageUp</kbd>         | Previous Slide                                                                                         |
 | <kbd>Home</kbd> / <kbd>End</kbd>                                | Jump to First / Last Slide                                                                             |
+| <kbd>Ctrl</kbd> + <kbd>Z</kbd> / <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> | Undo / Redo a slide change (delete, move, duplicate, insert) |
 | <kbd>B</kbd> | Blackout Screen (Stage Focus) |
 | <kbd>W</kbd>                                                    | Whiteout / Annotation Canvas Mode                                                                      |
-| <kbd>T</kbd> | Cycle Color Themes |
-| <kbd>Esc</kbd>                                                  | Exit Fullscreen / Close Modal                                                                          |
+| <kbd>T</kbd> | Cycle Color Themes *(presentation window)* |
+| <kbd>H</kbd> | Cycle Toolbar Visibility — auto-hide → always visible → hidden *(presentation window)* |
+| <kbd>0</kbd>–<kbd>9</kbd> then <kbd>Enter</kbd> | Jump to Slide by Number *(presentation window)* |
+| <kbd>Esc</kbd>                                                  | Cancel Slide Number / Exit Fullscreen / Close Modal                                                    |
 
 ---
 
