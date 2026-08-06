@@ -219,24 +219,44 @@ the AST library (2.65 µs/line) is untouched.
 The caret-move win is the large one, because `filter()` runs on *every* recomposition — focus
 changes, find-bar toggles, font-size changes, slide navigation — not only on keystrokes.
 
-### Open question: the cold path number is not trustworthy yet
+### Resolved: the cold "regression" was measurement noise
 
-Compiling the memo store out drops the cold measurement to 528 µs; leaving it in gives ~1.1 ms.
-Two explanations survive and **neither has been isolated**:
+The cold path appeared to jump from ~530 µs to ~1.2 ms. Three hypotheses were chased —
+alternating inputs, the memo retaining the previous result, dead-code elimination — and **all
+three were wrong**. Each was tested and each was disproved:
 
-1. The memo genuinely costs allocation/GC on a miss.
-2. **The probe was under-measuring all along.** It discards every return value, so with nothing
-   retaining the result the JIT can eliminate work that has no observable effect. Storing the
-   result into a static field forces it to escape, which would make ~1.1 ms the honest figure that
-   was always true.
+| Hypothesis | Test | Result |
+| :--- | :--- | :--- |
+| Alternating inputs inflate cost | Ran `parse` with alternating inputs | Went *down*, not up |
+| Memo retains the old result during rebuild | Released it before rebuilding | No change |
+| JIT eliminates work nothing observes | Consumed the result | Got *faster*, not slower |
 
-Evidence leans towards (2): releasing the previous result *before* rebuilding changed nothing,
-which argues against retention being the mechanism.
+The actual cause: **back-to-back runs of an unchanged binary produced 579 µs and 1.27 ms for the
+same benchmark.** A 2.2× spread, run to run. There was never a regression — the harness was
+reporting a single timed pass, and a single pass here is not reproducible.
 
-**This cannot be settled with a print-probe that throws its results away.** It needs JMH with a
-blackhole. Until then, treat every absolute number in `PERFORMANCE_BASELINE.md` as a *lower
-bound*, not a cost — the same discard pattern is used throughout it. A
-`(cold, result consumed)` bench was added as the one figure that resists elimination.
+**The probe was fixed rather than the code.** `bench` now reports the **fastest of three** measured
+passes, and every result flows through a sink so nothing can be optimised away. Minimum rather
+than mean because every interference source — JIT recompilation, GC, scheduling — makes a pass
+slower, never faster.
+
+### Trustworthy numbers, best of three, stable across runs
+
+| Path | Before Phase C | After |
+| :--- | ---: | ---: |
+| `parse` | 1.18 ms | 1.18 ms *(unchanged — three runs identical)* |
+| `highlightMarkdown`, caret move | ~425 µs | **1–2 µs** |
+| `highlightMarkdown`, keystroke (cold) | ~425 µs | **~425 µs — no regression** |
+| `extractFollowUpQuestions`, no follow-ups | 640 µs | **31 µs** |
+| `extractFollowUpQuestions`, with follow-ups | 640 µs | 640 µs |
+
+**Per keystroke: ~2.4 ms → ~1.64 ms.** The memo is a pure win; it costs nothing on a miss.
+
+> **The lesson is the deliverable.** Three plausible mechanisms were investigated in detail against
+> numbers that were noise. Any of them could have been written up as a finding, and one nearly was.
+> Repeated runs cost minutes; a wrong conclusion in a performance document outlives the person who
+> wrote it. **Treat any single-pass figure in `PERFORMANCE_BASELINE.md` predating this change as
+> unverified** — they were produced by the harness this section replaced.
 
 ### Unrelated finding: `DraftRecoveryTest` is flaky
 

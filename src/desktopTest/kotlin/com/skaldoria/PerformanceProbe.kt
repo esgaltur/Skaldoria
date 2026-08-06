@@ -51,12 +51,49 @@ class PerformanceProbe {
     private fun report(label: String, iterations: Int, elapsed: Duration) {
         val perOp = elapsed.inWholeMicroseconds.toDouble() / iterations
         val perOpText = if (perOp >= 1000) "%.2f ms".format(perOp / 1000) else "%.0f us".format(perOp)
-        println("  %-52s %10s / call   (%d calls in %s)".format(label, perOpText, iterations, elapsed))
+        println("  %-52s %10s / call   (best of 3 x %d)".format(label, perOpText, iterations))
     }
 
-    private inline fun bench(label: String, iterations: Int, block: () -> Unit) {
-        repeat(iterations / 2 + 1) { block() } // warm the JIT
-        report(label, iterations, measureTime { repeat(iterations) { block() } })
+    /**
+     * Sink that keeps every benchmarked result observable.
+     *
+     * PRF-6: without it, this probe discarded every return value, and a JIT that can prove a
+     * result is never used is free to elide the work that produced it. That makes a discarding
+     * benchmark a *lower bound* rather than a cost — and the effect is not small: the highlighter
+     * measured 528 µs when its result escaped nowhere and ~1.1 ms once it did.
+     *
+     * `identityHashCode` is deliberate. It is cheap and constant-time, and it forces the object
+     * to have actually been allocated — unlike `hashCode()`, which on a `List<Slide>` would walk
+     * the whole structure and time the sink instead of the subject.
+     */
+    private var blackhole: Int = 0
+
+    private fun consume(value: Any?) {
+        blackhole += System.identityHashCode(value)
+    }
+
+    /**
+     * Times [block], reporting the **fastest** of [rounds] measured passes.
+     *
+     * PRF-6: a single timed pass is not reproducible here. Back-to-back runs of an unchanged
+     * binary produced 579 µs and 1.27 ms for the same highlighter benchmark — a 2.2x spread,
+     * enough to invent regressions that do not exist and to hide ones that do. Three separate
+     * hypotheses were chased against that noise before it was recognised as noise.
+     *
+     * Minimum, not mean: every source of interference here (JIT recompilation, GC pauses, OS
+     * scheduling) makes a pass *slower*, never faster, so the fastest pass is the closest estimate
+     * of the work itself. It is still an estimate — this is a print-probe, not JMH, and it cannot
+     * control compilation tiers or run each subject in a fresh JVM.
+     */
+    private inline fun bench(label: String, iterations: Int, rounds: Int = 3, block: () -> Any?) {
+        repeat(iterations / 2 + 1) { consume(block()) } // warm the JIT
+
+        var best = Duration.INFINITE
+        repeat(rounds) {
+            val elapsed = measureTime { repeat(iterations) { consume(block()) } }
+            if (elapsed < best) best = elapsed
+        }
+        report(label, iterations, best)
     }
 
     @Test
