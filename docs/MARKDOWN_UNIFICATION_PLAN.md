@@ -1,6 +1,6 @@
 # Markdown Core — Extraction, Convergence, and Speed
 
-**Opened:** 2026-08-06 · **Status:** Phases 0–1, A, B complete; C next · **Baseline:** `2e40c02`
+**Opened:** 2026-08-06 · **Status:** Phases 0–1, A, B, C complete; D optional · **Baseline:** `2e40c02`
 
 ## Decision summary — read this first
 
@@ -195,7 +195,60 @@ the AST library (2.65 µs/line) is untouched.
 
 **538 tests, 76 classes, green.**
 
-## Phase C — The two cheap wins (1 day)
+## Phase C — The two cheap wins ✅ *complete, with one open question*
+
+- [x] **Memoised the highlighter** on `(text, theme, searchMatches, activeMatchIndex)`. The memo
+      lives on the companion object, not the instance, because `EditorWorkspace.kt:661` builds a
+      fresh transformation every composition. `TextFieldValue` was left alone — EDT-1.
+- [x] **Guarded `extractFollowUpQuestions`** with a character scan covering **both** extraction
+      paths: `<!--` for directives, `-` + optional whitespace + `[` for task lists.
+- [x] `HighlightMemoTest` — identity assertions proving equal inputs are not recomputed and that
+      text, theme, match list and active index each invalidate.
+- [x] `FollowUpGuardTest` — proves the guard is a superset, including the tab-separated checkbox
+      case a spaces-only scan would wrongly reject.
+
+### Measured
+
+| Path | Before | After |
+| :--- | ---: | ---: |
+| `highlightMarkdown`, caret move / recomposition | ~530 µs | **2 µs** |
+| `extractFollowUpQuestions`, deck with no follow-ups | 540 µs | **31 µs** |
+| `extractFollowUpQuestions`, deck with follow-ups | 540 µs | 640 µs |
+| `highlightMarkdown`, keystroke (cold) | ~530 µs | **~1.1 ms — see below** |
+
+The caret-move win is the large one, because `filter()` runs on *every* recomposition — focus
+changes, find-bar toggles, font-size changes, slide navigation — not only on keystrokes.
+
+### Open question: the cold path number is not trustworthy yet
+
+Compiling the memo store out drops the cold measurement to 528 µs; leaving it in gives ~1.1 ms.
+Two explanations survive and **neither has been isolated**:
+
+1. The memo genuinely costs allocation/GC on a miss.
+2. **The probe was under-measuring all along.** It discards every return value, so with nothing
+   retaining the result the JIT can eliminate work that has no observable effect. Storing the
+   result into a static field forces it to escape, which would make ~1.1 ms the honest figure that
+   was always true.
+
+Evidence leans towards (2): releasing the previous result *before* rebuilding changed nothing,
+which argues against retention being the mechanism.
+
+**This cannot be settled with a print-probe that throws its results away.** It needs JMH with a
+blackhole. Until then, treat every absolute number in `PERFORMANCE_BASELINE.md` as a *lower
+bound*, not a cost — the same discard pattern is used throughout it. A
+`(cold, result consumed)` bench was added as the one figure that resists elimination.
+
+### Unrelated finding: `DraftRecoveryTest` is flaky
+
+`the bundled sample decks are not offered as recovered work` failed once during this phase, then
+passed in isolation and across two further full-suite runs. It is **order-dependent, not broken by
+this work**: `recoverableDraft()` is plain string comparison and neither Phase C change touches it.
+The likely cause is a pre-existing race — `PresentationState`'s debounced autosave writing the
+shared draft file while this test reads it, which `build.gradle.kts` already notes is constructed
+in 20+ test cases. Adding a test class shifted timing enough to surface it. **Left unfixed and
+recorded rather than papered over**; it will bite again.
+
+### Original scope, for reference
 
 From [`EDITOR_SCALING_ANALYSIS.md`](./EDITOR_SCALING_ANALYSIS.md). Independent of everything above.
 

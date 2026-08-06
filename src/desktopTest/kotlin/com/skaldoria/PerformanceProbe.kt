@@ -74,12 +74,43 @@ class PerformanceProbe {
             MarkdownSlideParser.parse(deck)
         }
 
-        bench("MarkdownVisualTransformation.highlightMarkdown", 200) {
+        // PRF-6: the highlighter memoises on its inputs, so these two numbers are different
+        // questions and both matter. Repeating one text measures only the cache, which is the
+        // caret-move and selection-drag path; a keystroke changes the text and pays in full.
+        bench("highlightMarkdown (cache hit — caret move)", 200) {
             MarkdownVisualTransformation.highlightMarkdown(deck, theme)
         }
 
-        bench("MarkdownSlideParser.extractFollowUpQuestions", 200) {
+        // Two decks of identical shape, alternated, so the single-entry memo always misses.
+        val deckVariant = deck.replaceFirst("# Section 1", "# Section Z")
+        var flip = false
+        bench("highlightMarkdown (cold — keystroke)", 200) {
+            flip = !flip
+            MarkdownVisualTransformation.highlightMarkdown(if (flip) deck else deckVariant, theme)
+        }
+
+        // Consumes the result, so the JIT cannot discard work nothing observes. This probe
+        // discards return values everywhere else, which makes every other figure here a lower
+        // bound rather than a cost. See PERFORMANCE_BASELINE.md, "What was not measured".
+        var sink = 0
+        var flipSink = false
+        bench("highlightMarkdown (cold, result consumed)", 200) {
+            flipSink = !flipSink
+            sink += MarkdownVisualTransformation
+                .highlightMarkdown(if (flipSink) deck else deckVariant, theme)
+                .spanStyles.size
+        }
+        check(sink > 0)
+
+        // PRF-6: the guard short-circuits documents with no follow-up items, which is the common
+        // case. Both are reported so the guard is not mistaken for a general speed-up.
+        bench("extractFollowUpQuestions (no follow-ups — guarded)", 200) {
             MarkdownSlideParser.extractFollowUpQuestions(deck)
+        }
+
+        val deckWithFollowUps = deck + "\n<!-- parking-lot: [ ] Why is it slow? | id:probe -->\n"
+        bench("extractFollowUpQuestions (has follow-ups — full scan)", 200) {
+            MarkdownSlideParser.extractFollowUpQuestions(deckWithFollowUps)
         }
 
         println()

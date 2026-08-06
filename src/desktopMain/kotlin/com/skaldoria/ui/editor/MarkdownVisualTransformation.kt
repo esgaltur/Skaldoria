@@ -52,11 +52,71 @@ class MarkdownVisualTransformation(
             "async", "await", "const", "let", "function", "public", "private", "override"
         )
 
+        /** The inputs [highlightMarkdown] is a pure function of, plus what it produced. */
+        private class Memo(
+            val text: String,
+            val theme: PresentationTheme,
+            val searchMatches: List<IntRange>,
+            val activeMatchIndex: Int,
+            val result: AnnotatedString
+        )
+
+        /**
+         * Single-entry memo, and it has to live *here* rather than on the instance.
+         *
+         * `EditorWorkspace` constructs a fresh [MarkdownVisualTransformation] on every
+         * composition, so a field on the object would never survive to be read. The natural-looking
+         * alternative — remembering the `TextFieldValue` at the call site — is forbidden by EDT-1:
+         * a remembered value re-seeded from the deck text is what makes the caret jump to the end
+         * of the document on every keystroke.
+         *
+         * **What this buys:** `filter()` runs on every recomposition, not only on text change, so
+         * moving the caret or dragging a selection used to re-highlight the whole document and
+         * produce a byte-identical result. Those now cost a few comparisons. The text check is
+         * effectively free in that case because Compose hands back the same `String` instance and
+         * `String.equals` short-circuits on reference identity.
+         *
+         * Not thread-safe, deliberately: it is driven from the UI thread, the same convention
+         * `DeckHistory` documents.
+         */
+        private var memo: Memo? = null
+
         fun highlightMarkdown(
             text: String,
             theme: PresentationTheme,
             searchMatches: List<IntRange> = emptyList(),
             activeMatchIndex: Int = -1
+        ): AnnotatedString {
+            // Cheapest comparisons first; `theme` is a data class, so its equals walks the palette.
+            memo?.let { cached ->
+                if (cached.activeMatchIndex == activeMatchIndex &&
+                    cached.text == text &&
+                    cached.searchMatches == searchMatches &&
+                    cached.theme == theme
+                ) {
+                    return cached.result
+                }
+            }
+
+            // Release the stale result before rebuilding, so the previous AnnotatedString — which
+            // holds thousands of SpanStyle objects on a large deck — is collectable while its
+            // replacement is being allocated.
+            //
+            // Measured as making no difference on `PerformanceProbe`, and kept anyway: it costs
+            // one field write and it bounds peak live memory, which the probe does not measure at
+            // all. See the open question in docs/MARKDOWN_UNIFICATION_PLAN.md, Phase C.
+            memo = null
+
+            val result = buildHighlight(text, theme, searchMatches, activeMatchIndex)
+            memo = Memo(text, theme, searchMatches, activeMatchIndex, result)
+            return result
+        }
+
+        private fun buildHighlight(
+            text: String,
+            theme: PresentationTheme,
+            searchMatches: List<IntRange>,
+            activeMatchIndex: Int
         ): AnnotatedString {
             return buildAnnotatedString {
                 append(text)
