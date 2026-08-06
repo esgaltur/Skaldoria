@@ -15,6 +15,12 @@ import com.skaldoria.core.document.DeckHistory
 import com.skaldoria.core.document.SlideDocument
 import com.skaldoria.core.editor.FindReplaceController
 import com.skaldoria.core.models.*
+import com.skaldoria.core.ports.CompanionServerPort
+import com.skaldoria.core.ports.DefaultCompanionServer
+import com.skaldoria.core.ports.DefaultFileDialogs
+import com.skaldoria.core.ports.DefaultProjectRepository
+import com.skaldoria.core.ports.FileDialogs
+import com.skaldoria.core.ports.ProjectRepository
 import com.skaldoria.core.pacing.Pacing
 import com.skaldoria.core.pacing.PacingCalculator
 import com.skaldoria.core.pacing.TalkTimer
@@ -37,7 +43,12 @@ import kotlin.coroutines.CoroutineContext
 class PresentationState(
     initialMarkdown: String = DEFAULT_SAMPLE_MARKDOWN,
     backgroundContext: CoroutineContext = Dispatchers.Default,
-    private val timer: TalkTimer = TalkTimer()
+    private val timer: TalkTimer = TalkTimer(),
+    // F-14: infrastructure arrives as ports rather than being reached by fully-qualified
+    // name inside method bodies. Defaults keep every existing call site unchanged.
+    private val projects: ProjectRepository = DefaultProjectRepository,
+    private val fileDialogs: FileDialogs = DefaultFileDialogs,
+    private val companionServer: CompanionServerPort = DefaultCompanionServer
 ) : DeckControl {
     private val scope = CoroutineScope(backgroundContext)
 
@@ -502,7 +513,7 @@ class PresentationState(
         // make every `.json` a manifest, and the manifest loader adopts sibling `.md` files
         // when a manifest declares nothing — so opening an unrelated JSON file would build a
         // deck from whatever markdown shared its folder.
-        val manager = com.skaldoria.project.DeckProjectManager
+        val manager = projects
 
         if (target.isDirectory) {
             // A folder only opens as a project when it actually carries one; there is no
@@ -526,9 +537,9 @@ class PresentationState(
     /** Loads a deck project from either a project directory or a manifest file. */
     fun openDeckProject(target: java.io.File) {
         val proj = if (target.isDirectory) {
-            com.skaldoria.project.DeckProjectManager.loadProjectFromDirectory(target)
+            projects.loadProjectFromDirectory(target)
         } else {
-            com.skaldoria.project.DeckProjectManager.loadProjectFromManifest(target)
+            projects.loadProjectFromManifest(target)
         }
         adoptProject(proj)
     }
@@ -627,7 +638,7 @@ class PresentationState(
 
         val proj = activeProject ?: return
         try {
-            com.skaldoria.project.DeckProjectManager.addNewSlideFile(proj, name)
+            projects.addNewSlideFile(proj, name)
         } catch (e: Exception) {
             // DED-6: a file-system failure belongs on the general channel, not on the one
             // the companion pairing dialog renders.
@@ -636,7 +647,7 @@ class PresentationState(
         }
 
         // Reload so `activeProject` is a fresh instance and recomposition actually fires.
-        val updated = com.skaldoria.project.DeckProjectManager.loadProjectFromDirectory(java.io.File(proj.rootDir))
+        val updated = projects.loadProjectFromDirectory(java.io.File(proj.rootDir))
         activeProject = updated
         val combined = updated.compileCombinedMarkdown()
         markdownText = combined
@@ -671,7 +682,7 @@ class PresentationState(
     fun openFile() {
         // Routes through openPath so a manifest opens as a project rather than as its own
         // JSON text — the dialog has always accepted `.mdpres`, the handler never did.
-        com.skaldoria.export.FileManager.openFileOrProject { file ->
+        fileDialogs.openFileOrProject { file ->
             openPath(file)
         }
     }
@@ -679,10 +690,10 @@ class PresentationState(
     fun saveFile() {
         if (isProjectMode) {
             val proj = activeProject ?: return
-            com.skaldoria.project.DeckProjectManager.saveProject(proj)
+            projects.saveProject(proj)
             return
         }
-        com.skaldoria.export.FileManager.saveMarkdownFile(currentFilePath, markdownText) { path ->
+        fileDialogs.saveMarkdownFile(currentFilePath, markdownText) { path ->
             currentFilePath = path
             val firstTitle = slides.firstOrNull()?.title ?: "Presentation"
             ConfigManager.addRecentProject(path, firstTitle, slides.size)
@@ -690,7 +701,7 @@ class PresentationState(
     }
 
     fun saveAsFile() {
-        com.skaldoria.export.FileManager.saveAsMarkdownFile(markdownText) { path ->
+        fileDialogs.saveAsMarkdownFile(markdownText) { path ->
             currentFilePath = path
             val firstTitle = slides.firstOrNull()?.title ?: "Presentation"
             ConfigManager.addRecentProject(path, firstTitle, slides.size)
@@ -721,14 +732,14 @@ class PresentationState(
 
     fun toggleRemoteServer(port: Int = 8888) {
         if (isRemoteServerRunning) {
-            RemoteCompanionServer.stop()
+            companionServer.stop()
             isRemoteServerRunning = false
             remoteServerUrl = null
             remoteServerError = null
         } else {
             try {
                 remoteServerError = null
-                val url = RemoteCompanionServer.start(this, port)
+                val url = companionServer.start(this, port)
                 isRemoteServerRunning = true
                 remoteServerUrl = url
             } catch (e: Throwable) {
