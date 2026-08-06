@@ -309,9 +309,31 @@ Re-sorted on that basis, the seven become three:
 | Heading | **Different questions** — split boundary vs. colour level. Both correct. |
 | HTML comment | **Different questions** — the parser distinguishes `layout:` from `note:` because it acts on them; the highlighter greys them all alike. |
 | List item, block quote | Same question, rules look close — confirm before touching |
-| **Horizontal rule** | **Genuine.** Parser splits on `***`, `___`, `----`; highlighter styles only exact `---`. A `***` line splits the deck with no visual indication in the editor. |
-| **Table row** | **Genuine.** Highlighter needs leading *and* trailing `\|`; the parser is looser. |
-| **Math** | **Genuine.** The highlighter tracks no `$$` block state at all — it styles the delimiters and treats the body as prose. |
+| **Horizontal rule** | **Confirmed divergence.** Parser splits on `***`, `___`, `----`; highlighter styles only exact `---`. |
+| **Math** | **Confirmed divergence.** The highlighter tracks no `$$` block state — it styles the delimiters and leaves the formula body as prose. |
+| ~~Table row~~ | **Not a divergence.** See below. |
+
+### Verified by `LineRuleAgreementTest`
+
+Written before fixing anything, and it corrected the list again — the table entry was wrong.
+
+**Two confirmed divergences**, now pinned as `DEFECT`:
+
+- `***`, `___` and `----` each split the deck while the editor shows no delimiter at all. `---`
+  alone is styled. Someone writing `***` gets a slide break with no visual cue.
+- The body of a multi-line `$$` block is one math element to the parser and ordinary prose to the
+  highlighter. Both delimiter lines are styled; everything between them is not.
+
+**The table entry was not a divergence — it is a shared gap.** Tables written without outer pipes
+(`a | b` / `---|---`) are ordinary GFM, and *neither* side supports them. `TableRule` matches only
+the separator line via its `contains("-|-")` clause, so the header and body rows stay prose and no
+table is ever assembled; the highlighter independently rejects all three rows. The two agree, and
+both are equally wrong. **That makes it a missing feature, not a convergence task** — a different
+kind of work, and it would have been misfiled without the test.
+
+This is the third time a confident claim in this document was corrected only by running something.
+The pattern is consistent enough to be worth stating outright: **on this codebase, do not record a
+claim about parser behaviour that has not been executed.**
 
 **None of the three are the dangerous class.** The fence bug was severe because fence state carried
 forward and corrupted everything after it. These are per-line and self-contained — wrong colours,
@@ -345,6 +367,52 @@ Compiler-checked, no behaviour change, build green at **78 test classes**.
 is not a hypothetical readability concern — it produced a wrong entry in this document, which was
 then used to argue for unifying two rules that are *supposed* to differ. A name that answers
 "what question does this rule ask?" makes the next such argument unnecessary.
+
+## Phase F — Split every rule into syntax and policy
+
+### The design test, stated once so nobody re-derives it
+
+**SRP, phrased as a question: what is this rule's one reason to change?**
+
+| Half | Changes when | Ownership |
+| :--- | :--- | :--- |
+| **Syntax** — *what is this line?* | CommonMark's definition changes | **Shared.** Every consumer defers to it. |
+| **Policy** — *what do I do about it?* | The product decides differently | **Owned.** Consumers are expected to differ. |
+
+The syntax half has no "better" — the spec decides, so there is no taste involved and no judgement
+call to get wrong. The policy half is *supposed* to differ, so a difference there is not a defect.
+
+This is why `FenceRules` worked. "Is this a fence?" became shared; "make it a code block" versus
+"colour it monospace" stayed separate. Nobody had to decide which behaviour was nicer.
+
+### The DRY trap, recorded because this document fell into it
+
+**DRY is about duplicated knowledge, not duplicated code.** The heading rules *looked* like
+duplication — similar regex, similar shape — and this document proposed unifying them. That was
+wrong: they encoded different knowledge. Fences were genuine duplication (one piece of knowledge,
+four copies). Headings were not.
+
+> Similar-looking code is not evidence. Ask what each piece **knows**.
+
+### Deliberately not done: a rule interface
+
+The tempting shape is `interface LineRule<T> { fun match(line): T? }`. It is the wrong call here.
+Callers need different subsets at different points, and the results genuinely differ —
+`FenceInfo`, `HeadingInfo`, a plain `Boolean`. A shared interface buys polymorphism nobody uses at
+the cost of generics or a sum type. That is ISP violated to look designed.
+
+Plain objects, plain functions, small data classes — what `FenceRules` already is.
+
+**Worth noting:** every defect found in this work came from *missing abstraction*, not missing
+patterns. Four fence opinions and no shared authority. No Visitor, Strategy hierarchy or Chain of
+Responsibility would have caught it. What caught it was a test asserting two components agree; what
+fixed it was one object with two functions.
+
+- [ ] `ThematicBreakRules` — syntax extracted from `SLIDE_BREAK_RULE`, which was misnamed: the
+      regex is pure syntax, and "a break ends a slide" is the policy living in `flushSection`
+- [ ] `MathRules` — open/close/single-line, with block state, as `FenceRules` does
+- [ ] `HeadingRules` — any ATX level; `startsSlide` becomes the parser's policy on top
+- [ ] Highlighter calls all three; both `DEFECT` assertions in `LineRuleAgreementTest` flip
 
 ---
 
