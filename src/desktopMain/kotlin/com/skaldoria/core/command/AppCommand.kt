@@ -94,6 +94,7 @@ object AppCommands {
     val FIRST_SLIDE = AppCommand("deck.first", "Jump to First Slide", setOf(CommandScope.DECK), listOf(Shortcut("MoveHome")))
     val LAST_SLIDE = AppCommand("deck.last", "Jump to Last Slide", setOf(CommandScope.DECK), listOf(Shortcut("MoveEnd")))
     val CYCLE_THEME = AppCommand("deck.theme", "Cycle Color Themes", setOf(CommandScope.DECK), listOf(Shortcut("T")))
+    val TOGGLE_HUD = AppCommand("deck.hud", "Show/Hide Toolbar", setOf(CommandScope.DECK), listOf(Shortcut("H")))
     val BLACKOUT = AppCommand("deck.blackout", "Blackout Screen", setOf(CommandScope.DECK), listOf(Shortcut("B")))
     val WHITEOUT = AppCommand("deck.whiteout", "Whiteout Screen", setOf(CommandScope.DECK), listOf(Shortcut("W")))
     val GRID_OVERVIEW = AppCommand("deck.grid", "Grid Overview", setOf(CommandScope.DECK), listOf(Shortcut("G")))
@@ -102,6 +103,14 @@ object AppCommands {
     val CLEAR_ANNOTATIONS = AppCommand("deck.clear", "Clear All Slide Drawings", setOf(CommandScope.DECK), listOf(Shortcut("C")))
     val UNDO_STROKE = AppCommand("deck.undoStroke", "Undo Last Stroke", setOf(CommandScope.DECK), listOf(Shortcut("Z", ctrl = true)))
     val EXIT_FULLSCREEN = AppCommand("deck.exit", "Exit Fullscreen", setOf(CommandScope.DECK), listOf(Shortcut("Escape"), Shortcut("F11")))
+
+    // Shift variant first: AppCommandsTest fails the build if a chord that merely adds a
+    // modifier is declared after the chord it extends, because the plain one matches first.
+    val REDO = AppCommand(
+        "studio.redo", "Redo Slide Change", setOf(CommandScope.STUDIO),
+        listOf(Shortcut("Z", ctrl = true, shift = true), Shortcut("Y", ctrl = true))
+    )
+    val UNDO = AppCommand("studio.undo", "Undo Slide Change", setOf(CommandScope.STUDIO), listOf(Shortcut("Z", ctrl = true)))
 
     val OPEN = AppCommand("studio.open", "Open File or Project", setOf(CommandScope.STUDIO), listOf(Shortcut("O", ctrl = true)))
 
@@ -133,9 +142,9 @@ object AppCommands {
 
     val ALL: List<AppCommand> = listOf(
         NEXT_SLIDE, PREVIOUS_SLIDE, FIRST_SLIDE, LAST_SLIDE, CYCLE_THEME,
-        BLACKOUT, WHITEOUT, GRID_OVERVIEW,
+        TOGGLE_HUD, BLACKOUT, WHITEOUT, GRID_OVERVIEW,
         LASER_POINTER, PEN_DRAWING, CLEAR_ANNOTATIONS, UNDO_STROKE, EXIT_FULLSCREEN,
-        OPEN, SAVE_AS, SAVE, EXPORT, FIND, REPLACE,
+        REDO, UNDO, OPEN, SAVE_AS, SAVE, EXPORT, FIND, REPLACE,
         FONT_INCREASE, FONT_DECREASE, FONT_RESET, COMMAND_PALETTE, PRESENT
     )
 

@@ -84,6 +84,7 @@ object KeyBindings {
         "S" to Key.S,
         "T" to Key.T,
         "W" to Key.W,
+        "Y" to Key.Y,
         "Z" to Key.Z
     )
 

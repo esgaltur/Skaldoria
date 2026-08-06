@@ -109,6 +109,8 @@ fun main() = application {
                 AppCommands.FONT_INCREASE -> state.increaseEditorFontSize()
                 AppCommands.FONT_DECREASE -> state.decreaseEditorFontSize()
                 AppCommands.FONT_RESET -> state.resetEditorFontSize()
+                AppCommands.REDO -> state.redo()
+                AppCommands.UNDO -> state.undo()
                 AppCommands.OPEN -> state.openFile()
                 AppCommands.SAVE_AS -> state.saveAsFile()
                 AppCommands.SAVE -> state.saveFile()

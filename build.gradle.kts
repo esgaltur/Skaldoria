@@ -56,6 +56,18 @@ val generateBuildInfo = tasks.register("generateBuildInfo") {
 kotlin {
     jvm("desktop")
 
+    /**
+     * The zero-warning NFR, enforceable.
+     *
+     * Off by default so a local build stays workable mid-edit, and turned on by CI with
+     * `-PwarningsAsErrors`. Without a gate the NFR is a wish: the Kotlin compiler does not
+     * report unused *public* declarations at all, so several dead functions sat in this
+     * codebase through a full release with a green build.
+     */
+    compilerOptions {
+        allWarningsAsErrors.set(providers.gradleProperty("warningsAsErrors").isPresent)
+    }
+
     sourceSets {
         val desktopMain = getByName("desktopMain") {
             // Passing the task provider (not a path) lets Gradle wire the dependency itself.
