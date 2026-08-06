@@ -29,6 +29,7 @@ import com.skaldoria.ui.components.SlideSurface
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun PresenterView(
@@ -43,7 +44,7 @@ fun PresenterView(
 
     LaunchedEffect(Unit) {
         while (true) {
-            delay(1000)
+            delay(1000.milliseconds)
             currentTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
         }
     }
