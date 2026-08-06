@@ -126,9 +126,7 @@ object MarkdownSlideParser {
         var subtitle: String? = null
         val elements = mutableListOf<SlideElement>()
         val notes = mutableListOf<String>()
-        var explicitLayout: SlideLayoutType? = null
-        var customBackground: String? = null
-        var customTransition: SlideTransition? = null
+        val directives = SectionDirectives()
 
         var currentListItems = mutableListOf<String>()
         var inCodeBlock = false
@@ -238,39 +236,26 @@ object MarkdownSlideParser {
         for (line in lines) {
             val trimmed = line.trim()
 
-            // 1. Directives in HTML comment: <!-- layout: hero -->, <!-- poll: A | B --> or <!-- bg: #12141f -->
-            val directiveCommentMatch = DIRECTIVE_COMMENT_REGEX.find(trimmed)
-            if (directiveCommentMatch != null) {
-                val key = directiveCommentMatch.groupValues[1].lowercase()
-                val value = directiveCommentMatch.groupValues[2].trim()
-                if (key == "poll" || key == "vote") {
-                    val rawOptions = value.split("|").map { it.trim() }.filter { it.isNotEmpty() }
-                    if (rawOptions.isNotEmpty()) {
-                        val question = if (title.isNotEmpty()) title else "Audience Poll"
-                        elements.add(SlideElement.Poll(question = question, options = rawOptions))
-                        explicitLayout = SlideLayoutType.POLL
-                    }
-                } else {
-                    applyDirective(key, value, { explicitLayout = it }, { customBackground = it }, { customTransition = it })
-                }
-                continue
-            }
+            // 1. Directives, in either spelling:
+            //      <!-- layout: hero -->   (anywhere in the section)
+            //      layout: hero            (YAML-style, before the title only)
+            //
+            // F-15: the two spellings had a copy-pasted body each. The line form stays
+            // restricted to the pre-title region so ordinary prose such as
+            // "background: dark blue" cannot be swallowed as configuration.
+            val directiveMatch = DIRECTIVE_COMMENT_REGEX.find(trimmed)
+                ?: if (title.isEmpty()) DIRECTIVE_LINE_REGEX.find(trimmed) else null
 
-            // 1b. Directives on direct line if before title (YAML-style)
-            val directiveLineMatch = DIRECTIVE_LINE_REGEX.find(trimmed)
-            if (directiveLineMatch != null && title.isEmpty()) {
-                val key = directiveLineMatch.groupValues[1].lowercase()
-                val value = directiveLineMatch.groupValues[2].trim()
-                if (key == "poll" || key == "vote") {
-                    val rawOptions = value.split("|").map { it.trim() }.filter { it.isNotEmpty() }
-                    if (rawOptions.isNotEmpty()) {
-                        val question = if (title.isNotEmpty()) title else "Audience Poll"
-                        elements.add(SlideElement.Poll(question = question, options = rawOptions))
-                        explicitLayout = SlideLayoutType.POLL
-                    }
-                } else {
-                    applyDirective(key, value, { explicitLayout = it }, { customBackground = it }, { customTransition = it })
-                }
+            if (directiveMatch != null) {
+                val poll = applyDirective(
+                    key = directiveMatch.groupValues[1].lowercase(),
+                    value = directiveMatch.groupValues[2].trim(),
+                    directives = directives,
+                    // A poll adopts the slide title once there is one; the line form is only
+                    // reachable before the title, so it always takes the generic label.
+                    pollQuestion = title.ifEmpty { "Audience Poll" }
+                )
+                if (poll != null) elements.add(poll)
                 continue
             }
 
@@ -466,7 +451,7 @@ object MarkdownSlideParser {
             title = if (isFirst) "Presentation Title" else "Slide ${index + 1}"
         }
 
-        val layout = explicitLayout ?: SmartLayoutClassifier.classify(title, elements, isFirst)
+        val layout = directives.layout ?: SmartLayoutClassifier.classify(title, elements, isFirst)
 
         return Slide(
             index = index,
@@ -475,21 +460,60 @@ object MarkdownSlideParser {
             layoutType = layout,
             elements = elements,
             notes = notes,
-            customBackground = customBackground,
-            customTransition = customTransition,
+            customBackground = directives.background,
+            customTransition = directives.transition,
             sourceLineRange = sourceRange
         )
     }
 
+    /**
+     * The directives one slide section declares.
+     *
+     * F-16: replaces the three setter lambdas [applyDirective] used to take. Those existed
+     * only because its targets were locals of a 364-line function — a smell that disappears
+     * as soon as the state is an object rather than a closure's captured variables.
+     */
+    private class SectionDirectives {
+        var layout: SlideLayoutType? = null
+        var background: String? = null
+        var transition: SlideTransition? = null
+    }
+
+    /**
+     * The options a `poll:` / `vote:` directive declares, or null when it declares none.
+     *
+     * F-15: the splitting and filtering below was copy-pasted into both the comment-form and
+     * line-form branches of the parse loop.
+     */
+    private fun parsePollOptions(value: String): List<String>? =
+        value.split("|")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .takeIf { it.isNotEmpty() }
+
+    /**
+     * Applies one `key: value` directive to [directives].
+     *
+     * @param pollQuestion the question to attach if this directive declares a poll — the
+     *   slide title when it already has one, otherwise a generic label.
+     * @return the poll element this directive declares, or null. Returning it keeps the two
+     *   call sites (HTML comment and bare line) sharing one implementation; they previously
+     *   held identical seven-line copies that could drift apart.
+     */
     private fun applyDirective(
         key: String,
         value: String,
-        setLayout: (SlideLayoutType) -> Unit,
-        setBg: (String) -> Unit,
-        setTransition: (SlideTransition) -> Unit
-    ) {
+        directives: SectionDirectives,
+        pollQuestion: String
+    ): SlideElement.Poll? {
         when (key) {
+            "poll", "vote" -> {
+                val options = parsePollOptions(value) ?: return null
+                directives.layout = SlideLayoutType.POLL
+                return SlideElement.Poll(question = pollQuestion, options = options)
+            }
             "layout" -> {
+                val setLayout: (SlideLayoutType) -> Unit = { directives.layout = it }
                 when (value.lowercase().replace("-", "_").trim()) {
                     "hero", "title", "hero_title" -> setLayout(SlideLayoutType.HERO_TITLE)
                     "section", "header", "section_header" -> setLayout(SlideLayoutType.SECTION_HEADER)
@@ -506,9 +530,10 @@ object MarkdownSlideParser {
                 }
             }
             "bg", "background" -> {
-                if (value.isNotBlank()) setBg(value)
+                if (value.isNotBlank()) directives.background = value
             }
             "transition" -> {
+                val setTransition: (SlideTransition) -> Unit = { directives.transition = it }
                 when (value.lowercase().replace("-", "_").trim()) {
                     "fade" -> setTransition(SlideTransition.FADE)
                     "slide", "slide_horizontal" -> setTransition(SlideTransition.SLIDE_HORIZONTAL)
@@ -517,6 +542,7 @@ object MarkdownSlideParser {
                 }
             }
         }
+        return null
     }
 
     private fun parseLineHighlights(str: String?): Set<Int> {

@@ -93,6 +93,8 @@ fun main() = application {
         onCloseRequest = {
             // PRF-4 / DED-2: cancel the timer scope and flush preferences before exit.
             state.dispose()
+            // F-20: the exporter owns its own IO scope; the composition root releases it.
+            com.skaldoria.export.DeckExporter.dispose()
             exitApplication()
         },
         icon = appIcon,
