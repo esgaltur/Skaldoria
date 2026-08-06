@@ -249,7 +249,7 @@ A design proposal already exists:
 | **AUD-05** | Question upvote sorting and moderation queue | 📋 | S | — | `AudienceQuestion` already carries `upvotes` and `isAnswered`. Check what the presenter UI does with them before sizing. |
 | **AUD-06** | Attendance count / session analytics | 🕓 | M | — | Privacy implications; needs a decision on what is retained. |
 | **AUD-07** | Companion UI localisation | 🕓 | M | PLT-03 | |
-| **AUD-08** | **Verify BLE presenter clickers work** | ✅ | S | — | Confirmed: forward/back already worked — a clicker is an HID keyboard and `PageUp`/`PageDown` were bound. The survey found **one** gap: the blank-screen button sends `.` / `,` (the PowerPoint convention the hardware targets), not `B` / `W`, so it did nothing. Both added. `PresenterClickerTest` (CLK-1) asserts the virtual key codes; a physical clicker is still a hardware claim and stays on the manual script. ADR-005 Phase 0. |
+| **AUD-08** | **Verify BLE presenter clickers work** | ✅ | S | — | "Likely works today with zero code" was **half right**, and the wrong half was the expensive one. Forward/back did work in the deck window. Two gaps: the blank-screen button sends `.` / `,` (the PowerPoint convention the hardware targets), not `B` / `W`; and **the speaker console answered to no key at all** (KEY-1) — its window is `alwaysOnTop`, so it is the one holding focus for most of a talk, and a clicker pointed at it did nothing. Both fixed. `PresenterClickerTest` (CLK-1) asserts the virtual key codes; `FullscreenDeckKeyTest` sends them into a real composition. A physical clicker remains a hardware claim on the manual script. ADR-005 Phase 0. |
 | **AUD-09** | **Link ranking for non-LAN interfaces** | ✅ | M | — | `LinkRanking` + `LinkKind`, extracted pure so it is testable. LNK-A and LNK-B both fixed: a hotspot/tether/PAN link now outranks an unreachable routed adapter, and Bluetooth PAN is classified as a transport rather than denylisted. |
 | **AUD-10** | **SoftAP pairing guidance** | 📋 | M | AUD-09 | Detect the isolated-network case, explain the remedy per platform, never show a QR that cannot work. The only path that serves the *audience* portal without venue infrastructure. ADR-005 Phase 2. |
 | **AUD-11** | Wi-Fi credential QR (`WIFI:T:WPA;…`) | 📋 | S | AUD-10 | Phone joins the hotspot by camera, then chains to the portal QR. `QrCodeGenerator.encode` already takes arbitrary text — no generator change. ADR-005 Phase 3. |
@@ -314,6 +314,18 @@ Suite: **235 → 575 tests**, zero compiler warnings throughout.
 > new mechanism, with a green suite. The pattern this document keeps rediscovering held again:
 > **the guard has to render the pane, not read the token.**
 > `EditorWorkspaceRenderingTest` is the one that would have caught it.
+>
+> **And it caught something else the same day.** `AUD-08` was sized `S` on the reasoning that a
+> clicker is an HID keyboard and the codes were already bound — which `AppCommandsTest`,
+> `KeyBindingsTest` and the new `PresenterClickerTest` all confirm. All three assert that the
+> *registry resolves*. None of them could notice that `PresenterView` never called it: 828
+> lines, no key handling, `alwaysOnTop`. Writing `FullscreenDeckKeyTest` — which the ADR asked
+> for and nobody had written — took ten minutes and found that <kbd>H</kbd>, the arrows,
+> blackout and the clicker were all dead in the window a speaker spends the talk looking at.
+>
+> The recurring shape, now stated three ways: **a table that resolves is not a key that
+> arrives, an index that advances is not a match that is visible, and a model that parses is
+> not a pixel that is drawn.** Every guard this project adds should end at the user.
 
 ### Now — proving the build works off this machine
 

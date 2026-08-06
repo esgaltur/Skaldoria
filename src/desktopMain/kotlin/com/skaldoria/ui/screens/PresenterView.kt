@@ -2,6 +2,7 @@ package com.skaldoria.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,14 +15,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skaldoria.core.models.PacingStatus
 import com.skaldoria.state.PresentationState
+import com.skaldoria.ui.DeckKeyHandler
 import com.skaldoria.ui.components.ParkingLotView
 import com.skaldoria.ui.components.RemotePairingDialog
 import com.skaldoria.ui.components.SlideGridOverviewDialog
@@ -65,10 +70,37 @@ fun PresenterView(
     // Compose treats that as unstable. The clock is read inside [PresenterHeader] instead,
     // so a tick repaints the header and nothing else.
 
+    // KEY-1: the console answers to the deck's keyboard surface.
+    //
+    // It had none. Its window is `alwaysOnTop` and is the one a speaker actually looks at, so
+    // it holds focus for most of a talk — and every deck shortcut, including a presenter
+    // clicker's Page Up / Page Down, was silently dead here.
+    val keyboardFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        try {
+            keyboardFocus.requestFocus()
+        } catch (_: Exception) {
+            // Losing the race with attachment costs the shortcuts, not correctness.
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(state.currentTheme.background)
+            .focusRequester(keyboardFocus)
+            .focusable()
+            .onKeyEvent { event ->
+                DeckKeyHandler.handle(event, state) {
+                    // Esc closes the console; it must not also drop the deck out of
+                    // fullscreen, which would end the presentation from the wrong window.
+                    when {
+                        state.isCommandPaletteOpen -> state.isCommandPaletteOpen = false
+                        state.isGridOverviewOpen -> state.isGridOverviewOpen = false
+                        else -> onClose()
+                    }
+                }
+            }
     ) {
         PresenterHeader(state = state, currentTime = currentTime, onClose = onClose)
 

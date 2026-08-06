@@ -5,8 +5,10 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.unit.Density
 import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.screens.EditorWorkspace
+import kotlinx.coroutines.Job
 import java.awt.image.BufferedImage
 import java.io.File
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -35,6 +37,28 @@ class EditorWorkspaceRenderingTest {
     private val paneTop = 130
     private val paneRight = 680
     private val paneBottom = 750
+
+    /**
+     * Background jobs owned by this class, cancelled when it finishes.
+     *
+     * These cases render scenes, so they outlive the 750 ms autosave debounce — and a draft
+     * written after the test ends lands in whatever `ConfigManager.rootDir` the *next* test has
+     * set, which is a shared global. PRF-4 made `backgroundContext` injectable for this.
+     */
+    private val backgroundJobs = mutableListOf<Job>()
+
+    @AfterTest
+    fun cancelBackgroundWork() {
+        backgroundJobs.forEach { it.cancel() }
+    }
+
+    private fun deckState(markdown: String): PresentationState {
+        val job = Job().also { backgroundJobs += it }
+        return PresentationState(backgroundContext = job).apply {
+            updateMarkdown(markdown)
+            showWelcome = false
+        }
+    }
 
     private fun longDeck(): String = buildString {
         for (slide in 1..40) {
@@ -104,9 +128,7 @@ class EditorWorkspaceRenderingTest {
 
     @Test
     fun `the studio window draws its source pane`() {
-        val state = PresentationState()
-        state.updateMarkdown(longDeck())
-        state.showWelcome = false
+        val state = deckState(longDeck())
 
         val content = contentPixels(renderSettled(state, "editor_workspace"))
 
@@ -123,17 +145,9 @@ class EditorWorkspaceRenderingTest {
     fun `selecting a slide scrolls the source pane to it`() {
         // AUT-02, as the user experiences it. Before this work the pane was identical in both
         // renders: the preview moved to slide 40 and the source still showed line 1.
-        val atStart = PresentationState().apply {
-            updateMarkdown(longDeck())
-            showWelcome = false
-        }
-        val first = renderSettled(atStart, "editor_workspace_slide_1")
+        val first = renderSettled(deckState(longDeck()), "editor_workspace_slide_1")
 
-        val atEnd = PresentationState().apply {
-            updateMarkdown(longDeck())
-            showWelcome = false
-            goToSlide(slides.size - 1)
-        }
+        val atEnd = deckState(longDeck()).apply { goToSlide(slides.size - 1) }
         val last = renderSettled(atEnd, "editor_workspace_slide_40")
 
         val difference = paneDifference(first, last)
@@ -147,15 +161,10 @@ class EditorWorkspaceRenderingTest {
     @Test
     fun `finding a match late in the deck scrolls it into view`() {
         // EDT-4. The needle appears once, near the end; the pane must move to it.
-        val plain = PresentationState().apply {
-            updateMarkdown(longDeck() + "\n# Needle\n\n- The needle is here.\n")
-            showWelcome = false
-        }
-        val before = renderSettled(plain, "editor_workspace_before_find")
+        val withNeedle = longDeck() + "\n# Needle\n\n- The needle is here.\n"
+        val before = renderSettled(deckState(withNeedle), "editor_workspace_before_find")
 
-        val searched = PresentationState().apply {
-            updateMarkdown(longDeck() + "\n# Needle\n\n- The needle is here.\n")
-            showWelcome = false
+        val searched = deckState(withNeedle).apply {
             findQuery = "needle is here"
             findNext()
         }

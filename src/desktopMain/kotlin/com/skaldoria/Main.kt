@@ -16,6 +16,7 @@ import androidx.compose.ui.window.rememberWindowState
 import com.skaldoria.core.command.AppCommands
 import com.skaldoria.core.command.CommandScope
 import com.skaldoria.state.PresentationState
+import com.skaldoria.ui.DeckKeyHandler
 import com.skaldoria.ui.KeyBindings
 import com.skaldoria.ui.components.ProvideDeckBaseDir
 import com.skaldoria.ui.screens.EditorWorkspace
@@ -147,7 +148,15 @@ fun main() = application {
             onCloseRequest = { state.isFullscreen = false },
             icon = appIcon,
             title = "Skaldoria — Presentation Deck (${BuildInfo.DISPLAY_VERSION})",
-            state = deckWindowState
+            state = deckWindowState,
+            // KEY-1, safety net. The deck's own handler hangs off a focusable Box, so it only
+            // sees keys while that Box is on the focus path — and a click on a non-focusable
+            // region, or a dialog that does not hand focus back, takes it off. A window-level
+            // handler cannot be starved that way. It runs only when the content did not
+            // consume the event, so nothing is handled twice.
+            onKeyEvent = { event ->
+                DeckKeyHandler.handle(event, state) { state.isFullscreen = false }
+            }
         ) {
             ProvideDeckBaseDir(state.deckBaseDir) { FullscreenDeck(state) }
         }
@@ -160,7 +169,12 @@ fun main() = application {
             icon = appIcon,
             title = "Skaldoria — Speaker Console & Notes (${BuildInfo.DISPLAY_VERSION})",
             alwaysOnTop = true,
-            state = presenterWindowState
+            state = presenterWindowState,
+            // KEY-1. This window is `alwaysOnTop`, so it holds focus for most of a talk — and
+            // it answered to no key at all before this.
+            onKeyEvent = { event ->
+                DeckKeyHandler.handle(event, state) { state.isPresenterModeActive = false }
+            }
         ) {
             ProvideDeckBaseDir(state.deckBaseDir) {
                 PresenterView(

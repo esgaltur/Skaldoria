@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Roadmap and delivery work. The candidate feature set is catalogued in
 [`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md); the connectivity design is
 [ADR-005](./docs/ADR_COMPANION_LINK_ESTABLISHMENT.md).
-Test suite: **235 to 575 tests**, zero compiler warnings.
+Test suite: **235 to 583 tests**, zero compiler warnings.
 
 ### Added
 - **The editor has a caret.** The source pane used the `String` overload of `TextField`, so the
@@ -39,6 +39,12 @@ Test suite: **235 to 575 tests**, zero compiler warnings.
   with a job that fails the build on any Kotlin compiler warning.
 
 ### Fixed
+- **The speaker console answered to no keyboard shortcut at all.** `PresenterView` had no key
+  handling, and its window is `alwaysOnTop` — so it is the window a speaker actually looks at
+  and the one holding focus for most of a talk. <kbd>H</kbd>, the arrows, blackout, the laser,
+  and a presenter clicker's Page Up / Page Down were all silently dead there. The deck's
+  dispatch is now shared (`DeckKeyHandler`) and both windows answer to the full set, with a
+  window-level handler as a backstop so losing focus inside a window cannot starve it.
 - **The editor's find buttons appeared to do nothing.** Search was complete and unit-tested:
   matches were found, the active one was restyled, the count updated. Nothing scrolled, so the
   match was off screen and the only feedback was a badge changing in a corner. ▲/▼ also moved

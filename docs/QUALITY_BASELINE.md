@@ -1,6 +1,6 @@
 # Quality Baseline
 
-**Version:** 1.3.0 · **Last reviewed:** 2026-08-06 · **Suite:** 575 tests, 0 failures
+**Version:** 1.3.0 · **Last reviewed:** 2026-08-06 · **Suite:** 583 tests, 0 failures
 
 This document is the reference for the invariants this codebase holds, established during a
 systematic pre-release review of `src/desktopMain`. Every entry has a stable identifier, and
@@ -124,6 +124,7 @@ Entries without a **Rationale** are self-evident and need none.
 | EDT-4 | Editor | Every match-navigation action scrolls its match into view — asserted on the **rendered** pane, not on the index | `EditorWorkspaceRenderingTest` |
 | EDT-5 | Editor | Selection is clamped to the new text length before it reaches the field | `EditorRevealTest` |
 | CLK-1 | Presentation | The key codes an off-the-shelf presenter clicker emits reach a deck command | `PresenterClickerTest` |
+| KEY-1 | Presentation | Every window that hosts the deck answers to the whole `DECK` keyboard surface — asserted by sending keys into a real composition, not by resolving the registry | `FullscreenDeckKeyTest` |
 
 ---
 
