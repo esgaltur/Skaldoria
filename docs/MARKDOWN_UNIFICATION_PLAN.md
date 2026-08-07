@@ -1,6 +1,9 @@
 # Markdown Core — Extraction, Convergence, and Speed
 
-**Opened:** 2026-08-06 · **Status:** Phases 0–1, A, B, C, E complete; D optional · **Baseline:** `2e40c02`
+**Opened:** 2026-08-06 · **Updated:** 2026-08-07 · **Baseline:** `2e40c02`
+
+**Status: Phases 0–1, A, B, C, E, F complete. Phase D is gated on a product decision — see
+[What is left](#what-is-left).**
 
 ## Decision summary — read this first
 
@@ -450,3 +453,137 @@ performance one.
 
 ---
 
+# What is left
+
+Everything above is done. This section is the remaining work, re-derived from the post-PRF-7
+measurements rather than inherited from the original plan — because those measurements changed
+which items are worth doing.
+
+## Gate: is more speed actually wanted?
+
+**Answer this before starting anything in Phase D.** It is a product question, not an engineering
+one, and both remaining performance items are expensive enough that guessing wrong wastes days.
+
+| Ambition | Ceiling needed | Status |
+| :--- | :--- | :--- |
+| Presentations — a long conference talk is ~900 lines | ~1,000 lines | **Met, with 7x headroom** |
+| Long-form decks — a book chapter, a merged multi-file project | ~5,000 lines | **Met** |
+| A general markdown editor | 20,000+ lines | **Not met** — needs both items below |
+
+A keystroke costs **~1.08 ms** on the 886-line reference deck, and the 120 FPS budget now breaks
+at **~6,800 lines**. For the product as it exists, the performance work is finished.
+
+**Phase D is only justified if the general-editor ambition is live.** If it is not, stop after the
+correctness items below.
+
+---
+
+## Phase D — the two co-equal costs *(only if the gate passes)*
+
+The original plan treated incremental reparse as *the* fix. That is no longer true, and the change
+is the most important thing in this section:
+
+| Pass | Share | Fix | Risk |
+| :--- | ---: | :--- | :--- |
+| `parse` | 50% | D6 — incremental reparse | **High** — COR-1, `sourceLineRange` |
+| `highlightMarkdown` | 46% | D7 — viewport-windowed highlighting | Medium, and capped |
+| `extractFollowUpQuestions` | 5% | — | Not worth touching |
+
+**Neither is sufficient alone.** Doing D6 by itself leaves the highlighter dominant at ~0.56
+us/line; doing D7 by itself leaves the parser dominant at ~0.63. Halving the total requires both,
+which is roughly two weeks with an ADR in the middle of it.
+
+### D6 — Incremental reparse
+
+Reparse the edited slide, reuse the rest. Requires a conservative guard: if an edit touches or
+creates a boundary construct (a thematic break, a slide-level heading, a fence marker), fall back
+to a full reparse.
+
+**The invariant to preserve is COR-1** — slide boundaries come from exactly one authority. It
+exists because a second, divergent splitter once disagreed with the parser and edits silently hit
+the wrong slide. `SlideSourceRangeTest` was written to be the safety net for precisely this
+change; read it before starting.
+
+### D7 — Viewport-windowed highlighting
+
+Style only the visible line range plus a buffer. Both inputs are already in scope at the call site
+— `layout` (`EditorWorkspace.kt:617`) and `scrollState` (`:616`).
+
+Two obstacles, both known:
+
+- **Block state spans lines.** A window starting mid-document does not know its fence or math
+  state. Resolve with a prepass recording only fence-toggle and `$$`-toggle line indices — one
+  `startsWith` per line, no regex, no allocation — making state at any line a binary search. It
+  caches on the same key as the existing memo.
+- **ADR-004 caps the payoff.** `EditorWorkspace.kt:679` puts the field in a `verticalScroll` with
+  unbounded height, so Compose lays out the whole document regardless. Windowing fixes *our* cost,
+  not the framework's, and that floor is **unmeasured** — measure it before committing, or the
+  work may buy less than the arithmetic suggests.
+
+### D1 / D2 / D4 — reassessed, and mostly obsolete
+
+The cheap wins were largely collected by accident:
+
+| | Status |
+| :--- | :--- |
+| **D3** — first-character dispatch | **Done** (PRF-7). Halved `parse`, and turned out to be the single largest win of the whole effort. |
+| **D1** — zero-allocation line iteration | Still open. Now a smaller share, and it means threading `CharSequence` plus offsets through 16 block rules — the most correctness-critical code in the repo. **Poor risk-to-payoff; do it only as part of D6**, which is touching that layer anyway. |
+| **D2** — shared line-start `IntArray` | Largely moot. Its beneficiary was the follow-up scan, now 5%. |
+| **D4** — fuse the three passes | Largely moot for the same reason, and blocked in project mode regardless: the highlighter and parser read *different strings* there (`DeckDocument.editorTextFor` gives one file, the parser gets the combined deck). |
+| **D5** — lazy layout classification | Still open, still needs a usage audit — confirm what actually reads `layoutType` before assuming the filmstrip does not. |
+
+---
+
+## Correctness and hygiene — worth doing regardless of the gate
+
+Ordered by payoff-to-risk. None depends on the performance question.
+
+### 1. Test suites leak `PresentationState` scopes *(highest value)*
+
+**19 test files construct a `PresentationState`; only 4 dispose it.** Each undisposed instance
+leaves a debounced autosave that fires 750 ms later and writes the process-wide draft file.
+
+This already blocked two builds via `DraftRecoveryTest`, and the workaround there — waiting out
+the debounce — makes one symptom deterministic without fixing the cause. **Any future test reading
+shared state can be hit identically**, and the failure moves between tests as the suite reorders,
+so it will not present the same way twice.
+
+The fix is disposal discipline, ideally enforced rather than remembered — a shared test base or a
+JUnit rule, so a new test cannot forget.
+
+### 2. Tables without outer pipes are unsupported
+
+`a | b` over `---|---` is ordinary GFM and **neither** the parser nor the highlighter handles it.
+`TableRule` matches only the separator row through its `contains("-|-")` clause, so the header and
+body stay prose and no table is assembled.
+
+They agree, and both are wrong — which makes this a **missing feature, not a divergence**. It is
+in this document only because it was misfiled as one until `LineRuleAgreementTest` was written.
+
+### 3. `DocumentedSyntaxTest` cannot move into `:markdown-core`
+
+It reads files from `docs/` and its paths resolve against the root project directory. Moving it
+needs a path fix, not just a `git mv`.
+
+### 4. `BLOCK_RULES` ordering is load-bearing but implicit
+
+Precedence is list position, asserted by `BlockRuleOrderTest`. Making it an explicit property
+would turn a comment plus a test into something the type system carries. Optional cleanup; the
+test does currently hold the line.
+
+---
+
+## Considered and rejected
+
+| Idea | Why not |
+| :--- | :--- |
+| **Adopting `org.jetbrains:markdown`** | Measured 1.87x slower than the specialised scanner. See Phase 0. Spike and dependency both deleted. |
+| **Ktor for the companion server** | **Already decided against** in `KTOR_MIGRATION_TRADEOFFS.md`, which measured it: auth is not a reason, CORS is not a reason, revisit only when WebSockets/SSE become a real requirement. This plan proposed it anyway at one point, without reading that document first. |
+| **Rope / gap buffer for document text** | Every keystroke copies the whole `String`, but `memcpy` at ~10 GB/s makes 27 KB about 3 us — well under the other costs. `BasicTextField` hands us a `String` regardless, so it cannot be avoided without replacing the text surface. Known floor, not a target. |
+| **Parallel slide classification** | Slides are independent after segmentation, but a full parse is now ~560 us. Thread dispatch would dominate. |
+| **ZXing for QR** (~532 lines) | Not rejected, but **not evaluated** either. It trades 532 lines for a dependency in a project that has deliberately kept almost none, and nothing has measured whether the hand-rolled generator is a problem. Decide it on evidence, the way Ktor was. |
+
+## Operational
+
+Another session commits to this repository concurrently. Everything remaining is localised except
+D6, which touches the parser's core loop and would conflict badly with parallel work there.
