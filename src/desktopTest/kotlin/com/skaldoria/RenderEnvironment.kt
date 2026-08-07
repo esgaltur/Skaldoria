@@ -1,5 +1,6 @@
 package com.skaldoria
 
+import org.junit.jupiter.api.Assumptions
 import java.awt.GraphicsEnvironment
 
 /**
@@ -44,10 +45,10 @@ object RenderEnvironment {
      * Call from `@BeforeTest`. A skipped test is reported as skipped; it never reports as passed.
      */
     fun requireDisplay() {
-        Assume.assumeTrue(
+        Assumptions.assumeTrue(
+            canRender,
             "no display available — render guards skipped (headless=${GraphicsEnvironment.isHeadless()}, " +
-                "$SKIP_PROPERTY=${System.getProperty(SKIP_PROPERTY)})",
-            canRender
+                "$SKIP_PROPERTY=${System.getProperty(SKIP_PROPERTY)})"
         )
     }
 }
