@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -25,11 +26,17 @@ import com.skaldoria.markdown.models.FollowUpQuestion
 import com.skaldoria.state.PresentationState
 import com.skaldoria.theme.PresentationTheme
 import kotlinx.coroutines.launch
+import java.awt.datatransfer.StringSelection
 
 /**
  * Interactive Parking Lot & Unanswered Questions Follow-Up UI.
  * Gives the speaker a structured aside for recording unanswered questions with checkboxes and expandable answers.
+ *
+ * The opt-in is the desktop `ClipEntry(Transferable)` constructor, which is the only public way
+ * to place plain text on the clipboard now that `LocalClipboardManager` is deprecated — the
+ * toolkit ships no stable text helper for it. Narrowest available scope; not a suppression.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ParkingLotView(
     state: PresentationState,
@@ -40,6 +47,10 @@ fun ParkingLotView(
 
     // `LocalClipboard` replaces the deprecated `LocalClipboardManager`; writing is a suspend
     // call now, so the export needs a scope rather than running inline in the click handler.
+    //
+    // Desktop `ClipEntry` wraps an AWT `Transferable` and the toolkit ships no text
+    // convenience for it, so `StringSelection` is the supported way to put plain text on the
+    // clipboard here.
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
     var copyStatusText by remember { mutableStateOf<String?>(null) }
@@ -88,7 +99,7 @@ fun ParkingLotView(
                     onClick = {
                         val md = state.exportFollowUpMarkdownChecklist()
                         clipboardScope.launch {
-                            clipboard.setClipEntry(ClipEntry.withPlainText(md))
+                            clipboard.setClipEntry(ClipEntry(StringSelection(md)))
                             copyStatusText = "Copied to clipboard!"
                         }
                     }

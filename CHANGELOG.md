@@ -89,11 +89,19 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   auto-hides when the pointer rests, cycles with <kbd>H</kbd>, and the choice persists.
 - **Jump to a slide by number** during a presentation: type the number, press <kbd>Enter</kbd>.
 - **A local verification gate** (`scripts/verify.ps1`): both test suites and the zero-warning
-  compile in one command. This entry previously announced a CI pipeline at
-  `.github/workflows/ci.yml` — **that file has never existed in this repository**, so every rule
-  in `CONTRIBUTING.md` was enforced by memory while the changelog claimed otherwise. CI is
-  deferred on cost (hosted runner minutes), not rejected, so the gate now lives where the
-  release is actually cut and both release pipelines run it before packaging anything.
+  compile in one command. This entry once announced a CI pipeline at `.github/workflows/ci.yml`
+  while no such file existed, so every rule in `CONTRIBUTING.md` was enforced by memory. The gate
+  now lives where the release is actually cut, and both release pipelines run it before packaging
+  anything.
+- **`.github/workflows/ci.yml`, and this time the file is real** — the same two checks as
+  `verify.ps1`, on `ubuntu-latest`. **`workflow_dispatch` is its only trigger:** CI was deferred
+  on cost (`PLT-01`), and a `push:`/`pull_request:` trigger bills hosted minutes for an answer on
+  every commit whether or not anyone wanted one, whereas a button costs nothing until pressed.
+  That is what made adoption possible, and it is also the limit of what changed — **nothing is
+  verified automatically, and `verify.ps1` on the developer's machine is still the gate.** The
+  render guards (`PLT-08`) need a display, so a runner stands them down by default and verifies
+  strictly less than a machine with a screen; the `render_tests` input takes `xvfb` when they
+  should actually run there.
 - **`printVersion` Gradle task**, so the release scripts read `appVersion` instead of carrying
   their own default. `package_release.ps1`, `release.ps1` and `build_linux.sh` each defaulted to
   a literal `1.0.0`: run without an explicit argument, they stamped `Skaldoria-v1.0.0-*` onto
@@ -199,11 +207,12 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
 ### Known gaps
 - Editor ⇄ slide synchronisation and find-result reveal remain open; both wait on the caret
   foundation in [ADR-004](./docs/ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md) Phase 2.
-- **There is no CI for now** — deferred on cost, since hosted runner minutes are not free. The
-  project is verified and released from a developer machine: `scripts/verify.ps1` is the gate
-  (both test suites and the zero-warning build), and both release pipelines run it before
-  packaging. The cost is honest: nothing checks a push, so a change that skips the script is
-  unverified until someone runs it. Revisit when there is a budget or a public repository.
+- **No CI runs automatically** — hosted runner minutes are not free, so `.github/workflows/ci.yml`
+  is `workflow_dispatch`-only. The project is still verified and released from a developer
+  machine: `scripts/verify.ps1` is the gate (both test suites and the zero-warning build), and
+  both release pipelines run it before packaging. The cost is honest: **nothing checks a push**,
+  so a change that skips the script is unverified until someone runs it or dispatches the
+  workflow. A per-commit trigger waits on a budget or a public repository.
 - **Tables written without outer pipes (`a | b` / `---|---`) are unsupported.** Ordinary GFM, and
   neither the parser nor the highlighter handles it — they agree, and both are wrong, so this is a
   missing feature rather than a divergence.
