@@ -408,11 +408,44 @@ patterns. Four fence opinions and no shared authority. No Visitor, Strategy hier
 Responsibility would have caught it. What caught it was a test asserting two components agree; what
 fixed it was one object with two functions.
 
-- [ ] `ThematicBreakRules` — syntax extracted from `SLIDE_BREAK_RULE`, which was misnamed: the
+- [x] `ThematicBreakRules` — syntax extracted from `SLIDE_BREAK_RULE`, which was misnamed: the
       regex is pure syntax, and "a break ends a slide" is the policy living in `flushSection`
-- [ ] `MathRules` — open/close/single-line, with block state, as `FenceRules` does
-- [ ] `HeadingRules` — any ATX level; `startsSlide` becomes the parser's policy on top
-- [ ] Highlighter calls all three; both `DEFECT` assertions in `LineRuleAgreementTest` flip
+- [x] `MathRules` — open/close/single-line, with block state, as `FenceRules` does
+- [x] `HeadingRules` — any ATX level; `SLIDE_HEADING` became `startsSlide`, the parser's policy
+      on top, and `SubheadingRule` derives its level from `SLIDE_HEADING_MAX_LEVEL + 1` instead of
+      hard-coding `###`
+- [x] Highlighter calls all three; both `DEFECT` assertions in `LineRuleAgreementTest` flipped to
+      assert agreement
+
+### Both divergences closed
+
+| Behaviour | Before | After |
+| :--- | :--- | :--- |
+| `***`, `___`, `----` | split the deck, no delimiter shown | split **and** styled |
+| `$$` block body | styled as prose | styled as math, block state tracked |
+
+A `$$ x = 1 $$` one-liner correctly does *not* open a block — added as its own test, because that
+is the case a naive open/close toggle gets wrong.
+
+### The cost, and the fix for it
+
+Extracting to shared primitives replaced two cheap character checks with two regexes running on
+every line. Measured immediately: **highlight 425 → 594 µs**, a 40% regression on the cold path.
+
+Fixed inside the primitives with a first-character reject before the regex — `#` for headings,
+`*`/`-`/`_` for breaks — since ordinary prose is the overwhelmingly common line and `Regex.find`
+on a non-match costs far more than one char comparison.
+
+| | Before Phase F | After extraction | After guards |
+| :--- | ---: | ---: | ---: |
+| `parse` | 1.18 ms | 1.25 ms | **1.08 ms** |
+| `highlightMarkdown` (cold) | ~425 µs | 594 µs | **515 µs** |
+| **Per keystroke** | **1.64 ms** | 1.88 ms | **1.63 ms** |
+
+Net: cost-neutral, both divergences fixed. `parse` came out *ahead* of where it started, because
+`startsSlide` runs on every line too and now rejects prose without touching a regex — which is
+Phase D3's first-character dispatch, arrived at from the correctness direction rather than the
+performance one.
 
 ---
 

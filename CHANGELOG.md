@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Roadmap and delivery work. The candidate feature set is catalogued in
 [`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md); the connectivity design is
 [ADR-005](./docs/ADR_COMPANION_LINK_ESTABLISHMENT.md).
-Test suite: **235 to 616 tests** (550 in the app, 66 in `:markdown-core`), zero compiler warnings.
+Test suite: **235 to 617 tests** (551 in the app, 66 in `:markdown-core`), zero compiler warnings.
 
 ### Performance
 
@@ -38,7 +38,7 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   and checkbox task lists — because the obvious `parking-lot:`-only check would have silently
   dropped every checkbox-derived item.
 
-  Together: **~2.4 ms to ~1.64 ms per keystroke** on an 886-line deck.
+  Together: **~2.4 ms to ~1.63 ms per keystroke** on an 886-line deck.
 
 - **The benchmark itself was unreliable, and that is the finding worth keeping.**
   `PerformanceProbe` timed a single pass and discarded every result. Back-to-back runs of an
@@ -101,6 +101,12 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   independently what opened a fence** — the slide splitter, the parser's fence regex, the block
   rules, and the editor's highlighter — and nothing compared them. They now share `FenceRules`,
   and `FenceLexerAgreementTest` fails if they ever diverge again.
+- **`***` and `___` split a deck with no sign of it in the editor.** All three thematic-break
+  forms end a slide, but the editor styled only an exact `---`, so the other two broke a slide
+  invisibly. Both sides now defer to `ThematicBreakRules`.
+- **Math formulas were coloured as prose.** The editor styled the `$$` delimiters and left the
+  formula between them as ordinary text, because it tracked no block state. It now tracks `$$`
+  exactly as it tracks code fences. A one-line `$$ x = 1 $$` correctly does not open a block.
 - **The speaker console answered to no keyboard shortcut at all.** `PresenterView` had no key
   handling, and its window is `alwaysOnTop` — so it is the window a speaker actually looks at
   and the one holding focus for most of a talk. <kbd>H</kbd>, the arrows, blackout, the laser,
@@ -134,13 +140,6 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
 - Editor ⇄ slide synchronisation and find-result reveal remain open; both wait on the caret
   foundation in [ADR-004](./docs/ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md) Phase 2.
 - The CI workflow has never been executed.
-- **Two parser/editor disagreements remain, found and test-pinned but not fixed.** Both are
-  cosmetic — one wrongly styled line, not a mangled deck — and fixing either is a decision about
-  what the editor *should* show. See `LineRuleAgreementTest`.
-  - `***`, `___` and `----` all split the deck, but the editor styles only `---`, so those forms
-    break a slide with no visual cue.
-  - The body of a multi-line `$$` block is one math element to the parser and ordinary prose to
-    the highlighter; only the delimiter lines are styled.
 - **Tables written without outer pipes (`a | b` / `---|---`) are unsupported.** Ordinary GFM, and
   neither the parser nor the highlighter handles it — they agree, and both are wrong, so this is a
   missing feature rather than a divergence.

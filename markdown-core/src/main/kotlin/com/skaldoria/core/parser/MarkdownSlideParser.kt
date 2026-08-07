@@ -24,16 +24,20 @@ object MarkdownSlideParser {
     // Contrast with `FenceRules`, which is shared grammar: every consumer must agree with it, and
     // `FenceLexerAgreementTest` fails if they stop. See docs/MARKDOWN_UNIFICATION_PLAN.md, Phase E.
 
-    /** A thematic break that ends the current slide. Deliberately broader than the editor styles. */
-    internal val SLIDE_BREAK_RULE = Regex("""^(\*{3,}|-{3,}|_{3,})\s*$""")
+    /** The deepest heading level that begins a new slide. Deeper ones are content. */
+    internal const val SLIDE_HEADING_MAX_LEVEL = 2
 
     /**
-     * A heading at the level that defines a slide — it both starts one and titles it.
+     * Policy: does this line begin a new slide?
      *
-     * The `{1,2}` is policy, not grammar: deeper headings are still headings, they just do not
-     * begin a new slide.
+     * The *syntax* — is this an ATX heading, at what level — belongs to [HeadingRules] and is
+     * shared with the editor's highlighter. Only the `<= 2` is Skaldoria's own decision, which is
+     * why the highlighter is free to colour `### Sub` without this returning true.
      */
-    internal val SLIDE_HEADING = Regex("""^(#{1,2})\s+(.+)$""")
+    internal fun startsSlide(line: String): Boolean {
+        val level = HeadingRules.heading(line)?.level ?: return false
+        return level <= SLIDE_HEADING_MAX_LEVEL
+    }
     // CODE_FENCE_START was removed in Phase B. It recognised backtick fences only, and only
     // with an info string of the form `lang [1,3-5]`, which is what silently dropped the
     // language on ordinary markdown like ```js {highlight=2}. FenceRules replaced it.
@@ -102,9 +106,9 @@ object MarkdownSlideParser {
                 continue
             }
 
-            // Slide split conditions: Horizontal Rule '---' or top-level headings '# ' or '## '
-            val isHr = SLIDE_BREAK_RULE.matches(trimmed)
-            val isHeading1or2 = SLIDE_HEADING.matches(trimmed)
+            // Slide split conditions: a thematic break, or a heading at slide level.
+            val isHr = ThematicBreakRules.isThematicBreak(trimmed)
+            val isHeading1or2 = startsSlide(trimmed)
 
             if (isHr) {
                 // The rule itself belongs to no slide; it is regenerated on reassembly.
@@ -114,7 +118,7 @@ object MarkdownSlideParser {
 
             if (isHeading1or2 && currentLines.any { it.isNotBlank() }) {
                 // If the section already has content or a heading, split it
-                val hasExistingHeading = currentLines.any { SLIDE_HEADING.matches(it.trim()) }
+                val hasExistingHeading = currentLines.any { startsSlide(it.trim()) }
                 if (hasExistingHeading || currentLines.size > 2) {
                     flushSection(lineIndex)
                 }

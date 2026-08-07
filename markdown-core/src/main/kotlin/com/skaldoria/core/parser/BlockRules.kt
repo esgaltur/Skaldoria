@@ -231,24 +231,25 @@ internal object TableRule : BlockRule {
     override val flushesPendingBlocks get() = false
 }
 
+/** A heading at slide level titles the slide. The level cut-off is policy; the syntax is shared. */
 internal object HeadingRule : BlockRule {
     override fun matches(line: String, context: SectionContext) =
-        MarkdownSlideParser.SLIDE_HEADING.containsMatchIn(line)
+        MarkdownSlideParser.startsSlide(line)
 
     override fun consume(line: String, raw: String, context: SectionContext) {
-        MarkdownSlideParser.SLIDE_HEADING.find(line)?.let {
-            context.addHeading(it.groupValues[2].trim())
-        }
+        HeadingRules.heading(line)?.let { context.addHeading(it.text) }
     }
 }
 
+/** One level below the slide cut-off: a subtitle rather than a new slide. */
 internal object SubheadingRule : BlockRule {
-    private val H3 = Regex("""^###\s+(.+)$""")
+    private const val SUBHEADING_LEVEL = MarkdownSlideParser.SLIDE_HEADING_MAX_LEVEL + 1
 
-    override fun matches(line: String, context: SectionContext) = H3.containsMatchIn(line)
+    override fun matches(line: String, context: SectionContext) =
+        HeadingRules.heading(line)?.level == SUBHEADING_LEVEL
 
     override fun consume(line: String, raw: String, context: SectionContext) {
-        H3.find(line)?.let { context.addSubheading(it.groupValues[1].trim()) }
+        HeadingRules.heading(line)?.let { context.addSubheading(it.text) }
     }
 }
 
