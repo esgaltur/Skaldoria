@@ -15,8 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.skaldoria.markdown.models.FollowUpQuestion
 import com.skaldoria.state.PresentationState
 import com.skaldoria.theme.PresentationTheme
+import kotlinx.coroutines.launch
 
 /**
  * Interactive Parking Lot & Unanswered Questions Follow-Up UI.
@@ -36,7 +37,11 @@ fun ParkingLotView(
     modifier: Modifier = Modifier
 ) {
     var newQuestionText by remember { mutableStateOf("") }
-    val clipboardManager = LocalClipboardManager.current
+
+    // `LocalClipboard` replaces the deprecated `LocalClipboardManager`; writing is a suspend
+    // call now, so the export needs a scope rather than running inline in the click handler.
+    val clipboard = LocalClipboard.current
+    val clipboardScope = rememberCoroutineScope()
     var copyStatusText by remember { mutableStateOf<String?>(null) }
 
     val unansweredCount = state.followUpQuestions.count { !it.isAnswered }
@@ -82,8 +87,10 @@ fun ParkingLotView(
                 TextButton(
                     onClick = {
                         val md = state.exportFollowUpMarkdownChecklist()
-                        clipboardManager.setText(AnnotatedString(md))
-                        copyStatusText = "Copied to clipboard!"
+                        clipboardScope.launch {
+                            clipboard.setClipEntry(ClipEntry.withPlainText(md))
+                            copyStatusText = "Copied to clipboard!"
+                        }
                     }
                 ) {
                     Icon(

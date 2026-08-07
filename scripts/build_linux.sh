@@ -5,19 +5,37 @@
 # ==============================================================================
 set -euo pipefail
 
-VERSION="${1:-1.0.0}"
 PUBLISH_GH="${2:-false}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+cd "${PROJECT_ROOT}"
+
+# The version is the build's, not the script's.
+#
+# This defaulted to a literal "1.0.0", so running it with no argument stamped 1.0.0 filenames
+# onto whatever the build actually produced. build.gradle.kts is the single source of truth and
+# `printVersion` is how it is read. An explicit argument that disagrees with the build is
+# refused rather than silently honoured.
+BUILD_VERSION="$(./gradlew -q printVersion --console=plain | tail -n 1 | tr -d '[:space:]')"
+if [ -z "${BUILD_VERSION}" ]; then
+    echo "Error: could not read the project version from Gradle (./gradlew -q printVersion)." >&2
+    exit 1
+fi
+
+VERSION="${1:-${BUILD_VERSION}}"
+if [ "${VERSION}" != "${BUILD_VERSION}" ]; then
+    echo "Error: requested version '${VERSION}' but the build produces '${BUILD_VERSION}'." >&2
+    echo "       Change appVersion in build.gradle.kts instead of overriding it here." >&2
+    exit 1
+fi
 
 echo "=========================================================="
 echo " 👑 Skaldoria Studio — Linux Packaging Pipeline"
 echo " Version: ${VERSION}"
 echo " Project: ${PROJECT_ROOT}"
 echo "=========================================================="
-
-cd "${PROJECT_ROOT}"
 
 # 1. Clean & Prepare dist directory
 mkdir -p dist
@@ -42,6 +60,12 @@ if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
 fi
 ./gradlew desktopTest :skaldoria-markdown:test --no-daemon ${RENDER_FLAG}
 echo "  -> All tests passed successfully!"
+
+# The zero-warning NFR (CONTRIBUTING.md section 6). There is no CI, so the release run is the
+# only place it is enforced; the Windows pipeline does the same through scripts/verify.ps1.
+echo "  -> Compiling with warnings as errors..."
+./gradlew compileKotlinDesktop compileTestKotlinDesktop -PwarningsAsErrors --no-daemon
+echo "  -> Zero warnings."
 
 # 3. Build Linux Distributable & Universal JAR
 echo -e "\n[2/5] 🔨 Building native Linux standalone distributable & universal JAR..."

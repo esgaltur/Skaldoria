@@ -315,12 +315,12 @@ A design proposal already exists:
 
 | ID | Feature | Status | Size | Depends | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **PLT-01** | **CI pipeline** | ❌ | S | — | **Rejected 2026-08-07, owner decision — the project does not want CI.** The workflow was written but never executed on a runner, and was deleted from the tree by `566e4b7` (a commit labelled as a README change; the deletion looks accidental, but the outcome matches the decision, so it stays deleted). The verification it would have automated is now manual and is documented as such: `./gradlew desktopTest :skaldoria-markdown:test` and `./gradlew … -PwarningsAsErrors`. Its one non-obvious finding is preserved in PLT-08. |
-| **PLT-02** | Verify macOS and Linux packaging | 📋 | M | PLT-08 | `.dmg`, `.pkg`, `.deb`, `.rpm` targets are declared and unproven. With PLT-01 rejected this is a manual pass on real machines — and the first attempt found PLT-08 rather than a packaging result. |
+| **PLT-01** | **CI pipeline** | 🕓 | S | — | **Deferred 2026-08-07, owner decision — cost, not principle.** Hosted runner minutes are not free and the project is not spending on them yet; revisit on a budget or a public repository. The workflow was written but never executed on a runner, and was deleted from the tree by `566e4b7` (a commit labelled as a README change; the deletion looks accidental, but the outcome matches the decision, so it stays deleted). What it would have automated now runs locally as `scripts/verify.ps1` — deliberately the same two commands (`desktopTest :skaldoria-markdown:test`, then `-PwarningsAsErrors`), so adopting a workflow later is transcription rather than design. Its one non-obvious finding is preserved in PLT-08. |
+| **PLT-02** | Verify macOS and Linux packaging | 📋 | M | PLT-08 | `.dmg`, `.pkg`, `.deb`, `.rpm` targets are declared and unproven. With PLT-01 deferred this is a manual pass on real machines — and the first attempt found PLT-08 rather than a packaging result. Note the `.dmg`/`.pkg` targets ship **no icon**: only `windows { iconFile }` and `linux { iconFile }` are configured, and there is no `.icns` in `src/desktopMain/resources/icons`. |
 | **PLT-03** | UI localisation | 🕓 | L | — | Every string is inline today. |
 | **PLT-04** | Screen-reader semantics and keyboard-only operation | 📋 | M | — | The project holds itself to WCAG 2.1 AA for *contrast* and has real machinery for it. Contrast is one clause of one guideline; navigability is untested. |
 | **PLT-05** | Crash reporting / diagnostics bundle | 📋 | M | — | Related: `F-03` in the refactoring backlog notes `remoteServerError` is an overloaded error channel. |
-| **PLT-06** | Auto-update | 🕓 | L | PLT-02 | Was gated on PLT-01 too; with CI rejected, a release would be cut and verified by hand. |
+| **PLT-06** | Auto-update | 🕓 | L | PLT-02 | Was gated on PLT-01 too; with CI deferred, a release is cut and verified by hand — `scripts/release.ps1` / `scripts/build_linux.sh`. |
 | **PLT-07** | Command palette coverage for every action | 📋 | S | — | The palette exists; whether it reaches all commands should be audited as new features land. |
 | **PLT-08** | **Render guards must skip, not fail, without a display** | ✅ | S | — | **Shipped 2026-08-07.** `RenderEnvironment` skips via a JUnit assumption when `GraphicsEnvironment.isHeadless()`, overridable with `-PskipRenderTests` (forwarded to the forked test JVM, which a bare `-D` is not). The blanket `@Ignore` is gone and **`FullscreenDeckKeyTest`'s 8 tests run again**. Skips report as skipped, never as passed. Original note: | Building the Linux packages under WSL fails the `ImageComposeScene` suites, because there is no display for Skia to target — the reason `FullscreenDeckKeyTest` currently carries a blanket `@Ignore`. That `@Ignore` was added inside an unrelated commit with no note, so **8 passing tests covering the presenter window's entire keyboard are silently inert on developer machines that *do* have a display** — including the guard `FEATURE_INDEX` itself credits with finding that `H`, the arrows, blackout and the clicker were all dead. Replace it with a headless-conditional skip (`GraphicsEnvironment.isHeadless`, or a `skaldoria.skipRenderTests` property) so the guards run wherever they can and stand down where they cannot. |
 | **PLT-09** | A packaging path that does not need a display | ✅ | S | PLT-08 | **Shipped 2026-08-07.** `scripts/build_linux.sh` ran `./gradlew desktopTest` before packaging — the exact command that failed under WSL. It now detects a missing `DISPLAY`/`WAYLAND_DISPLAY`, says so, and passes `-PskipRenderTests`. Documented in CONTRIBUTING, including why `@Ignore` is the wrong answer. Original note: | Follows from the same session: producing installers should not require the render suites to run at all. A `-x desktopTest` packaging recipe, or a Gradle task that packages without the graphical guards, documented in CONTRIBUTING. |
@@ -371,8 +371,8 @@ Suite: **235 → 575 tests**, zero compiler warnings throughout.
 ### Now — make the guards tell the truth
 
 **Re-planned 2026-08-07.** The previous tier was "prove the build works off this machine" and
-led with CI; CI is now rejected (`PLT-01`). What replaced it is sharper and came out of the same
-week: **three separate guards in this codebase were green while the thing they guard was
+led with CI; CI is now deferred on cost (`PLT-01`). What replaced it is sharper and came out of
+the same week: **three separate guards in this codebase were green while the thing they guard was
 broken or switched off.** That is the risk CI was meant to cover, and CI would not have caught
 any of the three — every one of them passes on a runner too.
 
@@ -406,6 +406,7 @@ report · `AUT-08`/`AUT-09` autocomplete and diagnostics · `DIA-05` nested subg
 | `MED-01` video | Enough demand to justify breaching the dependency-surface NFR. Needs its own ADR. |
 | `OUT-02` PPTX | Someone is willing to accept image-per-slide fidelity. |
 | `PRJ-07` visual git diff | Never, unless the project acquires a second maintainer. |
+| `PLT-01` CI pipeline | A budget for runner minutes, or the repository going public. Deferred on cost only — `scripts/verify.ps1` already runs exactly what a workflow would, so the port is mechanical. |
 
 ---
 
@@ -413,7 +414,6 @@ report · `AUT-08`/`AUT-09` autocomplete and diagnostics · `DIA-05` nested subg
 
 | ID | Feature | Why not |
 | :--- | :--- | :--- |
-| **PLT-01** | CI pipeline | **Owner decision, 2026-08-07.** Not wanted. The row in [PLT](#plt--platform--quality) carries the detail, including what the abandoned workflow had discovered and where that finding now lives (`PLT-08`). Verification stays manual and is written down rather than automated. |
 | **AUD-13** | Bluetooth as an application transport | The JVM has no Bluetooth API, so this means three per-platform native integrations — the largest portability regression available to this project, against an ADR-001 decision resting on `java.base`-only portability across six installer formats. Browsers cannot speak RFCOMM at all and Web Bluetooth is Chrome-only and absent from iOS, so the audience portal would require a native mobile app. Topology caps around seven devices against a 200+ NFR. **Bluetooth PAN is not rejected** — it carries IP, the OS owns the radio, and it works with no server change: see `AUD-09` and [ADR-005](./ADR_COMPANION_LINK_ESTABLISHMENT.md). |
 | — | Native companion mobile app | Would unlock BLE and destroy the feature's premise: the audience portal works *because* it is a URL — no install, no store, no trust decision, no release train. |
 | — | Internet relay / cloud rendezvous for the companion | Inverts the product — a server we operate, an account model, a privacy surface, and a hard internet dependency — and still fails the venue-with-no-network case it is meant to fix. |

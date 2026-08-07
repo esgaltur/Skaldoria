@@ -7,7 +7,7 @@
 *A 120 FPS native presentation studio powered by Kotlin Multiplatform & Compose Desktop.*
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.0-7F52FF.svg?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Compose Multiplatform](https://img.shields.io/badge/Compose_Desktop-1.7.3-4285F4.svg?style=flat-square&logo=jetpackcompose&logoColor=white)](https://www.jetbrains.com/lp/compose-multiplatform/)
+[![Compose Multiplatform](https://img.shields.io/badge/Compose_Desktop-1.11.1-4285F4.svg?style=flat-square&logo=jetpackcompose&logoColor=white)](https://www.jetbrains.com/lp/compose-multiplatform/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen.svg?style=flat-square)]()
 [![WCAG 2.1](https://img.shields.io/badge/WCAG%202.1-AA%20Compliant-success.svg?style=flat-square)]()
@@ -194,7 +194,15 @@ cd skaldoria
 ### Running Unit Tests
 
 ```bash
-./gradlew desktopTest
+./gradlew desktopTest :skaldoria-markdown:test
+```
+
+There is no CI **for now** — hosted runner minutes cost money, so verification and releases run
+on a developer machine. One command runs everything a CI job would have, both test suites and
+the zero-warning build:
+
+```powershell
+.\scripts\verify.ps1
 ```
 
 ### Packaging Standalone Native Executable
@@ -202,6 +210,20 @@ cd skaldoria
 ```bash
 ./gradlew createDistributable
 # Output directory: build/compose/binaries/main/app/Skaldoria/Skaldoria.exe
+```
+
+### Cutting a Local Release
+
+Installers, a portable archive, a universal JAR and SHA-256 checksums, into `dist/`. The version
+comes from `appVersion` in `build.gradle.kts` — never pass it by hand:
+
+```powershell
+.\scripts\release.ps1                 # Windows: MSI, EXE, ZIP, uber JAR
+.\scripts\release.ps1 -PublishGitHub  # ...and publish via the gh CLI
+```
+
+```bash
+./scripts/build_linux.sh              # Linux: .deb, .rpm, .tar.gz, uber JAR
 ```
 
 ---

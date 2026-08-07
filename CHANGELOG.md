@@ -88,8 +88,17 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   lines of a full-bleed code slide and the deck's own footer — and could not be hidden. It now
   auto-hides when the pointer rests, cycles with <kbd>H</kbd>, and the choice persists.
 - **Jump to a slide by number** during a presentation: type the number, press <kbd>Enter</kbd>.
-- **CI pipeline** (`.github/workflows/ci.yml`): compile and test on Linux, Windows and macOS,
-  with a job that fails the build on any Kotlin compiler warning.
+- **A local verification gate** (`scripts/verify.ps1`): both test suites and the zero-warning
+  compile in one command. This entry previously announced a CI pipeline at
+  `.github/workflows/ci.yml` — **that file has never existed in this repository**, so every rule
+  in `CONTRIBUTING.md` was enforced by memory while the changelog claimed otherwise. CI is
+  deferred on cost (hosted runner minutes), not rejected, so the gate now lives where the
+  release is actually cut and both release pipelines run it before packaging anything.
+- **`printVersion` Gradle task**, so the release scripts read `appVersion` instead of carrying
+  their own default. `package_release.ps1`, `release.ps1` and `build_linux.sh` each defaulted to
+  a literal `1.0.0`: run without an explicit argument, they stamped `Skaldoria-v1.0.0-*` onto
+  artefacts built from 1.2.0 sources. They now read the build's version and **refuse** an
+  argument that disagrees with it, rather than honouring the mislabel.
 
 ### Fixed
 - **Code fences lost their language unless the info string had exactly one supported shape.**
@@ -190,7 +199,11 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
 ### Known gaps
 - Editor ⇄ slide synchronisation and find-result reveal remain open; both wait on the caret
   foundation in [ADR-004](./docs/ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md) Phase 2.
-- The CI workflow has never been executed.
+- **There is no CI for now** — deferred on cost, since hosted runner minutes are not free. The
+  project is verified and released from a developer machine: `scripts/verify.ps1` is the gate
+  (both test suites and the zero-warning build), and both release pipelines run it before
+  packaging. The cost is honest: nothing checks a push, so a change that skips the script is
+  unverified until someone runs it. Revisit when there is a budget or a public repository.
 - **Tables written without outer pipes (`a | b` / `---|---`) are unsupported.** Ordinary GFM, and
   neither the parser nor the highlighter handles it — they agree, and both are wrong, so this is a
   missing feature rather than a divergence.
