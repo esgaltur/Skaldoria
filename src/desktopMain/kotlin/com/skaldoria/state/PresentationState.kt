@@ -29,6 +29,7 @@ import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.theme.PresentationTheme
 import kotlinx.coroutines.*
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * @param backgroundContext where debounced autosave runs. PRF-4: injected rather than
@@ -200,8 +201,12 @@ class PresentationState(
         lastError = null
     }
 
-    var isCustomThemeDialogOpen by mutableStateOf(false)
-    var isExportBundleDialogOpen by mutableStateOf(false)
+    // DED-10: `isCustomThemeDialogOpen` and `isExportBundleDialogOpen` sat here and were read
+    // by nothing. Neither is an unfinished feature — ZIP export ships and is reachable from the
+    // Export menu (`TopBar`), it just opens a native AWT `FileDialog`, which is modal and holds
+    // no Compose state. Both flags are residue of a superseded design, so there was nothing to
+    // wire them to. They outlived the 2026-08-06 dead-code pass because that pass scanned
+    // functions, not properties.
     var isUnlockThemeDialogOpen by mutableStateOf(false)
     var isCorporateThemeUnlocked by mutableStateOf(false)
 
@@ -514,7 +519,7 @@ class PresentationState(
     private fun scheduleDraftSave(content: String) {
         draftSaveJob?.cancel()
         draftSaveJob = scope.launch(Dispatchers.IO) {
-            delay(DRAFT_SAVE_DEBOUNCE_MS)
+            delay(DRAFT_SAVE_DEBOUNCE_MS.milliseconds)
             ConfigManager.saveDraft(content)
         }
     }
