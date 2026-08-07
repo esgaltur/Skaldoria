@@ -1,9 +1,9 @@
 plugins {
-    kotlin("multiplatform") version "2.2.0"
-    id("org.jetbrains.compose") version "1.11.0"
-    id("org.jetbrains.kotlin.plugin.compose") version "2.2.0"
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.compose)
+    alias(libs.plugins.kotlin.compose)
     // Declared here so `:skaldoria-markdown` can apply it without restating the version.
-    kotlin("jvm") version "2.2.0" apply false
+    alias(libs.plugins.kotlin.jvm) apply false
 }
 
 group = "com.skaldoria"
@@ -18,9 +18,6 @@ group = "com.skaldoria"
 val appVersion = "1.2.0"
 version = appVersion
 
-/** Single version for every coroutines artifact, so `-core` and `-swing` cannot drift. */
-val coroutinesVersion = "1.11.0"
-
 /**
  * Emits `BuildInfo.kt` so the version is available at runtime.
  *
@@ -28,6 +25,8 @@ val coroutinesVersion = "1.11.0"
  * generated rather than committed to keep one authority for the number.
  */
 val generateBuildInfo = tasks.register("generateBuildInfo") {
+    group = "build"
+    description = "Generates the BuildInfo Kotlin source with build metadata (e.g. app version)."
     val outputDir = layout.buildDirectory.dir("generated/source/buildinfo")
     inputs.property("appVersion", appVersion)
     outputs.dir(outputDir)
@@ -76,21 +75,21 @@ kotlin {
             kotlin.srcDir(generateBuildInfo)
 
             dependencies {
-                // The markdown engine, Compose-free by construction. See skaldoria-markdown/build.gradle.kts.
+                // The Markdown engine, Compose-free by construction. See skaldoria-markdown/build.gradle.kts.
                 implementation(project(":skaldoria-markdown"))
 
                 implementation(compose.desktop.currentOs)
-                implementation(compose.material3)
-                implementation(compose.materialIconsExtended)
-                implementation(compose.components.resources)
+                implementation(libs.compose.material3)
+                implementation(libs.compose.material.icons.extended)
+                implementation(libs.compose.components.resources)
 
                 // Coroutines & Desktop Swing dispatcher.
                 //
                 // Both must move together. `-swing` was pinned at 1.1.0 (2018) against a
                 // 1.11.0 core: harmless in practice, because the coroutines BOM lifted it,
                 // but it read as a live version and hid that the two had drifted.
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutinesVersion")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:$coroutinesVersion")
+                implementation(libs.kotlinx.coroutines.core)
+                implementation(libs.kotlinx.coroutines.swing)
             }
         }
         val desktopTest = getByName("desktopTest") {
