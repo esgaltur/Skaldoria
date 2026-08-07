@@ -40,18 +40,18 @@ class LineRuleAgreementTest {
     }
 
     @Test
-    fun `DEFECT - asterisk and underscore rules split the deck but are not styled`() {
-        for (rule in listOf("***", "___", "----")) {
+    fun `every thematic break form both splits the deck and is styled`() {
+        // Was a DEFECT: only an exact `---` was styled, so `***` and `___` broke a slide with no
+        // visual indication. Both sides now defer to ThematicBreakRules.
+        for (rule in listOf("---", "***", "___", "----", "* * *")) {
             val markdown = "# One\n\nAlpha.\n\n$rule\n\n# Two\n\nBeta.\n"
 
+            val splits = MarkdownSlideParser.parse(markdown).size == 2
+            val styled = isStyled(markdown, lineIndex = 4)
+
             assertEquals(
-                2, MarkdownSlideParser.parse(markdown).size,
-                "`$rule` splits the deck — SLIDE_BREAK_RULE accepts it"
-            )
-            assertTrue(
-                !isStyled(markdown, lineIndex = 4),
-                "DEFECT pinned: `$rule` splits but the editor shows no delimiter. If this fails, " +
-                    "the highlighter learned the full rule — invert it and update the plan doc."
+                splits, styled,
+                "`$rule`: parser splits=$splits but editor styles=$styled — they must agree"
             )
         }
     }
@@ -97,19 +97,32 @@ class LineRuleAgreementTest {
     // ---------------------------------------------------------------------
 
     @Test
-    fun `DEFECT - the body of a multi-line math block is styled as prose`() {
-        val markdown = "# M\n\n$$\n\\Delta t = t_1 - t_0\n$$\n"
+    fun `a multi-line math block is math to both, body included`() {
+        // Was a DEFECT: the highlighter tracked no `$$` state, so it styled the two delimiters and
+        // left the formula between them as ordinary prose.
+        val markdown = "# M\n\n$$\n\\Delta t = t_1 - t_0\n$$\n\nAfter the block.\n"
 
         assertTrue(
             MarkdownSlideParser.parse(markdown).single().elements.any { it is SlideElement.MathFormula },
             "parser builds one math element from the block"
         )
-        assertTrue(isStyled(markdown, lineIndex = 2), "the opening `$$` is styled")
-        assertTrue(isStyled(markdown, lineIndex = 4), "the closing `$$` is styled")
+        for (line in 2..4) {
+            assertTrue(isStyled(markdown, lineIndex = line), "line $line is part of the math block")
+        }
         assertTrue(
-            !isStyled(markdown, lineIndex = 3),
-            "DEFECT pinned: the highlighter tracks no `$$` block state, so the formula body is " +
-                "treated as ordinary prose"
+            !isStyled(markdown, lineIndex = 6),
+            "the block closed — prose after it is not math"
+        )
+    }
+
+    @Test
+    fun `a single-line math formula does not open a block`() {
+        val markdown = "# M\n\n$$ x = 1 $$\n\nOrdinary prose.\n"
+
+        assertTrue(isStyled(markdown, lineIndex = 2), "the formula is styled")
+        assertTrue(
+            !isStyled(markdown, lineIndex = 4),
+            "a one-line `$$ … $$` must not leave a block open and swallow what follows"
         )
     }
 

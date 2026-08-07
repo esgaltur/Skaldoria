@@ -12,6 +12,9 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.sp
 import com.skaldoria.core.parser.FenceInfo
+import com.skaldoria.core.parser.HeadingRules
+import com.skaldoria.core.parser.MathRules
+import com.skaldoria.core.parser.ThematicBreakRules
 import com.skaldoria.core.parser.FenceRules
 import com.skaldoria.theme.AdaptiveContrastEnforcer
 import com.skaldoria.theme.PresentationTheme
@@ -139,6 +142,11 @@ class MarkdownVisualTransformation(
                 // disagreed with the parser on any unusual info string.
                 var openFence: FenceInfo? = null
 
+                // Phase F: `$$` block state, tracked the same way as fences. Without it the
+                // delimiters were styled and the formula body between them fell through to
+                // ordinary prose handling.
+                var inMathBlock = false
+
                 val baseBg = theme.surface
 
                 // Safe mathematically guaranteed high-contrast colors
@@ -228,9 +236,40 @@ class MarkdownVisualTransformation(
                         continue
                     }
 
+                    // Math blocks ($$ … $$), including the body between the delimiters.
+                    // Policy note: the parser turns this into one MathFormula element; here it is
+                    // only a colour. Both defer to MathRules for *what the syntax is*.
+                    val isMathLine = when {
+                        inMathBlock -> {
+                            if (MathRules.closesBlock(trimmed)) inMathBlock = false
+                            true
+                        }
+                        MathRules.isSingleLine(trimmed) -> true
+                        MathRules.opensBlock(trimmed) -> {
+                            inMathBlock = true
+                            true
+                        }
+                        else -> false
+                    }
+
+                    if (isMathLine) {
+                        addStyle(
+                            SpanStyle(
+                                color = theme.primary,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            lineStart,
+                            lineEnd
+                        )
+                        currentOffset += line.length + 1
+                        continue
+                    }
+
                     // Headers (# Heading)
-                    if (trimmed.startsWith("#")) {
-                        val headerLevel = trimmed.takeWhile { it == '#' }.length
+                    val heading = HeadingRules.heading(trimmed)
+                    if (heading != null) {
+                        val headerLevel = heading.level
                         val headerColor = when (headerLevel) {
                             1 -> theme.primary
                             2 -> theme.accent
@@ -265,8 +304,9 @@ class MarkdownVisualTransformation(
                         continue
                     }
 
-                    // Slide Delimiters (---)
-                    if (trimmed == "---" || trimmed.startsWith("--- ")) {
+                    // Thematic breaks: ***, --- or ___. Previously only an exact `---` was styled,
+                    // so the other forms split the deck with no visual indication.
+                    if (ThematicBreakRules.isThematicBreak(trimmed)) {
                         addStyle(
                             SpanStyle(
                                 color = theme.accent,
@@ -294,20 +334,6 @@ class MarkdownVisualTransformation(
                         continue
                     }
 
-                    // Math Formulas ($$...$$)
-                    if (trimmed.startsWith("$$") || trimmed.endsWith("$$")) {
-                        addStyle(
-                            SpanStyle(
-                                color = theme.primary,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Medium
-                            ),
-                            lineStart,
-                            lineEnd
-                        )
-                        currentOffset += line.length + 1
-                        continue
-                    }
 
                     // Table Rows (| ... |)
                     if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
