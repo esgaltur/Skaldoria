@@ -61,8 +61,9 @@ fi
 ./gradlew desktopTest :skaldoria-markdown:test --no-daemon ${RENDER_FLAG}
 echo "  -> All tests passed successfully!"
 
-# The zero-warning NFR (CONTRIBUTING.md section 6). There is no CI, so the release run is the
-# only place it is enforced; the Windows pipeline does the same through scripts/verify.ps1.
+# The zero-warning NFR (CONTRIBUTING.md section 6). Nothing enforces it automatically — the CI
+# workflow is manual-dispatch only (PLT-01) — so the release run is where it actually holds; the
+# Windows pipeline does the same through scripts/verify.ps1.
 echo "  -> Compiling with warnings as errors..."
 ./gradlew compileKotlinDesktop compileTestKotlinDesktop -PwarningsAsErrors --no-daemon
 echo "  -> Zero warnings."
