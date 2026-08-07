@@ -529,10 +529,7 @@ object MarkdownSlideParser {
         sb.append("<!-- PRESENTATION PARKING LOT & FOLLOW-UP ITEMS -->\n")
         sb.append("<!-- ========================================= -->\n")
         for (q in questions) {
-            val check = if (q.isAnswered) "[x]" else "[ ]"
-            val slidePart = if (q.slideIndex != null) " | slide:${q.slideIndex + 1}" else ""
-            val answerPart = if (q.answerText.isNotBlank()) " | ${q.answerText.replace("\n", " ")}" else ""
-            sb.append("<!-- parking-lot: $check ${q.question}$answerPart$slidePart -->\n")
+            sb.append(directiveLineFor(q)).append("\n")
         }
         return sb.toString()
     }

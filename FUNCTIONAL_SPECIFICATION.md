@@ -209,10 +209,10 @@ $$\text{Contrast Ratio} = \frac{L_1 + 0.05}{L_2 + 0.05} \ge 4.5$$
 > README.
 
 - **Rhythm Status Indicators:**
-  - 🟢 **ON TRACK**: $|\Delta t| \le 15\text{s}$
-  - 🔵 **AHEAD**: $\Delta t < -15\text{s}$
+  - 🟢 **ON TRACK**: $|\Delta t| \le 20\text{s}$
+  - 🔵 **AHEAD**: $\Delta t < -20\text{s}$
   - 🟠 **BEHIND**: $\Delta t > 20\text{s}$
-  - 🔴 **OVERTIME**: $t_{elapsed} > T_{target}$
+  - 🔴 **OVERTIME**: $t_{elapsed} > T_{target}$ or $\Delta t > 75\text{s}$
 
 ### 5.3 Mathematical Formula Rendering (FR-MATH)
 - **FR-MATH-01 (Recursive Descent):** Resolves arbitrarily nested fractions (`\frac{a}{b}`), subscripts, superscripts, and parenthesized terms.
@@ -236,8 +236,12 @@ $$\text{Contrast Ratio} = \frac{L_1 + 0.05}{L_2 + 0.05} \ge 4.5$$
   `-)`, `--)`), `loop`/`alt`/`else`/`opt`/`par`/`critical`/`rect` frames, `Note over|left of|right of`,
   activation bars, self-calls, and `autonumber`.
 - **FR-DIAG-04 (Fit):** A diagram larger than the slide is scaled to fit; it must not clip.
-- **FR-DIAG-05 (Out of Scope):** State, class, ER and Gantt diagrams are not supported and fall
+- **FR-DIAG-05 (Out of Scope):** State, class and ER diagrams are not supported and fall
   back to displaying the source.
+- **FR-DIAG-09 (Gantt Charts):** Gantt diagrams are parsed and drawn as a native timeline.
+  Tasks are positioned by `GanttSchedule`, coloured by status (`done`, `active`, `critical`),
+  and grouped by section. When the schedule cannot be resolved deterministically, the source
+  is displayed instead of a chart built on a guess.
 - **FR-DIAG-06 (No Runtime Dependency):** Rendering is native Compose - no embedded browser,
   JavaScript engine, or network access.
 

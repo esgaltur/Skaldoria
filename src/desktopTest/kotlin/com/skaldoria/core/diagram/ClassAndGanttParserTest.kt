@@ -171,6 +171,17 @@ class ClassAndGanttParserTest {
     }
 
     @Test
+    fun `excludes header is read`() {
+        val chart = GanttChartParser.parse(
+            """
+            gantt
+                excludes weekends, 2026-01-01
+            """.trimIndent()
+        )
+        assertEquals("weekends, 2026-01-01", chart.excludes)
+    }
+
+    @Test
     fun `tasks group under their sections`() {
         val chart = GanttChartParser.parse(
             """

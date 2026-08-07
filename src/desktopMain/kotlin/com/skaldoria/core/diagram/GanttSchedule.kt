@@ -1,5 +1,6 @@
 package com.skaldoria.core.diagram
 
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
@@ -64,12 +65,22 @@ object GanttSchedule {
         val ends = mutableMapOf<String, LocalDate>()
         val resolved = mutableListOf<Triple<String, GanttTask, ClosedRange<LocalDate>>>()
 
+        val excludedDates = mutableSetOf<LocalDate>()
+        var excludesWeekends = false
+        chart.excludes?.split(',')?.map { it.trim().lowercase() }?.forEach { exclude ->
+            if (exclude == "weekends") {
+                excludesWeekends = true
+            } else {
+                parseDate(exclude)?.let { excludedDates.add(it) }
+            }
+        }
+
         // Declaration order is the resolution order: a task may only depend on one already
         // written, which is how Mermaid behaves and what makes a single pass sufficient.
         var previousEnd: LocalDate? = null
         for ((section, task) in tasksBySection) {
-            val start = startOf(task, previousEnd, byId, ends) ?: continue
-            val end = endOf(task, start) ?: continue
+            val start = startOf(task, previousEnd, byId, ends, excludesWeekends, excludedDates) ?: continue
+            val end = endOf(task, start, excludesWeekends, excludedDates) ?: continue
             resolved += Triple(section, task, start..end)
             task.id?.let { ends[it] = end }
             previousEnd = end
@@ -97,26 +108,70 @@ object GanttSchedule {
         task: GanttTask,
         previousEnd: LocalDate?,
         byId: Map<String, GanttTask>,
-        ends: Map<String, LocalDate>
+        ends: Map<String, LocalDate>,
+        excludesWeekends: Boolean,
+        excludedDates: Set<LocalDate>
     ): LocalDate? {
-        val declared = task.start ?: return previousEnd
+        val declared = task.start ?: return previousEnd?.let { nextWorkingDay(it, excludesWeekends, excludedDates) }
         parseDate(declared)?.let { return it }
 
         val afterId = declared.removePrefix("after").trim()
         if (declared.startsWith("after", ignoreCase = true) && afterId.isNotEmpty()) {
             // Only a task already resolved can be referenced; a forward or circular reference
             // simply has no end recorded, and the bar falls back to following the previous one.
-            return ends[afterId] ?: previousEnd
+            val baseDate = ends[afterId] ?: previousEnd
+            return baseDate?.let { nextWorkingDay(it, excludesWeekends, excludedDates) }
         }
-        if (afterId in byId) return ends[afterId] ?: previousEnd
-        return previousEnd
+        val baseDate = if (afterId in byId) ends[afterId] ?: previousEnd else previousEnd
+        return baseDate?.let { nextWorkingDay(it, excludesWeekends, excludedDates) }
     }
 
-    private fun endOf(task: GanttTask, start: LocalDate): LocalDate? {
+    private fun endOf(
+        task: GanttTask,
+        start: LocalDate,
+        excludesWeekends: Boolean,
+        excludedDates: Set<LocalDate>
+    ): LocalDate? {
         val declared = task.duration ?: return start
         parseDate(declared)?.let { return it }
-        parseDurationDays(declared)?.let { return start.plusDays(it) }
+        parseDurationDays(declared)?.let { days ->
+            var current = start
+            var workingDaysFound = 0L
+            while (workingDaysFound < days) {
+                if (!isExcluded(current, excludesWeekends, excludedDates)) {
+                    workingDaysFound++
+                }
+                current = current.plusDays(1)
+            }
+            return current
+        }
         return start
+    }
+
+    private fun nextWorkingDay(
+        date: LocalDate,
+        excludesWeekends: Boolean,
+        excludedDates: Set<LocalDate>
+    ): LocalDate {
+        var current = date
+        while (isExcluded(current, excludesWeekends, excludedDates)) {
+            current = current.plusDays(1)
+        }
+        return current
+    }
+
+    private fun isExcluded(
+        date: LocalDate,
+        excludesWeekends: Boolean,
+        excludedDates: Set<LocalDate>
+    ): Boolean {
+        if (excludesWeekends) {
+            val dayOfWeek = date.dayOfWeek
+            if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) {
+                return true
+            }
+        }
+        return excludedDates.contains(date)
     }
 
     /** ISO only. Anything else is not a date as far as this is concerned. */

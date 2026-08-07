@@ -68,10 +68,10 @@ $\Delta t = t_{elapsed} - (T_{target} / N_{total}) \cdot i_{current}$.
   the drift starts meaning something.
 
 - **Live Visual Gauge**:
-  - 🟢 **ON TRACK** (Emerald): Within $\pm15\text{s}$ of target pace
-  - 🔵 **AHEAD** (Cyan): Ahead of target schedule
+  - 🟢 **ON TRACK** (Emerald): Within $\pm20\text{s}$ of target pace
+  - 🔵 **AHEAD** (Cyan): More than $20\text{s}$ ahead of schedule
   - 🟠 **BEHIND** (Amber): $>20\text{s}$ behind schedule
-  - 🔴 **OVERTIME** (Red): Total allocated talk duration exceeded
+  - 🔴 **OVERTIME** (Red): Total allocated talk duration exceeded, or $>75\text{s}$ drift
 
 ### 3. 🧮 LaTeX Mathematical Formula Engine
 
@@ -142,7 +142,10 @@ The companion binds to your local network, so the two roles are separated delibe
 - Diagrams scale to fit the slide rather than clipping.
 - Rendered by a native Compose engine — no browser, no JavaScript, no network.
 
-State, class, ER and Gantt diagrams are **not** supported; those blocks fall back to showing the source. Nested
+- **Gantt charts** are parsed and drawn as a native timeline — tasks are positioned by their
+  schedule, coloured by status, and grouped by section.
+
+State, class and ER diagrams are **not** supported; those blocks fall back to showing the source. Nested
 subgraphs are flattened — a node joins the innermost group that declared it. Write diagrams directly in a fenced block:
 
   ```markdown
