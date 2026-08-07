@@ -163,7 +163,7 @@ Write diagrams directly in a fenced block:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/skaldoria.git
+git clone https://github.com/esgaltur/skaldoria.git
 cd skaldoria
 
 # Run desktop application via Gradle
