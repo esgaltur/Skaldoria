@@ -1,6 +1,6 @@
 plugins {
     kotlin("multiplatform") version "2.2.0"
-    id("org.jetbrains.compose") version "1.7.3"
+    id("org.jetbrains.compose") version "1.11.0"
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.0"
     // Declared here so `:skaldoria-markdown` can apply it without restating the version.
     kotlin("jvm") version "2.2.0" apply false
