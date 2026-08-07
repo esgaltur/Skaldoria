@@ -145,7 +145,7 @@ compose.desktop {
             )
             packageName = "Skaldoria"
             packageVersion = appVersion
-            description = "Skaldoria — Native Markdown Presentation Studio"
+            description = "Skaldoria - Native Markdown Presentation Studio"
             vendor = "Skaldoria"
 
             val iconsDir = project.file("src/desktopMain/resources/icons")
