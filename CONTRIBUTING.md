@@ -97,6 +97,56 @@ Three inputs are untrusted and must stay that way:
 - **Image sources** — allow only `http`/`https`/`file` and local paths; bound remote fetches by
   timeout and size.
 
+### 9. Cognitive Complexity
+
+**Preferred ≤ 10 per function. Hard maximum 15.** Above 15, refactor — or document, in the
+function's KDoc, why this one cannot be split.
+
+The limit applies to *every* function: regular, `suspend`, extension, `@Composable`, parser,
+event handler, state transformation. Tests included — a test nobody can read is not a guard.
+
+Alongside it: **nesting depth ≤ 2** (3 occasionally), and functions over ~50 logical lines get
+reviewed for doing more than one thing, over ~80 normally get split. Declarative bodies —
+Compose layout trees, exhaustive `when` mappings, static configuration — are the reasonable
+exception on *length*, never on complexity.
+
+**How to get under the limit.** Guard clauses instead of nested `if`s. Extract by
+responsibility, not by line count. Named predicates when the name carries domain meaning
+(`slide.isRenderableIn(mode)`, not `checkCondition1()`). Exhaustive `when` over a sealed type or
+enum rather than combinations of booleans — this codebase already relies on that for
+`SlideLayoutType` and `SlideElement`, and `QUALITY_BASELINE` explains why.
+
+**What does not count as fixing it.** Moving the same tangle into a helper named `handleStuff()`.
+Splitting one readable function into a dozen one-liners. Rewriting clear control flow as an
+obscure chain of `let`/`run`/`also`. Hiding branches in lambdas. Adding a suppression. The goal
+is lower reasoning cost for the next reader, not a lower number.
+
+**Not currently machine-enforced.** Detekt is not in this build, and adding a static-analysis
+framework to enforce one rule is a bigger change than the rule is worth — the same reasoning
+that kept Ktor out (see `KTOR_MIGRATION_TRADEOFFS.md`). Treat this as a review standard. If
+Detekt ever arrives for other reasons, wire `complexity.CognitiveComplexMethod` to
+`threshold: 15` and delete this paragraph.
+
+### 10. Warnings and Suppressions
+
+Fix the cause, do not silence the symptom. `@Suppress` needs a technical reason, the narrowest
+possible scope, and a comment saying why; project-wide suppression is not acceptable. See §6,
+which says the same thing about deprecations and exists because a `@Suppress("DEPRECATION")`
+once hid a real migration signal.
+
+**Two categories the compiler will never report, so they need a deliberate pass:**
+
+- **Unused `public` declarations.** The Kotlin compiler does not warn on them at all. A
+  definitely-dead public function or property compiles silently here — verified by planting one.
+  The 2026-08-06 sweep found several by reference scan; it covered *functions only*, and a later
+  scan found dead **properties** it had walked straight past (`DED-10`).
+- **Same-named packages across modules.** Two modules sharing a package name let a file reach
+  the other module's types with no import to show for it. The `com.skaldoria.core.*` /
+  `com.skaldoria.markdown.*` split exists to keep that visible; do not re-merge them.
+
+Prefer explicit imports over wildcards for exactly this reason — a wildcard over a package that
+exists in both modules hides which one a name came from.
+
 ---
 
 ## 🛠️ Development Workflow

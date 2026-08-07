@@ -44,8 +44,24 @@ object MarkdownSlideParser {
     internal val IMAGE_REGEX = Regex("""!\[(.*?)\]\((.*?)\)""")
     internal val NOTE_COMMENT_REGEX = Regex("""<!--\s*(?:note|speaker):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
     internal val NOTE_QUOTE_REGEX = Regex("""^>\s*note:\s*(.+)$""", RegexOption.IGNORE_CASE)
-    internal val DIRECTIVE_COMMENT_REGEX = Regex("""<!--\s*(layout|bg|background|transition|poll|vote):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
-    internal val DIRECTIVE_LINE_REGEX = Regex("""^(layout|bg|background|transition|poll|vote):\s*(.+)$""", RegexOption.IGNORE_CASE)
+    /**
+     * The directive keys, in one place.
+     *
+     * DEL-11: this list was written out twice, inside both regexes below. Adding `pace` to
+     * `applyDirective` and to neither regex is exactly what happened first — the handler was
+     * live and unreachable, and the parse silently produced a slide with no budget. Building
+     * both patterns from one list makes that failure impossible rather than merely unlikely.
+     */
+    private val DIRECTIVE_KEYS = listOf(
+        "layout", "bg", "background", "transition", "poll", "vote", "pace", "time", "budget"
+    )
+
+    private val DIRECTIVE_KEY_ALTERNATION = DIRECTIVE_KEYS.joinToString("|")
+
+    internal val DIRECTIVE_COMMENT_REGEX =
+        Regex("""<!--\s*($DIRECTIVE_KEY_ALTERNATION):\s*(.*?)\s*-->""", RegexOption.IGNORE_CASE)
+    internal val DIRECTIVE_LINE_REGEX =
+        Regex("""^($DIRECTIVE_KEY_ALTERNATION):\s*(.+)$""", RegexOption.IGNORE_CASE)
 
     /**
      * A big-metric value: a signed number, a percentage, an `x` multiplier, a currency
@@ -189,6 +205,7 @@ object MarkdownSlideParser {
             notes = context.notes,
             customBackground = context.directives.background,
             customTransition = context.directives.transition,
+            paceSeconds = context.directives.paceSeconds,
             sourceLineRange = sourceRange
         )
     }
@@ -246,6 +263,12 @@ object MarkdownSlideParser {
             "bg", "background" -> {
                 if (value.isNotBlank()) directives.background = value
             }
+            // DEL-11: a per-slide time budget. Ignored when unparseable rather than reported —
+            // consistent with every other directive here, and a talk must not fail to open
+            // because one budget was mistyped.
+            "pace", "time", "budget" -> {
+                parseDurationSeconds(value)?.let { directives.paceSeconds = it }
+            }
             "transition" -> {
                 val setTransition: (SlideTransition) -> Unit = { directives.transition = it }
                 when (value.lowercase().replace("-", "_").trim()) {
@@ -258,6 +281,36 @@ object MarkdownSlideParser {
         }
         return null
     }
+
+    /**
+     * DEL-11: a duration written the way a speaker thinks about one.
+     *
+     * Accepts `90`, `90s`, `2m`, `1m30s`, `1 m 30 s`. A bare number is seconds, because that is
+     * what the rest of the pacing model speaks. Returns null for anything unparseable or
+     * non-positive — a zero-second slide would make its share of the schedule vanish, which is
+     * never what someone typing `pace: 0` means.
+     */
+    internal fun parseDurationSeconds(raw: String): Long? {
+        val text = raw.trim().lowercase().replace(" ", "")
+        if (text.isEmpty()) return null
+
+        val units = DURATION_UNITS.findAll(text)
+        val consumed = units.sumOf { it.value.length }
+        if (units.none() || consumed != text.length) {
+            // No units at all: a bare number is seconds. Anything else is a typo, not a duration.
+            return text.toLongOrNull()?.takeIf { it > 0 }
+        }
+
+        var total = 0L
+        for (match in units) {
+            val amount = match.groupValues[1].toLongOrNull() ?: return null
+            total += if (match.groupValues[2] == "m") amount * 60 else amount
+        }
+        return total.takeIf { it > 0 }
+    }
+
+    /** One `<number><m|s>` pair. Used to both parse and validate, so trailing junk is rejected. */
+    private val DURATION_UNITS = Regex("""(\d+)([ms])""")
 
     internal fun parseLineHighlights(str: String?): Set<Int> {
         if (str.isNullOrBlank()) return emptySet()

@@ -20,6 +20,7 @@ import com.skaldoria.core.models.*
 import com.skaldoria.markdown.models.*
 import com.skaldoria.core.pacing.Pacing
 import com.skaldoria.core.pacing.PacingCalculator
+import com.skaldoria.core.pacing.PacingPlan
 import com.skaldoria.core.pacing.TalkTimer
 import com.skaldoria.core.parkinglot.ParkingLotStore
 import com.skaldoria.core.ports.*
@@ -478,13 +479,35 @@ class PresentationState(
     val targetTotalSeconds: Long?
         get() = targetTalkDurationMinutes?.times(60L)
 
+    /**
+     * DEL-11: the schedule this deck declares, or an even split where it declares nothing.
+     *
+     * Rebuilt from `slides` on read rather than cached: the deck is reparsed on every keystroke,
+     * so a captured plan would describe a deck that no longer exists — the same reasoning that
+     * makes [SlideNavigator] read the slide count through a lambda.
+     */
+    val pacingPlan: PacingPlan
+        get() = PacingCalculator.plan(
+            targetTotalSeconds = targetTotalSeconds ?: 0L,
+            slideBudgets = slides.map { it.paceSeconds }
+        )
+
+    /**
+     * DEL-11: true when the declared budgets already exceed the talk's target duration.
+     *
+     * A planning error the speaker should see *before* the room does, rather than discovering
+     * it as overtime on stage.
+     */
+    val isPacingOverCommitted: Boolean
+        get() = targetTotalSeconds != null && pacingPlan.isOverCommitted
+
     /** One consistent readout, so the ribbon's delta and status can never disagree. */
     private val pacing: Pacing
         get() = PacingCalculator.compute(
             elapsedSeconds = elapsedSeconds,
             targetTotalSeconds = targetTotalSeconds,
             slideIndex = currentSlideIndex,
-            slideCount = slides.size
+            plan = pacingPlan
         )
 
     val targetSecondsPerSlide: Long

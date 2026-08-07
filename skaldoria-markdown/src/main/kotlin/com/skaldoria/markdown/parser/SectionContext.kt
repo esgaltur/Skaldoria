@@ -9,6 +9,9 @@ internal class SectionDirectives {
     var layout: SlideLayoutType? = null
     var background: String? = null
     var transition: SlideTransition? = null
+
+    /** DEL-11: `<!-- pace: 90s -->` — this slide's own share of the talk, in seconds. */
+    var paceSeconds: Long? = null
 }
 
 /**

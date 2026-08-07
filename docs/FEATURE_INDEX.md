@@ -202,7 +202,8 @@ spends in it. It is a single `TextField` with a syntax-highlighting `VisualTrans
 | **DEL-01** | Honour the transition model | ✅ | S | — | `TransitionResolver` + exhaustive `transitionSpecFor`. All four values now render. |
 | **DEL-02** | HUD show/hide | ✅ | S | — | `HudVisibility` (AUTO/PINNED/HIDDEN), `H` binding, idle fade, HUD button, recovery hint. Persisted across launches (DED-2). |
 | **DEL-03** | **Incremental reveals (bullet builds)** | 📋 | L | — | The most-requested feature of any presentation tool that lacks it. Code blocks already support `highlightedLines` step highlighting (FR-DIAG / §3.7), so the *concept* exists for code but not for bullets. Needs a directive, a per-slide step counter, and step-aware navigation in both windows and the companion. |
-| **DEL-04** | Rehearsal mode with per-slide timing | 📋 | M | — | The pacing engine (FR-PRES-06) computes whether you are ahead or behind against a target. It cannot tell you *which slides* cost you the time. Record per-slide dwell, show it afterwards. |
+| **DEL-04** | Rehearsal mode with per-slide timing | 📋 | M | DEL-11 | The pacing engine computes whether you are ahead or behind against a target. It cannot tell you *which slides* cost you the time. Record per-slide dwell, show it afterwards. **Now has somewhere to put the answer:** DEL-11 gave slides a declared budget, so rehearsal can write measured timings back into the deck as `<!-- pace: … -->` — the Parking Lot already proves that write-back path. That turns this from a report into a feedback loop. |
+| **DEL-11** | **Per-slide time budgets** | ✅ | M | — | **Shipped 2026-08-07.** `<!-- pace: 90s -->` (also `time:`, `budget:`). Drift is measured against the sum of declared budgets; undeclared slides split the remainder, so a deck declaring nothing behaves *exactly* as before — asserted, not assumed. Over-commitment is reported in the presenter console rather than silently rescaled, because `pace: 90s` has to mean ninety seconds. **Fixed a correctness flaw in the headline feature:** dividing the target by the slide count allotted a title card and a code walkthrough the same time, so the gauge read *behind* within the first minute of almost every real talk. |
 | **DEL-05** | Auto-advance / kiosk loop | 📋 | S | — | Booths, lobby screens, unattended demos. |
 | **DEL-06** | "Starting soon" / countdown holding screen | 📋 | S | — | |
 | **DEL-07** | Presentation zoom / spotlight a slide region | 📋 | M | — | Pairs with the existing laser pointer for dense diagrams and code. |
@@ -385,7 +386,7 @@ any of the three — every one of them passes on a runner too.
 
 `AUT-19` find results list · `AUT-20` repeat-search shortcut · `AUT-17` pipe-less GFM tables ·
 `AUT-10` drag-and-drop reordering · `THM-01` font themes · `AUT-12` clipboard image paste ·
-`AUD-10` SoftAP pairing guidance · `MED-02` SVG images · `DEL-04` rehearsal timings ·
+`AUD-10` SoftAP pairing guidance · `MED-02` SVG images · `DEL-04` rehearsal timings *(now cheap — DEL-11 shipped the storage)* ·
 `MED-04` image sizing directives · `AUT-11` formatting shortcuts *(now unblocked — `AUT-05`
 shipped the selection it needed)*
 

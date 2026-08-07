@@ -117,6 +117,12 @@ Relative paths resolve against the deck folder. See FR-IMG for supported sources
 Equations are enclosed in `$$ ... $$` delimiters:
 ```markdown
 $$ \Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{current} $$
+
+> **DEL-11 (2026-08-07): this is now the special case.** Drift is measured against the sum of
+> the per-slide budgets a deck declares (`<!-- pace: 90s -->`). With none declared, every slide
+> takes an equal share and the formula above is exactly what results. See `PacingPlan` and the
+> README.
+
 ```
 
 ### 3.6 Live Audience Poll Directives
@@ -196,6 +202,12 @@ $$\text{Contrast Ratio} = \frac{L_1 + 0.05}{L_2 + 0.05} \ge 4.5$$
 ### 5.2 Algorithmic Speaker Rhythm & Pacing (FR-PRES-06)
 - **Pacing Drift Formula:**
   $$\Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{current}$$
+
+> **DEL-11 (2026-08-07): this is now the special case.** Drift is measured against the sum of
+> the per-slide budgets a deck declares (`<!-- pace: 90s -->`). With none declared, every slide
+> takes an equal share and the formula above is exactly what results. See `PacingPlan` and the
+> README.
+
 - **Rhythm Status Indicators:**
   - 🟢 **ON TRACK**: $|\Delta t| \le 15\text{s}$
   - 🔵 **AHEAD**: $\Delta t < -15\text{s}$
