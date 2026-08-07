@@ -622,31 +622,49 @@ private fun MarkdownSourceField(
     var handledRevealToken by remember { mutableStateOf(-1L) }
     var isFocused by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
-    var findWasOpen by remember { mutableStateOf(false) }
+    // Seeded from the current token, not from a sentinel: only an *increment* after this pane
+    // exists is a request, so the editor does not steal focus the moment the studio opens.
+    var handledFocusToken by remember { mutableStateOf(state.editorFocusToken) }
 
     /**
-     * EDT-7: closing the find bar hands the caret back to the editor, on the match.
+     * EDT-7: takes keyboard focus when [PresentationState.closeFind] asks for it.
      *
-     * `requestReveal` moves the selection onto the match, but an unfocused text field draws
-     * neither cursor nor selection — the only thing left on screen is the highlight overlay
-     * from `MarkdownVisualTransformation`, which is why the pane looked inert even once it
-     * scrolled. The find bar keeps focus on its query field on purpose (repeat Enter has to
-     * keep cycling), so the handover belongs at close rather than at every match.
+     * **Why this retries instead of simply requesting.** The request is raised by the same
+     * action that removes the find bar from the composition, and Compose clears focus from an
+     * unmounting node during that pass. A single `requestFocus()` therefore lands *before* the
+     * cleanup that discards it, roughly half the time — the first attempt at this fix passed
+     * once and failed on re-run. Waiting a frame and re-asserting until the field reports focus
+     * makes the handover deterministic rather than a race, and the bound keeps a genuinely
+     * unfocusable field (detached requester, pane not composed) from spinning.
+     *
+     * **Not verifiable by the headless render harness, unlike the rest of ADR-004.** Inside an
+     * `ImageComposeScene` there is no platform text-input session, so `requestFocus()` returns
+     * without throwing and the field still never reports focus — measured, not assumed. A
+     * pixel guard on the focused container tint therefore fails here for a reason that has
+     * nothing to do with this code, and a pane-difference guard passes vacuously because
+     * closing the bar reflows the column. What *is* guarded is the state contract below
+     * (`EditorRevealTest`); the drawn caret is a manual check. See RENDERING_STATUS.
      */
-    LaunchedEffect(state.isFindOpen) {
-        if (state.isFindOpen) {
-            findWasOpen = true
-        } else if (findWasOpen) {
-            findWasOpen = false
-            // Requesting focus on a detached requester throws; the bar closing while the pane
-            // is being removed is a normal race rather than an error worth surfacing.
+    LaunchedEffect(state.editorFocusToken) {
+        val token = state.editorFocusToken
+        if (token == handledFocusToken) return@LaunchedEffect
+
+        repeat(FOCUS_HANDOVER_ATTEMPTS) {
+            // Let the frame that removed the find bar finish releasing focus first.
+            withFrameNanos { }
+            if (isFocused) return@repeat
+            // Requesting on a requester that is not attached throws; that is a normal race
+            // while the pane is being composed, not an error worth surfacing.
             try {
                 focusRequester.requestFocus()
             } catch (_: Exception) {
             }
         }
-    }
 
+        // Marked done only once the handover has been attempted to completion, so a cancelled
+        // effect retries rather than counting as delivered — the mistake behind EDT-6.
+        handledFocusToken = token
+    }
     // EDT-5: clamped here, so a slide-file swap to a shorter document cannot construct an
     // out-of-bounds TextFieldValue no matter which of text or selection changed first.
     val value = TextFieldValue(text = text, selection = state.editorSelectionWithin(text.length))
@@ -713,6 +731,7 @@ private fun MarkdownSourceField(
             cursorBrush = SolidColor(theme.primary),
             modifier = Modifier
                 .fillMaxSize()
+                .focusRequester(focusRequester)
                 .onFocusChanged { isFocused = it.isFocused }
                 // Unbounded height for the field, scrolled by this modifier rather than by the
                 // field's own internal scroller — which is what makes `getLineTop` above
@@ -722,6 +741,9 @@ private fun MarkdownSourceField(
         )
     }
 }
+
+/** Frames the focus handover will re-assert across before giving up. */
+private const val FOCUS_HANDOVER_ATTEMPTS = 6
 
 /** How far down the viewport a revealed line lands. */
 private const val REVEAL_LEAD_IN_FRACTION = 0.25f

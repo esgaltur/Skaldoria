@@ -32,6 +32,14 @@ render; two carry defects that only a human eye would catch, recorded below.
 
 ---
 
+## What the harness cannot see
+
+| Case | Why |
+|---|---|
+| **Keyboard focus in a text field (EDT-7)** | `ImageComposeScene` has no platform text-input session. `FocusRequester.requestFocus()` returns without throwing and the field still reports `isFocused == false`, so the focused-vs-unfocused container tint never changes and no pixel assertion about a caret can hold. Measured while fixing EDT-7, not assumed. The state contract is guarded by `EditorRevealTest`; **the drawn caret is a manual check.** |
+
+---
+
 ## ✅ Verified working
 
 | Case | Evidence | Notes |

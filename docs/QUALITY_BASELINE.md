@@ -1,6 +1,6 @@
 # Quality Baseline
 
-**Version:** 1.5.0 · **Last reviewed:** 2026-08-07 · **Suite:** 619 tests, 0 failures
+**Version:** 1.7.0 · **Last reviewed:** 2026-08-07 · **Suite:** 624 tests, 0 failures
 
 This document is the reference for the invariants this codebase holds, established during a
 systematic pre-release review of `src/desktopMain`. Every entry has a stable identifier, and
@@ -124,6 +124,8 @@ Entries without a **Rationale** are self-evident and need none.
 | EDT-3 | Editor | Slide ⇄ offset mapping derives from `Slide.sourceLineRange`; nothing re-derives boundaries (extends COR-1) | `SlideSourceLocatorTest` |
 | EDT-4 | Editor | Every match-navigation action scrolls its match into view — asserted on the **rendered** pane, not on the index | `EditorWorkspaceRenderingTest` |
 | EDT-5 | Editor | Selection is clamped to the new text length before it reaches the field | `EditorRevealTest` |
+| EDT-6 | Editor | A reveal survives the re-layout that revealing itself causes — asserted in a **live** composition | `FindRevealScrollTest` |
+| EDT-7 | Editor | Ending a search hands the caret back to the editor, still on the match | `EditorRevealTest` |
 | CLK-1 | Presentation | The key codes an off-the-shelf presenter clicker emits reach a deck command | `PresenterClickerTest` |
 | KEY-1 | Presentation | Every window that hosts the deck answers to the whole `DECK` keyboard surface — asserted by sending keys into a real composition, not by resolving the registry | `FullscreenDeckKeyTest` |
 | PRF-5 | Performance | No `Regex` is constructed inside a per-line or per-frame loop, and no per-keystroke path allocates the whole document to answer a question about part of it | `PerformanceProbe` (measured, not asserted — see [`PERFORMANCE_BASELINE.md`](./PERFORMANCE_BASELINE.md)) |
@@ -607,6 +609,64 @@ remember to redirect.
 
 **Guard.** `ConfigStorageLocationTest` — asserts the suite's root is not the real home, and that
 writes follow the configured root.
+
+---
+
+### EDT-6 — A reveal survives the re-layout it causes
+
+**Invariant.** The reveal effect is keyed on `editorRevealToken` alone; the text layout is
+awaited *inside* it, and `handledRevealToken` is marked only after the scroll has landed.
+
+**Rationale.** EDT-4 shipped with `layout` as a second effect key, so that a reveal published
+before the text had been measured — a slide-file swap in project mode — would re-run once a
+measurement existed. It also made every *later* measurement restart the effect, and advancing a
+find match is exactly that: a new `activeMatchIndex` restyles the active span, the field
+re-lays out, `onTextLayout` publishes a new `TextLayoutResult`, the key changes, and Compose
+cancels the running `animateScrollTo`. Re-entering, the token guard — already satisfied,
+because it was set *before* the suspend — returned immediately. **Pressing "next match" moved
+the pane zero pixels**, while the index, the filmstrip and the preview all advanced correctly,
+so every non-visual signal said the feature worked.
+
+**Why the guard had to change too.** `EditorWorkspaceRenderingTest` covered EDT-4 and passed
+throughout, because it mutates the state and *then* renders into a fresh scene: the reveal
+arrives before the first composition, when nothing has been measured and no token has been
+handled. That configuration is unreachable in the UI. A reveal defect is only observable in a
+composition that is already running, so the guard drives one long-lived scene and steps it.
+
+**Guard.** `FindRevealScrollTest` — opens find, types, and presses next three times in a single
+live scene, failing if the pane is unchanged between any two presses. Verified against the
+defect: it reports `0.0%` movement on all three before the fix.
+
+---
+
+### EDT-7 — Ending a search hands the caret back
+
+**Invariant.** Closing the find bar publishes a focus request (`EditorSession.focusToken`) and
+leaves the selection on the active match. Opening it, and closing an already-closed bar, publish
+nothing.
+
+**Rationale.** `requestReveal` had always put the selection on the match, but an unfocused
+Compose text field draws **neither cursor nor selection**, and the find bar holds focus on its
+own query field on purpose — clicking next/prev used to move focus out and stop Enter cycling.
+So a found match was revealed into a pane with no visible caret, and typing over it meant
+clicking first, which discards the position that was just found. The only thing left on screen
+was the highlight overlay, which is focus-independent — the symptom reported as "it only
+highlights the word". Close is the one moment that means "done searching, now edit", so it is
+where the handover belongs; doing it per match would reintroduce the fixed Enter defect.
+
+**Why the composable retries.** The request is raised by the same action that unmounts the find
+bar, and Compose clears focus from an unmounting node during that pass, so a single
+`requestFocus()` is a coin flip — the first version of this fix passed once and failed on
+re-run. The effect waits a frame and re-asserts, bounded.
+
+**Guard.** `EditorRevealTest` — four cases over the state contract.
+
+**Not covered by the render harness, and this is a limitation rather than an omission.** An
+`ImageComposeScene` has no platform text-input session: `requestFocus()` returns without
+throwing and the field still reports `isFocused == false`. That was measured, not assumed. A
+pixel guard on the focused container tint therefore fails for reasons unrelated to this code,
+and the obvious pane-difference guard passes vacuously because closing the bar reflows the
+column. The drawn caret is a manual check; see `RENDERING_STATUS.md`.
 
 ---
 

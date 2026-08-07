@@ -311,4 +311,71 @@ class EditorRevealTest : PresentationStateTestBase() {
         val clamped = state.editorRevealTargetWithin(state.currentEditorText.length)!!
         assertTrue(clamped.max <= state.currentEditorText.length)
     }
+
+    // ------------------------------------------------------------------
+    // EDT-7 — the caret comes back to the editor when the search ends.
+    //
+    // `requestReveal` puts the selection on the match, but an unfocused text field draws
+    // neither cursor nor selection, so the match was revealed to a pane the user saw no caret
+    // in. These pin the state half of the handover; that the caret is *drawn* cannot be
+    // asserted from an `ImageComposeScene`, which has no platform text-input session — see
+    // the note on `MarkdownSourceField`.
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `closing the find bar asks the editor for focus`() {
+        val state = presentationState()
+        state.updateMarkdown(longDeck())
+        state.toggleFind()
+        state.findQuery = "needle"
+        state.findNext()
+
+        val before = state.editorFocusToken
+        state.closeFind()
+
+        assertNotEquals(before, state.editorFocusToken, "closing find published no focus request")
+    }
+
+    @Test
+    fun `the caret is still on the match after the bar closes`() {
+        val state = presentationState()
+        state.updateMarkdown(longDeck())
+        state.toggleFind()
+        state.findQuery = "needle"
+        state.findNext()
+        val match = state.findMatches[state.currentMatchIndex]
+
+        state.closeFind()
+
+        assertEquals(
+            match.first,
+            state.editorSelectionWithin(state.currentEditorText.length).min,
+            "the selection moved off the match, so focus would return to the wrong place"
+        )
+    }
+
+    @Test
+    fun `toggling the find bar shut also asks for focus, and opening it does not`() {
+        val state = presentationState()
+        state.updateMarkdown(longDeck())
+
+        val beforeOpen = state.editorFocusToken
+        state.toggleFind()
+        assertEquals(beforeOpen, state.editorFocusToken, "opening find must not steal the caret")
+
+        val beforeClose = state.editorFocusToken
+        state.toggleFind()
+        assertNotEquals(beforeClose, state.editorFocusToken, "toggling shut published no focus request")
+    }
+
+    @Test
+    fun `closing a bar that is already shut asks for nothing`() {
+        val state = presentationState()
+        state.updateMarkdown(longDeck())
+
+        val before = state.editorFocusToken
+        state.closeFind()
+
+        assertEquals(before, state.editorFocusToken, "a no-op close must not yank focus")
+    }
 }

@@ -161,61 +161,8 @@ class FindRevealScrollTest : PresentationStateTestBase() {
         )
     }
 
-    /**
-     * EDT-7: closing the bar puts a visible caret on the match.
-     *
-     * The selection is on the match throughout — `requestReveal` sets it — but an unfocused
-     * field draws neither cursor nor selection, so the pane is inert until focus returns.
-     * Closing the bar must therefore change the pane *again*, on top of any scroll: the match
-     * range picks up a selection background it did not have while the query field held focus.
-     */
-    @Test
-    fun `closing the find bar puts a visible caret on the match`() {
-        val state = deckState(deckWithThreeNeedles())
-
-        val frames = filmOf(
-            state,
-            "find_focus",
-            listOf(
-                "open_and_type" to {
-                    state.toggleFind()
-                    state.findQuery = "the needle is here"
-                },
-                "next_1" to { state.findNext() },
-                "close" to { state.closeFind() }
-            )
-        ).toMap()
-
-        val afterNext = frames.entries.first { it.key.endsWith("next_1") }.value
-        val afterClose = frames.entries.first { it.key.endsWith("close") }.value
-
-        // A whole-pane diff cannot answer this: closing the bar removes it from the column and
-        // shifts every line up, which swamps any caret. It passed with focus disabled — a
-        // vacuous guard of exactly the kind that let the scroll defect ship.
-        //
-        // `MarkdownSourceField` tints its container by focus (`surfaceVariant` at 0.4 alpha
-        // when focused, 0.2 when not), so an empty patch of that container reports focus
-        // directly, and layout shift cannot move a flat background colour.
-        val before = afterNext.getRGB(FOCUS_PROBE_X, FOCUS_PROBE_Y)
-        val after = afterClose.getRGB(FOCUS_PROBE_X, FOCUS_PROBE_Y)
-        assertTrue(
-            before != after,
-            "the source pane's container tint is unchanged (#${Integer.toHexString(before)}) " +
-                "after closing the find bar — the editor never took focus back, so the match " +
-                "has no visible caret and cannot be typed over"
-        )
-    }
-
     private companion object {
         const val FRAME_NANOS = 16_000_000L
         const val FRAMES = 30
-
-        /**
-         * An empty patch of the source pane's container: right of the longest bullet, above
-         * the pane's bottom edge. Text must never reach here, or the probe reads a glyph
-         * instead of the container tint.
-         */
-        const val FOCUS_PROBE_X = 660
-        const val FOCUS_PROBE_Y = 700
     }
 }

@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Roadmap and delivery work. The candidate feature set is catalogued in
 [`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md); the connectivity design is
 [ADR-005](./docs/ADR_COMPANION_LINK_ESTABLISHMENT.md).
-Test suite: **235 to 619 tests** (553 in the app, 66 in `:skaldoria-markdown`), zero compiler warnings.
+Test suite: **235 to 624 tests** (558 in the app, 66 in `:skaldoria-markdown`), zero compiler warnings.
 
 ### Performance
 
@@ -141,6 +141,34 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   by a name-based denylist.
 - **The slide footer misreported diagram slides**, labelling a sequence diagram
   "Architecture / Flow Diagram" while the diagram's own header said otherwise.
+- **"Next match" scrolled the source pane by zero pixels (EDT-6).** The match counter advanced,
+  the filmstrip jumped to the right slide and the preview followed — every signal except the one
+  the user is looking at. The reveal effect was keyed on the text layout as well as the reveal
+  token, so advancing the match restyled the active span, which re-laid out the text, which
+  changed the key, which cancelled the scroll animation mid-flight; re-entering, the "already
+  handled" guard had been set *before* the suspend and returned immediately. Keyed on the token
+  alone now, with the layout awaited inside and the guard set after the scroll lands.
+
+  **The guard for this passed the whole time**, because it mutated the state and then rendered
+  into a fresh scene — so the reveal always arrived before the first composition, with nothing
+  measured and no token handled. That is not a state the UI can produce. `FindRevealScrollTest`
+  drives one live scene instead and reported `0.0%` pane movement across three presses.
+- **A found match had no caret you could type over (EDT-7).** The selection was on the match all
+  along, but an unfocused Compose text field draws neither cursor nor selection, and the find bar
+  keeps focus on its query field so that Enter keeps cycling. The match was therefore revealed
+  into a pane showing only the highlight overlay, and editing it meant clicking — which throws
+  away the position just found. Closing the bar now hands focus back to the editor with the
+  caret still on the match.
+
+  The composable re-asserts the request across a few frames rather than asking once: the request
+  is raised by the same action that unmounts the find bar, and Compose clears focus from an
+  unmounting node in that pass, so a single call is a coin flip.
+
+  **This one is guarded at the state level only, deliberately.** An `ImageComposeScene` has no
+  platform text-input session — `requestFocus()` returns cleanly and the field still reports
+  itself unfocused — so no pixel assertion about a caret can hold there, and the obvious
+  pane-difference guard passes vacuously because closing the bar reflows the column. Recorded
+  in `RENDERING_STATUS.md` under what the harness cannot see.
 - **The test suite raced against itself through the autosave draft (COR-14).** A mutation
   schedules a debounced save 750 ms out on that `PresentationState`'s own scope, and `dispose()`
   is the only thing that cancels it — but disposal was by convention, and **18 of the 23 test
