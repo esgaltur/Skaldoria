@@ -126,7 +126,7 @@ The companion binds to your local network, so the two roles are separated delibe
 
 > The companion is meant for a room you control. It is not hardened for the open internet, and it
 > speaks plain HTTP so phones can connect without certificate warnings — see
-> [ADR-001](./docs/ADR_COMPANION_SERVER_ARCHITECTURE.md).
+> [ADR-001](./docs/adr/001-companion-server-architecture.md).
 
 ### 7. 🧜‍♂️ Mermaid Diagrams — Rendered Natively
 
@@ -373,10 +373,10 @@ than being mistaken for a deck.
 * 📘 **[Comprehensive User Guide & Feature Manual](./docs/USER_GUIDE.md)**: Full walkthrough of slide authoring, layouts,
   presenter console, wireless companions, and parking lot.
 * 📋 **[Functional Specification](./FUNCTIONAL_SPECIFICATION.md)**: Formal requirements and system architecture.
-* 📐 **[ADR-001: Companion Server Architecture](./docs/ADR_COMPANION_SERVER_ARCHITECTURE.md)**: Technical evaluation of
+* 📐 **[ADR-001: Companion Server Architecture](./docs/adr/001-companion-server-architecture.md)**: Technical evaluation of
   native sockets vs Ktor and HTTP/1.1 vs HTTP/2.
 * 🚀 **[Changelog](./CHANGELOG.md)**: Release history and version updates.
-* 📐 **[ADR-002: Diagram Geometry Architecture](./docs/ADR_DIAGRAM_GEOMETRY_ARCHITECTURE.md)**: How diagram layout is
+* 📐 **[ADR-002: Diagram Geometry Architecture](./docs/adr/002-diagram-geometry-architecture.md)**: How diagram layout is
   separated from drawing.
 * 🔍 **[Ktor vs. hand-rolled sockets](./docs/KTOR_MIGRATION_TRADEOFFS.md)**: Measured evaluation of replacing the
   companion server, and why it stayed.

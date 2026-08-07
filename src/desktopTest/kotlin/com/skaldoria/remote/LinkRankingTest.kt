@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 /**
  * AUD-09 / LNK-1 / LNK-2: which address the pairing QR advertises.
  *
- * See [ADR-005](../../../../../../docs/ADR_COMPANION_LINK_ESTABLISHMENT.md). The companion
+ * See [ADR-005](../../../../../../docs/adr/005-companion-link-establishment.md). The companion
  * assumes a shared LAN, which fails under guest-wifi client isolation, on separate VLANs, or
  * where there is no usable network at all. The remedies — a laptop hotspot, USB tethering,
  * Bluetooth PAN — all produce an ordinary IP interface that the existing server already serves

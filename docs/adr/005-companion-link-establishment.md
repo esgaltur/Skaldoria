@@ -24,7 +24,7 @@
 > This ADR addresses the case the companion
 > cannot serve today — presenter and audience have no shared network — and concludes that the
 > answer is **not a new transport**. The correct abstraction is *how the phone acquires an IP
-> route to the laptop*, which leaves [ADR-001](./ADR_COMPANION_SERVER_ARCHITECTURE.md) entirely
+> route to the laptop*, which leaves [ADR-001](./001-companion-server-architecture.md) entirely
 > intact and requires no new dependency.
 
 ---
@@ -344,7 +344,7 @@ would compromise it, and it is explicitly last and explicitly optional.
 
 `availableAddresses()` reads the live machine, so these need the interface enumeration behind a
 seam to be testable — which is `F-01`-shaped work and pairs naturally with the hermetic-test
-item already in [`REFACTORING_BACKLOG.md`](./REFACTORING_BACKLOG.md).
+item already in [`REFACTORING_BACKLOG.md`](../REFACTORING_BACKLOG.md).
 
 ---
 

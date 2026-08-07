@@ -8,13 +8,13 @@
 > is *why* the work is safe, not merely how it was scheduled.
 >
 > Two things differ from the plan and are recorded in
-> [ADR-004 § Status](./ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md#status): the composable took
+> [ADR-004 § Status](./adr/004-editor-sync-and-presentation-hud.md#status): the composable took
 > **Option B** (explicit `ScrollState` + `onTextLayout`) rather than Option A, and revealing a
 > search match now also selects the match's slide.
 >
 > **Phase 6 (deck-wide search) remains deferred** and is still not a commitment.
 
-Companion to [ADR-004](./ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md). The ADR records *why*; this
+Companion to [ADR-004](./adr/004-editor-sync-and-presentation-hud.md). The ADR records *why*; this
 document is the *what, in what order, and how we know it worked*. Where the two disagree, the
 ADR wins and this file is stale.
 
@@ -117,7 +117,7 @@ This is the highest-risk phase in the plan. It lands as its own commit.
 
 | # | Task |
 | :--- | :--- |
-| 2.1 | Create an `EditorSession` collaborator holding `editorSelection: TextRange`. Do **not** add loose properties to `PresentationState` — see [ADR-004 § Relationship to ADR-003](./ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md#relationship-to-adr-003). |
+| 2.1 | Create an `EditorSession` collaborator holding `editorSelection: TextRange`. Do **not** add loose properties to `PresentationState` — see [ADR-004 § Relationship to ADR-003](./adr/004-editor-sync-and-presentation-hud.md#relationship-to-adr-003). |
 | 2.2 | Switch `EditorWorkspace.kt:210` from the `String` overload to the `TextFieldValue` overload. |
 | 2.3 | Reconstruct the value each composition as `TextFieldValue(text = state.currentEditorText, selection = session.editorSelection)`. Text stays derived; only selection is stored. |
 | 2.4 | In `onValueChange`, route `.text` through the existing `updateEditorContent(...)` and `.selection` into the session. |

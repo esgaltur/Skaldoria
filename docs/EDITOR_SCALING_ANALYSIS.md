@@ -340,6 +340,6 @@ slide pipeline, not of the editing surface.
 | Document | Covers |
 | :--- | :--- |
 | [`PERFORMANCE_BASELINE.md`](./PERFORMANCE_BASELINE.md) | PRF-5, the single-size baseline, and what was deliberately not fixed. |
-| [`ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md`](./ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md) | ADR-004 — EDT-1 caret ownership and the Option B scroll decision that sets the layout floor. |
-| [`ADR_GOD_OBJECT_DECOMPOSITION.md`](./ADR_GOD_OBJECT_DECOMPOSITION.md) | `DeckDocument` / `SlideNavigator` split and the COR-1 single-authority invariant. |
+| [`ADR-004`](./adr/004-editor-sync-and-presentation-hud.md) | EDT-1 caret ownership and the Option B scroll decision that sets the layout floor. |
+| [`ADR-003`](./adr/003-god-object-decomposition.md) | `DeckDocument` / `SlideNavigator` split and the COR-1 single-authority invariant. |
 | [`QUALITY_BASELINE.md`](./QUALITY_BASELINE.md) | PRF-1–PRF-4, the earlier performance invariants. |

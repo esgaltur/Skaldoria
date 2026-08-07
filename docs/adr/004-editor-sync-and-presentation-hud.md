@@ -419,7 +419,7 @@ the HUD first auto-hides is the cheapest way to satisfy it.
 
 ### Relationship to ADR-003
 
-[ADR-003](./ADR_GOD_OBJECT_DECOMPOSITION.md) was drafted the same day and finds that
+[ADR-003](./003-god-object-decomposition.md) was drafted the same day and finds that
 `PresentationState` is a god object — 1323 lines, 60 properties, 38 of them Compose state — and
 proposes reducing it to a thin facade over cohesive collaborators.
 

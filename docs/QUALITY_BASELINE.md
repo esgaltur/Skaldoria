@@ -244,7 +244,7 @@ refused with `411`.
 **Rationale.** This is a hand-written HTTP parser reading from an untrusted network. It frames
 bodies by `Content-Length` only; refusing chunked encoding explicitly is correct, whereas
 mis-reading a chunked body silently is not. Recorded because the trade-off of hand-rolling the
-parser (see [ADR-001](./ADR_COMPANION_SERVER_ARCHITECTURE.md)) is that these limits are ours to
+parser (see [ADR-001](./adr/001-companion-server-architecture.md)) is that these limits are ours to
 maintain.
 
 ---
@@ -516,7 +516,7 @@ all (LNK-2); and Windows names its hotspot adapter *"Microsoft Wi-Fi Direct **Vi
 Adapter"*, so the direct-link checks must run **before** the virtual denylist or the fix defeats
 itself.
 
-See [ADR-005](./ADR_COMPANION_LINK_ESTABLISHMENT.md).
+See [ADR-005](./adr/005-companion-link-establishment.md).
 
 **Guard.** `LinkRankingTest`.
 
@@ -740,14 +740,14 @@ runtime — the wrong trade for software whose failure is discovered in front of
 closed earns its keep against unbounded extension; this set is bounded and curated.
 
 **The companion server is not framework-based.** Evaluated and re-evaluated; see
-[ADR-001](./ADR_COMPANION_SERVER_ARCHITECTURE.md) and
+[ADR-001](./adr/001-companion-server-architecture.md) and
 [the Ktor analysis](./KTOR_MIGRATION_TRADEOFFS.md). The decision holds on packaging and JPMS
 portability across six installer formats, not on the dependency-size figures originally quoted,
 which were overstated. Revisit if push (WebSockets/SSE) replaces polling.
 
 **Geometry is separated from drawing.** Diagram layout produces a `FlowchartScene` of pure
 rectangles and offsets; renderers walk it. See
-[ADR-002](./ADR_DIAGRAM_GEOMETRY_ARCHITECTURE.md). This is what allows subgraph invariants to be
+[ADR-002](./adr/002-diagram-geometry-architecture.md). This is what allows subgraph invariants to be
 asserted without rendering.
 
 **Compact text inputs are not Material text fields.** `CompactTextField` exists because Material 3

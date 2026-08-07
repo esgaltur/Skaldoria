@@ -1,6 +1,6 @@
 # Refactoring Backlog
 
-Companion to [ADR-003](./ADR_GOD_OBJECT_DECOMPOSITION.md). The ADR argues *why*; this file is
+Companion to [ADR-003](./adr/003-god-object-decomposition.md). The ADR argues *why*; this file is
 the actionable list — one row per fix, ordered by **risk reduction per unit of change**.
 
 **Status — 2026-08-06.** **All 24 items are done**, every one implemented test-first.
