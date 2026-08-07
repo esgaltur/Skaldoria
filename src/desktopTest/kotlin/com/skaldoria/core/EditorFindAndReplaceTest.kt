@@ -5,7 +5,6 @@ import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.ui.editor.MarkdownVisualTransformation
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class EditorFindAndReplaceTest : PresentationStateTestBase() {

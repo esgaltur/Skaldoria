@@ -21,6 +21,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -35,6 +37,8 @@ import com.skaldoria.markdown.models.SlideLayoutType
 import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.components.*
 import com.skaldoria.ui.editor.MarkdownVisualTransformation
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
@@ -617,28 +621,65 @@ private fun MarkdownSourceField(
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var handledRevealToken by remember { mutableStateOf(-1L) }
     var isFocused by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    var findWasOpen by remember { mutableStateOf(false) }
+
+    /**
+     * EDT-7: closing the find bar hands the caret back to the editor, on the match.
+     *
+     * `requestReveal` moves the selection onto the match, but an unfocused text field draws
+     * neither cursor nor selection — the only thing left on screen is the highlight overlay
+     * from `MarkdownVisualTransformation`, which is why the pane looked inert even once it
+     * scrolled. The find bar keeps focus on its query field on purpose (repeat Enter has to
+     * keep cycling), so the handover belongs at close rather than at every match.
+     */
+    LaunchedEffect(state.isFindOpen) {
+        if (state.isFindOpen) {
+            findWasOpen = true
+        } else if (findWasOpen) {
+            findWasOpen = false
+            // Requesting focus on a detached requester throws; the bar closing while the pane
+            // is being removed is a normal race rather than an error worth surfacing.
+            try {
+                focusRequester.requestFocus()
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     // EDT-5: clamped here, so a slide-file swap to a shorter document cannot construct an
     // out-of-bounds TextFieldValue no matter which of text or selection changed first.
     val value = TextFieldValue(text = text, selection = state.editorSelectionWithin(text.length))
 
-    // EDT-4: keyed on the reveal token *and* the layout, because a reveal published by a
-    // slide-file swap arrives before the new text has been measured. `handledRevealToken`
-    // stops the re-run that a later layout change would otherwise cause from scrolling the
-    // user back to a match they have already moved on from.
-    LaunchedEffect(state.editorRevealToken, layout) {
+    // EDT-6: keyed on the reveal token *alone*, and the layout is awaited inside.
+    //
+    // `layout` was a second key, so that a reveal published before the text had been measured
+    // — a slide-file swap in project mode — would re-run once a measurement existed. It also
+    // made every *later* measurement restart the effect, and advancing the find match is
+    // exactly that: a new `activeMatchIndex` changes the styled `AnnotatedString`, the field
+    // re-lays out, `onTextLayout` publishes a new `TextLayoutResult`, and the key changes.
+    // Compose then cancels the running `animateScrollTo` mid-flight and re-enters — where the
+    // token guard, already satisfied, returns immediately. Pressing "next match" moved the
+    // pane zero pixels. `FindRevealScrollTest` is the reproduction.
+    //
+    // Awaiting the layout keeps the deferred-measurement case working without letting
+    // measurement cancel the scroll it was supposed to enable.
+    LaunchedEffect(state.editorRevealToken) {
         val token = state.editorRevealToken
         if (token == handledRevealToken) return@LaunchedEffect
-        val measured = layout ?: return@LaunchedEffect
+        val measured = snapshotFlow { layout }.filterNotNull().first()
         val target = state.editorRevealTargetWithin(text.length) ?: return@LaunchedEffect
-
-        handledRevealToken = token
 
         val lineTop = measured.getLineTop(measured.getLineForOffset(target.min))
         // A quarter of the viewport of lead-in, so the revealed line has context above it
         // instead of sitting flush against the top edge.
         val leadIn = scrollState.viewportSize * REVEAL_LEAD_IN_FRACTION
         scrollState.animateScrollTo((lineTop - leadIn).toInt().coerceIn(0, scrollState.maxValue))
+
+        // Marked done only once the scroll has actually landed. Setting it before the suspend
+        // meant a cancelled reveal counted as a delivered one, which is what made the defect
+        // above permanent rather than merely flaky.
+        handledRevealToken = token
     }
 
     Box(
