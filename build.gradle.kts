@@ -54,14 +54,35 @@ val generateBuildInfo = tasks.register("generateBuildInfo") {
     }
 }
 
+/**
+ * Makes `appVersion` readable from outside Gradle.
+ *
+ * The release scripts used to carry their own `1.0.0` default, so running one without an
+ * explicit argument produced `Skaldoria-v1.0.0-*` artefacts from a 1.2.0 build. They now ask
+ * this task instead, which keeps the "single source of truth" above honest rather than merely
+ * claimed.
+ *
+ *     ./gradlew -q printVersion
+ */
+tasks.register("printVersion") {
+    group = "help"
+    description = "Prints the application version, for the local release scripts to read."
+    // Captured at configuration time so the task body touches no project state.
+    val versionToPrint = appVersion
+    doLast { println(versionToPrint) }
+}
+
 kotlin {
     jvm("desktop")
 
     /**
      * The zero-warning NFR, enforceable.
      *
-     * Off by default so a local build stays workable mid-edit, and turned on by CI with
-     * `-PwarningsAsErrors`. Without a gate the NFR is a wish: the Kotlin compiler does not
+     * Off by default so a local build stays workable mid-edit, and turned on with
+     * `-PwarningsAsErrors` by `scripts/verify.ps1` and by both release pipelines. CI is
+     * deferred on cost (`PLT-01`), so the gate lives where the release is actually cut; the
+     * flag is kept property-driven precisely so a workflow can set it unchanged if one ever
+     * arrives. Without a gate the NFR is a wish: the Kotlin compiler does not
      * report unused *public* declarations at all, so several dead functions sat in this
      * codebase through a full release with a green build.
      */

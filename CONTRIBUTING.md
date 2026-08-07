@@ -153,14 +153,47 @@ exists in both modules hides which one a name came from.
 
 ### Prerequisites
 - JDK 17 or higher
-- Kotlin 2.1+ / Gradle 8.5+
+- Kotlin **2.2.0**, Gradle **9.6.1** — both come from the build; use the wrapper (`./gradlew`),
+  never a system Gradle. These are the versions the build is actually written against; the
+  older "Kotlin 2.1+ / Gradle 8.5+" claim that used to stand here understated them, and a
+  contributor on 8.5 found out the hard way.
+
+### Verification is local. CI exists, but only when you ask for it.
+
+The gate is a script, not a habit:
+
+```powershell
+.\scripts\verify.ps1                     # both test suites + the zero-warning build
+.\scripts\verify.ps1 -SkipRenderTests    # same, with the render guards stood down (PLT-08)
+```
+
+Run it before every commit you intend to keep, and always before cutting a release —
+`scripts/package_release.ps1` and `scripts/build_linux.sh` run the same two checks themselves,
+so a release cannot be packaged over a red suite or a new warning unless you explicitly pass
+`-SkipTests`.
+
+**`.github/workflows/ci.yml` runs the same two checks on a runner — and it is
+`workflow_dispatch`-only, on purpose.** CI was deferred on cost (`PLT-01`), not on principle;
+hosted minutes are not free, and a `push:`/`pull_request:` trigger bills for an answer on every
+commit whether or not anyone wanted one. Manual dispatch keeps the bill at zero until someone
+presses **Actions → CI → Run workflow**, which is the whole reason it could be adopted at all.
+It runs on `ubuntu-latest` for the same arithmetic: Windows runners bill at 2x, macOS at 10x.
+
+So the workflow is a second opinion, not the gate: **nothing is checked automatically, and
+`verify.ps1` on your own machine is still what has to pass before you commit.**
+
+The render guards are the one thing a runner covers less well: they need a display (see
+`PLT-08`), so a headless job stands them down and verifies strictly less than a machine with a
+screen. The workflow's `render_tests` input takes `xvfb` if you want them to actually run there.
 
 ### Build and Test
 ```bash
-# Run full automated test suite (both modules)
+# What verify.ps1 runs, if you prefer the raw commands:
+
+# 1. Full automated test suite (both modules)
 ./gradlew desktopTest :skaldoria-markdown:test
 
-# The zero-warning NFR, as CI would enforce it
+# 2. The zero-warning NFR (section 6). Production and test code must both compile clean.
 ./gradlew compileKotlinDesktop compileTestKotlinDesktop -PwarningsAsErrors
 
 # Launch development desktop instance
@@ -168,7 +201,30 @@ exists in both modules hides which one a name came from.
 
 # Verify native packaging
 ./gradlew createDistributable
+
+# The version the build will stamp on artefacts — read this, never retype it
+./gradlew -q printVersion
 ```
+
+### Cutting a release
+
+The version lives in exactly one place: `appVersion` in `build.gradle.kts`. Bump it there, and
+nowhere else — the packaging scripts read it through `printVersion` and **refuse** a `-Version`
+argument that disagrees with the build, because they previously defaulted to a hardcoded
+`1.0.0` and happily produced `Skaldoria-v1.0.0-*` files from a 1.2.0 build.
+
+```powershell
+.\scripts\release.ps1                     # Windows: MSI, EXE, portable ZIP, uber JAR -> dist/
+.\scripts\release.ps1 -PublishGitHub -Draft
+```
+
+```bash
+./scripts/build_linux.sh                  # Linux: .deb, .rpm, .tar.gz, uber JAR -> dist/
+./scripts/build_linux.sh "" --publish
+```
+
+Both verify first, write SHA-256 checksums into `dist/`, and publish through the `gh` CLI only
+when asked to.
 
 ### Building without a display (WSL, containers, headless boxes)
 
