@@ -70,7 +70,7 @@ kotlin {
     }
 
     sourceSets {
-        val desktopMain = getByName("desktopMain") {
+        getByName("desktopMain") {
             // Passing the task provider (not a path) lets Gradle wire the dependency itself.
             kotlin.srcDir(generateBuildInfo)
 
@@ -92,9 +92,12 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.swing)
             }
         }
-        val desktopTest = getByName("desktopTest") {
+        getByName("desktopTest") {
             dependencies {
-                implementation(kotlin("test"))
+                // kotlin.test backed by JUnit 5 (Jupiter); junit-jupiter pulls the engine so the
+                // JUnit Platform can run these tests. JUnit 4 is deliberately not on the classpath.
+                implementation(kotlin("test-junit5"))
+                implementation(libs.junit.jupiter)
             }
         }
     }
@@ -109,6 +112,9 @@ kotlin {
  * on the task makes every test hermetic without each one having to remember to redirect.
  */
 tasks.withType<Test>().configureEach {
+    // JUnit 5 only — kotlin.test is wired to Jupiter via kotlin("test-junit5").
+    useJUnitPlatform()
+
     systemProperty(
         "skaldoria.configDir",
         layout.buildDirectory.dir("test-config").get().asFile.absolutePath
