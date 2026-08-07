@@ -21,9 +21,34 @@ import kotlin.test.assertTrue
  */
 class DraftRecoveryTest {
 
+    /**
+     * Drains any autosave still in flight from an *earlier* test before clearing.
+     *
+     * This test reads a process-wide file that every `PresentationState` in the suite can write.
+     * A mutation schedules a debounced save on that instance's own coroutine scope; `dispose()`
+     * cancels it, but **19 test files construct a `PresentationState` and only 4 dispose it**, so
+     * a job outlives the test that created it and lands here, replacing the draft between the
+     * `saveDraft` call and the assertion. That is the race behind
+     * `the bundled sample decks are not offered as recovered work` failing intermittently —
+     * reproducibly enough to block two builds, rarely enough to pass in isolation and on re-run.
+     *
+     * Waiting out the debounce is a workaround, not the fix. The fix is disposal discipline in the
+     * other 15 files; this makes the symptom deterministic in the meantime, and the sleep is
+     * bounded and derived rather than a guessed magic number.
+     */
     @BeforeTest
+    fun drainPendingAutosaves() {
+        Thread.sleep(PresentationState.DRAFT_SAVE_DEBOUNCE_MS + DRAIN_MARGIN_MS)
+        ConfigManager.clearDraft()
+    }
+
     @AfterTest
     fun clearDraft() = ConfigManager.clearDraft()
+
+    private companion object {
+        /** Slack over the debounce, for the IO dispatch and file write that follow it. */
+        const val DRAIN_MARGIN_MS = 250L
+    }
 
     @Test
     fun `no draft means nothing to recover`() {
