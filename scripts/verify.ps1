@@ -3,9 +3,10 @@
     Runs the full local verification gate: both test suites and the zero-warning build.
 
 .DESCRIPTION
-    There is deliberately no CI for this project — every rule in CONTRIBUTING.md is enforced
-    on the machine that cuts the release. This script is that enforcement, in one command, so
-    the rules stop depending on someone remembering them:
+    Nothing verifies this project automatically — .github/workflows/ci.yml runs the same two
+    checks, but only when someone dispatches it by hand (PLT-01). So every rule in
+    CONTRIBUTING.md is enforced on the machine that cuts the release, and this script is that
+    enforcement, in one command, so the rules stop depending on someone remembering them:
 
       1. `desktopTest` and `:skaldoria-markdown:test` — both modules, not just the app.
       2. `compileKotlinDesktop compileTestKotlinDesktop -PwarningsAsErrors` — the zero-warning

@@ -79,10 +79,11 @@ kotlin {
      * The zero-warning NFR, enforceable.
      *
      * Off by default so a local build stays workable mid-edit, and turned on with
-     * `-PwarningsAsErrors` by `scripts/verify.ps1` and by both release pipelines. CI is
-     * deferred on cost (`PLT-01`), so the gate lives where the release is actually cut; the
-     * flag is kept property-driven precisely so a workflow can set it unchanged if one ever
-     * arrives. Without a gate the NFR is a wish: the Kotlin compiler does not
+     * `-PwarningsAsErrors` by `scripts/verify.ps1`, by both release pipelines, and by
+     * `.github/workflows/ci.yml` — which sets it unchanged, as the property-driven design
+     * intended. That workflow is manual-dispatch only (`PLT-01`: automatic triggers are still
+     * deferred on cost), so the gate that actually holds remains the one where the release is
+     * cut. Without a gate the NFR is a wish: the Kotlin compiler does not
      * report unused *public* declarations at all, so several dead functions sat in this
      * codebase through a full release with a green build.
      */
