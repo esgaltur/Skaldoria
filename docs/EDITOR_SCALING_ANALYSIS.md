@@ -1,6 +1,6 @@
 # Editor Scaling — Where the Keystroke Budget Goes
 
-**Measured:** 2026-08-06 · **Against:** `01e2457` (post-PRF-5) · **Scope:** the per-keystroke path in the markdown source editor
+**Measured:** 2026-08-07 · **Against:** post-PRF-7 · **Probe:** `ScalingProbe` (committed)
 
 A follow-on to [`PERFORMANCE_BASELINE.md`](./PERFORMANCE_BASELINE.md), which answers *"what does a
 keystroke cost on a real deck?"* — 886 lines, one size. This document answers the different
@@ -8,19 +8,23 @@ question **"what happens as the document grows?"**, because that is what decides
 editor can host anything larger than a conference talk.
 
 The short answer: cost is **linear in document length with no viewport windowing anywhere**, and
-the 120 FPS frame budget breaks at roughly **3,600 lines**.
+the 120 FPS frame budget breaks at roughly **6,800 lines**.
 
 ---
 
 ## The headline finding
 
-**The highlighter is not the bottleneck.** It is the component most often blamed — it is the one
-with visible per-line regex work — but it accounts for only **20%** of a keystroke. The slide
-parser accounts for **56%**, and it is 2.8× more expensive than the highlighter at every size
-measured.
+**There is no single bottleneck left.** The parser and the highlighter are now within a few points
+of each other — **50%** and **46%** of a keystroke — and the follow-up scan has fallen to 5%.
 
-Driving the highlighter to literally zero would move the 120 FPS ceiling from ~3,600 lines to
-~4,500 lines. It would not change the shape of the problem.
+That is a reversal. The original finding here was that the highlighter accounted for 20% against
+the parser's 56%, and that optimising the highlighter could not change the shape of the problem.
+Both halves of that are now obsolete: PRF-7 halved the parser, PRF-6's guard all but removed the
+follow-up scan, and what remains is two comparable costs rather than one dominant one.
+
+**The practical consequence: neither remaining fix is sufficient alone.** Incremental reparse
+would leave the highlighter dominant; viewport-windowed highlighting would leave the parser
+dominant. Halving the *total* needs both — see [What changed in the shape](#what-changed-in-the-shape-not-just-the-size).
 
 ---
 
@@ -31,10 +35,14 @@ document as a `String`, and were timed in isolation with JIT warmup, on a synthe
 same shape `PerformanceProbe` uses (headings, prose, bullets, a fenced Kotlin block every fourth
 slide), scaled from 499 to 15,931 lines.
 
-> **Reproduction caveat.** `PerformanceProbe` in the tree covers the single 886-line size. The
-> scaling sweep below came from a temporary probe that was **removed after the run** and is not
-> in the repository. Re-running these specific numbers requires re-adding it. See
-> [Recommendation 5](#5-land-the-scaling-probe).
+> **Reproducible as of PRF-7.** The sweep is `ScalingProbe`, committed alongside
+> `PerformanceProbe`; both share the `Bench` harness so the two sets of numbers are comparable.
+> Earlier revisions of this document cited a sweep that lived in a throwaway file and was deleted
+> after the run, so its central claim could not be checked. That is fixed.
+>
+> ```
+> ./gradlew desktopTest --tests "*ScalingProbe*" -i
+> ```
 
 Single machine, single JVM, relative magnitudes are the durable part — treat the absolute
 microseconds as this machine's, not as a specification.
@@ -43,43 +51,61 @@ microseconds as this machine's, not as a specification.
 
 ## Measured: the three per-keystroke passes vs document size
 
-| Lines | Chars | `parse` | `highlightMarkdown` | `extractFollowUpQuestions` | **Total** |
+Measured after PRF-7. The originals, before the memo, the follow-up guard and first-character
+rejection, are kept in the row beneath each for comparison.
+
+| Lines | Chars | `parse` | `highlight` (cold) | `extractFollowUps` | **Total** |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 499 | 15,488 | 673 µs | 229 µs | 269 µs | **1.17 ms** |
-| 1,004 | 31,206 | 1.29 ms | 492 µs | 547 µs | **2.33 ms** |
-| 1,987 | 62,206 | 2.58 ms | 934 µs | 1.10 ms | **4.61 ms** |
-| 3,980 | 125,459 | 5.17 ms | 1.87 ms | 2.18 ms | **9.22 ms** |
-| 7,966 | 251,965 | 10.34 ms | 3.72 ms | 4.41 ms | **18.47 ms** |
-| 15,931 | 505,489 | 20.49 ms | 7.36 ms | 8.72 ms | **36.57 ms** |
+| 499 | 15,488 | 360 µs | 664 µs | 24 µs | **1.05 ms** |
+| 1,004 | 31,206 | 740 µs | 675 µs | 48 µs | **1.46 ms** |
+| 1,987 | 62,206 | 1.21 ms | 1.08 ms | 96 µs | **2.39 ms** |
+| 3,980 | 125,459 | 2.44 ms | 2.17 ms | 192 µs | **4.80 ms** |
+| 7,966 | 251,965 | 4.91 ms | 4.43 ms | 393 µs | **9.73 ms** |
+| 15,931 | 505,489 | 10.00 ms | 8.89 ms | 947 µs | **19.84 ms** |
 
-Every doubling of input doubles every column. This is clean `O(n)` with a stable constant:
+*(The two smallest highlight figures barely differ; small sizes are still paying warm-up. From
+1,987 lines up the scaling is clean.)*
 
-| Pass | Cost per line | Share of keystroke |
-| :--- | ---: | ---: |
-| `MarkdownSlideParser.parse` | 1.29 µs | **56%** |
-| `MarkdownSlideParser.extractFollowUpQuestions` | 0.55 µs | **24%** |
-| `MarkdownVisualTransformation.highlightMarkdown` | 0.46 µs | **20%** |
-| **Total** | **2.30 µs** | 100% |
+Every doubling of input still doubles every column — `O(n)`, with a halved constant:
+
+| Pass | Per line | Was | Share of keystroke |
+| :--- | ---: | ---: | ---: |
+| `parse` | 0.63 µs | 1.29 µs | **50%** |
+| `highlightMarkdown` (cold) | 0.56 µs | 0.46 µs | **46%** |
+| `extractFollowUpQuestions` | 0.06 µs | 0.55 µs | **5%** |
+| **Total** | **1.22 µs** | 2.30 µs | 100% |
 
 ### Where the budget breaks
 
-The README advertises 120 FPS — an **8.3 ms** frame budget, and a keystroke must fit inside one
-frame or typing visibly lags behind the keyboard.
+| Target | Budget | Breaks at | Was |
+| :--- | ---: | ---: | ---: |
+| 120 FPS | 8.3 ms | **~6,800 lines** | ~3,600 |
+| 60 FPS | 16.7 ms | **~13,700 lines** | ~7,200 |
 
-| Target | Budget | Breaks at |
-| :--- | ---: | ---: |
-| 120 FPS | 8.3 ms | **~3,600 lines** |
-| 60 FPS | 16.7 ms | **~7,200 lines** |
+**The ceiling has roughly doubled.** The 886-line reference deck now costs ~1.08 ms, and a
+document has to reach around 6,800 lines before a keystroke stops fitting in a 120 FPS frame.
 
-For calibration: the 886-line reference deck is a real 60-slide conference talk and sits at
-~2.0 ms, comfortably inside budget. A book chapter, a long RFC, or a merged multi-file project
-deck is where this falls over. **The current design is correctly sized for presentations and
-undersized for documents** — which is precisely the finding that matters when deciding whether to
-reuse this editor as a general markdown editor.
+### What changed in the shape, not just the size
+
+Two shifts matter more than the totals:
+
+- **`extractFollowUpQuestions` has left the conversation.** It was 24% of a keystroke; the PRF-6
+  guard took it to 5%, and on a deck that genuinely uses parking-lot items it still pays the full
+  scan. It is no longer worth optimising for the common case.
+- **The highlighter is now co-equal with the parser** — 46% against 50%, where it used to be 20%
+  against 56%. It also grew slightly per line (0.46 → 0.56 µs), which is the Phase F correctness
+  work: it now asks `FenceRules`, `MathRules`, `HeadingRules` and `ThematicBreakRules` per line
+  instead of holding cheap, wrong opinions of its own.
+
+**This changes what to do next.** Incremental reparse — long treated here as *the* fix — now
+addresses only half the cost. Doing it alone would take a keystroke from 1.22 to roughly
+0.6 µs/line and leave the highlighter as the new dominant term. Any serious attempt at a much
+higher ceiling needs both incremental reparse **and** viewport-windowed highlighting
+([Recommendation 4](#4-viewport-windowed-highlighting)).
 
 ---
 
-## Bottleneck 1 — `MarkdownSlideParser.parse` (56%)
+## Bottleneck 1 — `MarkdownSlideParser.parse` (50%)
 
 The whole deck is re-parsed from scratch on **every character typed**. `DeckDocument.replaceAll`
 calls `MarkdownSlideParser.parse(newMarkdown)` unconditionally, and there is no incremental path:
@@ -104,7 +130,7 @@ the single largest remaining item in the codebase's performance story.
 
 ---
 
-## Bottleneck 2 — `extractFollowUpQuestions` (24%)
+## Bottleneck 2 — `extractFollowUpQuestions` (5%, was 24%)
 
 A second full-document scan. The call path is confirmed: `PresentationState.kt:56-58` passes an
 `onChanged` callback into `DeckDocument` that calls `parkingLot.reconcile(combined)`, and
@@ -145,7 +171,7 @@ at 24% of every keystroke it is the largest win available without an ADR.
 
 ---
 
-## Bottleneck 3 — `highlightMarkdown` (20%)
+## Bottleneck 3 — `highlightMarkdown` (46%, was 20%)
 
 Smallest of the three per keystroke, but it has a property the other two do not, covered in the
 next section: it runs far more often.
@@ -254,14 +280,14 @@ Stated explicitly so absence is not read as a clean bill of health.
 
 ## Recommendations, ranked by payoff-to-risk
 
-### 1. Memoize the highlighter on `(text, theme, searchMatches, activeMatchIndex)`
+### 1. Memoize the highlighter ✅ *done — PRF-6*
 **Payoff:** eliminates 100% of caret-move and selection-drag highlighting; 0% of the keystroke
 path. **Risk:** very low — pure function, cache keyed on all inputs.
 The cache must live **outside** the transformation instance (a `remember` at the call site, or an
 object-level LRU), because `EditorWorkspace.kt:661` creates a new instance every composition. Do
 **not** attempt this by remembering `TextFieldValue` — EDT-1 documents why that breaks the caret.
 
-### 2. Pre-scan guard on `extractFollowUpQuestions`
+### 2. Pre-scan guard on `extractFollowUpQuestions` ✅ *done — PRF-6*
 **Payoff:** removes most of 24% of every keystroke on documents with no follow-up items.
 **Risk:** low-to-medium — higher than it looks. The guard must cover **both** extraction paths
 (`<!--` for directives, `-` … `[` for task lists); a `parking-lot:`-only guard silently drops
@@ -270,7 +296,8 @@ coverage, and resolve the path-2 scoping question in Bottleneck 2 first — if p
 section-scoped, the guard and the fix are the same change.
 
 ### 3. Incremental parse
-**Payoff:** the remaining 56%, and the only change that alters the *shape* of the curve rather
+**Payoff:** ~50% of a keystroke — no longer the majority, and no longer sufficient on its own.
+The only change that alters the *shape* of the curve rather
 than its constant. **Risk:** high — touches the COR-1 single-authority invariant and the
 `Slide.sourceLineRange` contract. Requires an ADR and the `DeckDocumentTest` guards.
 Do not attempt this before 1 and 2 are in; they are cheap and they change the ratio this decision
@@ -286,7 +313,7 @@ line a binary search. That prepass caches on the same key as Recommendation 1.
 Both inputs needed are already in scope at the call site: `layout` (`:617`) and `scrollState`
 (`:616`).
 
-### 5. Land the scaling probe
+### 5. Land the scaling probe ✅ *done — `ScalingProbe`, sharing the `Bench` harness*
 The numbers in this document are not currently reproducible from the tree. `PerformanceProbe`
 covers one size; the sweep above does not exist in the repository. If this analysis is going to be
 used to justify Recommendation 3, the sweep should be a committed probe alongside it — the repo's
