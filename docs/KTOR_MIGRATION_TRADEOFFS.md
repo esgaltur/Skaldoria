@@ -1,7 +1,7 @@
 # Ktor vs. hand-rolled sockets — evaluation
 
 **Created:** 2026-08-04
-**Status:** Analysis only — no decision taken. Would supersede parts of [ADR-001](ADR_COMPANION_SERVER_ARCHITECTURE.md) as ADR-002 if accepted.
+**Status:** Analysis only — no decision taken. Would supersede parts of [ADR-001](./adr/001-companion-server-architecture.md) as ADR-002 if accepted.
 **Question asked:** would moving `RemoteCompanionServer` to Ktor eliminate the auth / CORS / routing code and make things simpler?
 
 ---

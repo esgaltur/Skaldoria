@@ -8,7 +8,7 @@
 > has accumulated into a small number of very large types, what that costs today in concrete
 > and measurable terms, and the smallest structural change that removes each cost.
 >
-> It follows the precedent of [ADR-002](./ADR_DIAGRAM_GEOMETRY_ARCHITECTURE.md): prefer the
+> It follows the precedent of [ADR-002](./002-diagram-geometry-architecture.md): prefer the
 > single maintainable solution over a patch, but size the abstraction to the domain and stop
 > there. Several recommendations below are deliberately *"do not introduce a pattern here"* —
 > the language or the existing design already provides the guarantee, and adding a pattern on
@@ -38,7 +38,7 @@
 ### Context
 
 Skaldoria is ~21.5k lines of Kotlin across 97 files, with a 235-test suite that passes. The
-code is unusually well *documented* — [`QUALITY_BASELINE.md`](./QUALITY_BASELINE.md) assigns
+code is unusually well *documented* — [`QUALITY_BASELINE.md`](../QUALITY_BASELINE.md) assigns
 permanent identifiers to invariants and those identifiers appear beside the logic they
 constrain. Nothing in this ADR disputes that work; the invariants are sound and the reasoning
 behind the non-obvious ones is recorded properly.
@@ -417,8 +417,8 @@ the developer's home directory.
   [above](#where-a-pattern-would-be-the-wrong-answer).
 - **Out of scope:** the diagram engine (ADR-002 governs it), theme/colour science (already
   small, pure and tested), and the choice of a hand-rolled server over Ktor (settled in
-  [ADR-001](./ADR_COMPANION_SERVER_ARCHITECTURE.md) and
-  [`KTOR_MIGRATION_TRADEOFFS.md`](./KTOR_MIGRATION_TRADEOFFS.md)).
+  [ADR-001](./001-companion-server-architecture.md) and
+  [`KTOR_MIGRATION_TRADEOFFS.md`](../KTOR_MIGRATION_TRADEOFFS.md)).
 
 ---
 
@@ -471,8 +471,8 @@ Steps 1–4 are worth doing regardless of whether the rest is ever scheduled.
 ---
 
 ### References
-- [`ADR-001: Companion Server Architecture`](./ADR_COMPANION_SERVER_ARCHITECTURE.md) — why the server is hand-rolled; unchanged by this ADR.
-- [`ADR-002: Diagram Geometry Architecture`](./ADR_DIAGRAM_GEOMETRY_ARCHITECTURE.md) — the pure-core boundary this ADR extends.
-- [`QUALITY_BASELINE.md`](./QUALITY_BASELINE.md) — the invariants and identifiers that must survive every extraction.
+- [`ADR-001: Companion Server Architecture`](./001-companion-server-architecture.md) — why the server is hand-rolled; unchanged by this ADR.
+- [`ADR-002: Diagram Geometry Architecture`](./002-diagram-geometry-architecture.md) — the pure-core boundary this ADR extends.
+- [`QUALITY_BASELINE.md`](../QUALITY_BASELINE.md) — the invariants and identifiers that must survive every extraction.
 - `theme/AdaptiveContrastEnforcer.kt`, `theme/ThemePaletteValidator.kt` — the existing in-repo precedent for interface-backed singletons.
 - `core/layout/SlideCanvasFit.kt`, `core/diagram/FlowchartLayoutEngine.kt` — the "pure logic in `core/`, tested" pattern being applied to state and parsing.

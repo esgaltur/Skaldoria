@@ -67,9 +67,9 @@ Two primary architectural dimensions were evaluated:
 ---
 
 ### Related Components
-* [`RemoteCompanionServer.kt`](../src/desktopMain/kotlin/com/skaldoria/remote/RemoteCompanionServer.kt)
-* [`PresentationState.kt`](../src/desktopMain/kotlin/com/skaldoria/state/PresentationState.kt)
-* [`RemoteCompanionServerTest.kt`](../src/desktopTest/kotlin/com/skaldoria/remote/RemoteCompanionServerTest.kt)
+* [`RemoteCompanionServer.kt`](../../src/desktopMain/kotlin/com/skaldoria/remote/RemoteCompanionServer.kt)
+* [`PresentationState.kt`](../../src/desktopMain/kotlin/com/skaldoria/state/PresentationState.kt)
+* [`RemoteCompanionServerTest.kt`](../../src/desktopTest/kotlin/com/skaldoria/remote/RemoteCompanionServerTest.kt)
 
 
 ---
@@ -80,7 +80,7 @@ Two primary architectural dimensions were evaluated:
 
 Ktor was re-evaluated after this ADR, because the security work raised the question of whether a
 framework would carry it more cheaply. Full analysis in
-[KTOR_MIGRATION_TRADEOFFS.md](./KTOR_MIGRATION_TRADEOFFS.md). The conclusion was to stay on
+[KTOR_MIGRATION_TRADEOFFS.md](../KTOR_MIGRATION_TRADEOFFS.md). The conclusion was to stay on
 sockets, but three figures in the table above are overstated and should not be quoted as-is:
 
 | Original claim | Measured |

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Roadmap and delivery work. The candidate feature set is catalogued in
 [`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md); the connectivity design is
-[ADR-005](./docs/ADR_COMPANION_LINK_ESTABLISHMENT.md).
+[ADR-005](./docs/adr/005-companion-link-establishment.md).
 Test suite: **235 to 624 tests** (558 in the app, 66 in `:skaldoria-markdown`), zero compiler warnings.
 
 ### Performance
@@ -109,6 +109,14 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   argument that disagrees with it, rather than honouring the mislabel.
 
 ### Fixed
+- **Two deprecated Compose APIs, found by the new gate on its first run.** The suite was green
+  and this document claimed zero warnings, but `-PwarningsAsErrors` reported
+  `TooltipDefaults.rememberPlainTooltipPositionProvider` (`AppTooltip.kt`) and
+  `LocalClipboardManager` (`ParkingLotView.kt`) — both deprecated by the Compose 1.11.1 line and
+  invisible in a default build. Migrated, not suppressed, per CONTRIBUTING §6. The clipboard one
+  is not a rename: `LocalClipboard.setClipEntry` is a **suspend** call, so the parking-lot export
+  runs in a scope now, and desktop `ClipEntry` wraps an AWT `Transferable` with no text helper —
+  hence one documented, function-scoped `@OptIn(ExperimentalComposeUiApi::class)`.
 - **Code fences lost their language unless the info string had exactly one supported shape.**
   ` ```js {highlight=2} ` and ` ```python title="demo.py" ` are ordinary markdown that every other
   tool accepts. The parser recognised only `language [1,3-5]`, so anything else fell through: the
@@ -206,7 +214,7 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
 
 ### Known gaps
 - Editor ⇄ slide synchronisation and find-result reveal remain open; both wait on the caret
-  foundation in [ADR-004](./docs/ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md) Phase 2.
+  foundation in [ADR-004](./docs/adr/004-editor-sync-and-presentation-hud.md) Phase 2.
 - **No CI runs automatically** — hosted runner minutes are not free, so `.github/workflows/ci.yml`
   is `workflow_dispatch`-only. The project is still verified and released from a developer
   machine: `scripts/verify.ps1` is the gate (both test suites and the zero-warning build), and
@@ -372,7 +380,7 @@ Test suite: **70 to 221 tests**.
   - Multi-threaded executor with automatic port-fallback across 50 ports and ephemeral fallback.
   - CORS preflight (`OPTIONS`) handling and resilient error boundaries. *(The wildcard CORS headers were removed in 1.2.0 - they were a CSRF vector.)*
   - Added `/api/parking-lot/add` endpoint for remote companion integration.
-  - Documented architectural decisions and protocol evaluations in [ADR-001](./docs/ADR_COMPANION_SERVER_ARCHITECTURE.md).
+  - Documented architectural decisions and protocol evaluations in [ADR-001](./docs/adr/001-companion-server-architecture.md).
 
 ---
 

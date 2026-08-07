@@ -242,7 +242,7 @@ $$\text{Contrast Ratio} = \frac{L_1 + 0.05}{L_2 + 0.05} \ge 4.5$$
   JavaScript engine, or network access.
 
 ### 5.5 Remote Companion & Audience Server (FR-REMOTE)
-- **FR-REMOTE-01 (Zero-Dependency Socket Engine):** Built natively on `java.net.ServerSocket` in `java.base` with instant startup (<1ms) and 0 KB external footprint ([ADR-001](./docs/ADR_COMPANION_SERVER_ARCHITECTURE.md)).
+- **FR-REMOTE-01 (Zero-Dependency Socket Engine):** Built natively on `java.net.ServerSocket` in `java.base` with instant startup (<1ms) and 0 KB external footprint ([ADR-001](./docs/adr/001-companion-server-architecture.md)).
 - **FR-REMOTE-02 (Resilient Startup & Fallback):** Daemonized thread pool with multi-port fallback (tries preferred port through $+50$ sequential ports, then ephemeral).
 - **FR-REMOTE-03 (Scoped Access Control):** Two roles with different authority, enforced server-side.
   - **Presenter scope** (`/api/action`, `/api/qa/dismiss`) requires a per-session token: 128-bit

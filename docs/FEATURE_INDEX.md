@@ -49,7 +49,7 @@ are cheap to finish and they are already confusing users, so they outrank most n
 
 **Scope of this document.** Product features only. Internal quality work lives in
 [`REFACTORING_BACKLOG.md`](./REFACTORING_BACKLOG.md); the three current defects live in
-[ADR-004](./ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md) and its
+[ADR-004](./adr/004-editor-sync-and-presentation-hud.md) and its
 [improvement plan](./IMPROVEMENT_PLAN_EDITOR_SYNC_AND_HUD.md).
 
 ---
@@ -415,7 +415,7 @@ report · `AUT-08`/`AUT-09` autocomplete and diagnostics · `DIA-05` nested subg
 
 | ID | Feature | Why not |
 | :--- | :--- | :--- |
-| **AUD-13** | Bluetooth as an application transport | The JVM has no Bluetooth API, so this means three per-platform native integrations — the largest portability regression available to this project, against an ADR-001 decision resting on `java.base`-only portability across six installer formats. Browsers cannot speak RFCOMM at all and Web Bluetooth is Chrome-only and absent from iOS, so the audience portal would require a native mobile app. Topology caps around seven devices against a 200+ NFR. **Bluetooth PAN is not rejected** — it carries IP, the OS owns the radio, and it works with no server change: see `AUD-09` and [ADR-005](./ADR_COMPANION_LINK_ESTABLISHMENT.md). |
+| **AUD-13** | Bluetooth as an application transport | The JVM has no Bluetooth API, so this means three per-platform native integrations — the largest portability regression available to this project, against an ADR-001 decision resting on `java.base`-only portability across six installer formats. Browsers cannot speak RFCOMM at all and Web Bluetooth is Chrome-only and absent from iOS, so the audience portal would require a native mobile app. Topology caps around seven devices against a 200+ NFR. **Bluetooth PAN is not rejected** — it carries IP, the OS owns the radio, and it works with no server change: see `AUD-09` and [ADR-005](./adr/005-companion-link-establishment.md). |
 | — | Native companion mobile app | Would unlock BLE and destroy the feature's premise: the audience portal works *because* it is a URL — no install, no store, no trust decision, no release train. |
 | — | Internet relay / cloud rendezvous for the companion | Inverts the product — a server we operate, an account model, a privacy surface, and a hard internet dependency — and still fails the venue-with-no-network case it is meant to fix. |
 | **OUT-04** | Import from PPTX | PPTX has no clean mapping onto a markdown source of truth. Any importer produces either lossy markdown that disappoints, or a pile of images that defeats the point of the tool. `OUT-03` (Marp/reveal.js) gets the migration benefit at a fraction of the cost, because those formats are already markdown. |
@@ -433,10 +433,10 @@ report · `AUT-08`/`AUT-09` autocomplete and diagnostics · `DIA-05` nested subg
 | [`QUALITY_BASELINE.md`](./QUALITY_BASELINE.md) | Invariants that constrain every feature here. Read the known-limitations table before sizing anything. |
 | [`PERFORMANCE_BASELINE.md`](./PERFORMANCE_BASELINE.md) | What the per-keystroke paths cost, measured. Read it before sizing anything that runs while the user types — and note the incremental-parse item, which is the largest open performance question. |
 | [`FUNCTIONAL_SPECIFICATION.md`](../FUNCTIONAL_SPECIFICATION.md) | What already ships, as `FR-*` requirements. |
-| [`ADR-004`](./ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md) + [plan](./IMPROVEMENT_PLAN_EDITOR_SYNC_AND_HUD.md) | `AUT-02`, `AUT-03`, `AUT-05`, `DEL-02`. |
-| [`ADR-003`](./ADR_GOD_OBJECT_DECOMPOSITION.md) + [`REFACTORING_BACKLOG.md`](./REFACTORING_BACKLOG.md) | Internal quality — the other axis. Several features here get cheaper after it. |
-| [`ADR-001`](./ADR_COMPANION_SERVER_ARCHITECTURE.md) + [Ktor analysis](./KTOR_MIGRATION_TRADEOFFS.md) | Mandatory reading before `AUD-01`. |
-| [`ADR-005`](./ADR_COMPANION_LINK_ESTABLISHMENT.md) | `AUD-08`–`AUD-13`. Companion connectivity when no shared LAN exists. |
+| [`ADR-004`](./adr/004-editor-sync-and-presentation-hud.md) + [plan](./IMPROVEMENT_PLAN_EDITOR_SYNC_AND_HUD.md) | `AUT-02`, `AUT-03`, `AUT-05`, `DEL-02`. |
+| [`ADR-003`](./adr/003-god-object-decomposition.md) + [`REFACTORING_BACKLOG.md`](./REFACTORING_BACKLOG.md) | Internal quality — the other axis. Several features here get cheaper after it. |
+| [`ADR-001`](./adr/001-companion-server-architecture.md) + [Ktor analysis](./KTOR_MIGRATION_TRADEOFFS.md) | Mandatory reading before `AUD-01`. |
+| [`ADR-005`](./adr/005-companion-link-establishment.md) | `AUD-08`–`AUD-13`. Companion connectivity when no shared LAN exists. |
 | [Beamer themes spec](./superpowers/specs/2026-08-04-beamer-like-themes-design.md) | `THM-01`–`THM-04`. |
 
 ---

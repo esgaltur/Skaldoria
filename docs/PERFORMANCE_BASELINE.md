@@ -166,4 +166,4 @@ Stated so nobody reads absence as a clean bill of health:
 | :--- | :--- |
 | [`QUALITY_BASELINE.md`](./QUALITY_BASELINE.md) | `PRF-1`–`PRF-4`, the earlier performance invariants. |
 | [`FEATURE_INDEX.md`](./FEATURE_INDEX.md) | `AUD-01`, the polling transport. |
-| [`ADR-001`](./ADR_COMPANION_SERVER_ARCHITECTURE.md) | Mandatory reading before touching the server's transport. |
+| [`ADR-001`](./adr/001-companion-server-architecture.md) | Mandatory reading before touching the server's transport. |
