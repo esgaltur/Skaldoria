@@ -1,5 +1,6 @@
 package com.skaldoria.ui.components
 
+import com.skaldoria.core.diagram.ParsedDiagram
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
@@ -23,6 +24,8 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import com.skaldoria.core.diagram.FlowchartLayoutEngine
+import androidx.compose.ui.graphics.Color
+import com.skaldoria.core.diagram.DiagramStyling
 import com.skaldoria.core.diagram.FlowchartScene
 import com.skaldoria.theme.PresentationTheme
 import kotlin.math.roundToInt
@@ -77,7 +80,9 @@ fun FlowchartGraphView(
         // 1. Measure every node at its natural size.
         val nodePlaceables = subcompose("nodes") {
             nodes.forEach { node ->
-                Box(Modifier.layoutId(node.id)) { NodeCard(node = node, theme = theme) }
+                Box(Modifier.layoutId(node.id)) {
+                    NodeCard(node = node, theme = theme, style = diagram.styling.forNode(node.id))
+                }
             }
         }.map { it.measure(Constraints()) }
 
@@ -103,7 +108,7 @@ fun FlowchartGraphView(
         val edgePlaceable = subcompose("edges") {
             Canvas(Modifier) {
                 drawSubgraphFrames(scene, theme, measurer)
-                drawFlowchartEdges(scene, theme, measurer)
+                drawFlowchartEdges(scene, theme, measurer, diagram.styling)
             }
         }.first().measure(Constraints.fixed(scene.width, scene.height))
 
@@ -192,11 +197,14 @@ private fun DrawScope.drawSubgraphFrames(
 private fun DrawScope.drawFlowchartEdges(
     scene: FlowchartScene,
     theme: PresentationTheme,
-    measurer: TextMeasurer
+    measurer: TextMeasurer,
+    /** DIA-07: `linkStyle` colours, keyed by declaration order. */
+    styling: DiagramStyling = DiagramStyling.EMPTY
 ) {
-    for (edge in scene.edges) {
-        drawEdgePath(edge, theme)
-        drawEdgeArrowHead(edge, theme)
+    for ((index, edge) in scene.edges.withIndex()) {
+        val stroke = styling.forEdge(index)?.stroke ?: theme.primary
+        drawEdgePath(edge, theme, stroke)
+        drawEdgeArrowHead(edge, theme, stroke)
     }
     for (edge in scene.edges) {
         drawEdgeLabel(edge, theme, measurer)
@@ -206,7 +214,11 @@ private fun DrawScope.drawFlowchartEdges(
 /**
  * Draws the path for an edge with optional dashing.
  */
-private fun DrawScope.drawEdgePath(edge: FlowchartScene.EdgePlacement, theme: PresentationTheme) {
+private fun DrawScope.drawEdgePath(
+    edge: FlowchartScene.EdgePlacement,
+    theme: PresentationTheme,
+    stroke: Color = theme.primary
+) {
     val path = Path().apply {
         moveTo(edge.path.startPoint.x, edge.path.startPoint.y)
         if (edge.path.isHorizontal) {
@@ -221,19 +233,23 @@ private fun DrawScope.drawEdgePath(edge: FlowchartScene.EdgePlacement, theme: Pr
         lineTo(edge.path.endPoint.x, edge.path.endPoint.y)
     }
     val effect = if (edge.isDashed) PathEffect.dashPathEffect(floatArrayOf(8f, 6f)) else null
-    drawPath(path, theme.primary, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f, cap = StrokeCap.Round, pathEffect = effect))
+    drawPath(path, stroke, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f, cap = StrokeCap.Round, pathEffect = effect))
 }
 
 /**
  * Draws the arrowhead at the end of an edge.
  */
-private fun DrawScope.drawEdgeArrowHead(edge: FlowchartScene.EdgePlacement, theme: PresentationTheme) {
+private fun DrawScope.drawEdgeArrowHead(
+    edge: FlowchartScene.EdgePlacement,
+    theme: PresentationTheme,
+    stroke: Color = theme.primary
+) {
     val isForward = if (edge.path.isHorizontal) {
         edge.path.endPoint.x >= edge.path.startPoint.x
     } else {
         edge.path.endPoint.y >= edge.path.startPoint.y
     }
-    drawArrowHead(edge.path.endPoint, if (isForward) 1f else -1f, edge.path.isHorizontal, theme.primary)
+    drawArrowHead(edge.path.endPoint, if (isForward) 1f else -1f, edge.path.isHorizontal, stroke)
 }
 
 /**
