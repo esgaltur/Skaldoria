@@ -122,6 +122,14 @@ data class Slide(
     val customBackground: String? = null,
     val customTransition: SlideTransition? = null,
     /**
+     * DEL-11: how long this slide is budgeted, in seconds, or null to take an even share.
+     *
+     * The pacing model divided the target duration by the slide count, so a title card and a
+     * fifteen-line code walkthrough were allotted the same time — which is why the gauge read
+     * "behind" early in almost every real talk. Declared per slide with `<!-- pace: 90s -->`.
+     */
+    val paceSeconds: Long? = null,
+    /**
      * Inclusive line range in the source markdown that produced this slide.
      *
      * COR-1: slide editing used to re-derive boundaries with its own splitter, which

@@ -59,12 +59,16 @@ enum class NodeShape {
     DATABASE
 }
 
+// DED-10: `isBiDirectional` was declared here and never set by the parser nor read by any
+// renderer — a flag describing support that does not exist. Removed under the rule stated for
+// `NodeShape` directly above: a property exists here only when the parser can actually produce
+// it. Mermaid's `<-->` is not parsed today; if it ever is, the flag comes back with the code
+// that emits and draws it.
 data class DiagramEdge(
     val fromId: String,
     val toId: String,
     val label: String? = null,
-    val isDashed: Boolean = false,
-    val isBiDirectional: Boolean = false
+    val isDashed: Boolean = false
 )
 
 /**

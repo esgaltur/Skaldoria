@@ -49,9 +49,19 @@ In modern technical and executive communication, you are that storyteller:
 - **One-Click Export**: Export the full follow-up checklist to the clipboard as clean Markdown.
 
 ### 2. ⏱️ Algorithmic Speaker Rhythm & Pacing Formula
-- Skaldoria monitors presentation pacing using an algorithmic drift formula:
+- Skaldoria monitors pacing by comparing the clock against the schedule your deck declares:
 
-$$\Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{current}$$
+$$\Delta t = t_{elapsed} - \sum_{k < i_{current}} b_k$$
+
+  where $b_k$ is slide $k$'s budget. **A slide can declare its own** with `<!-- pace: 90s -->`;
+  every slide that does not splits whatever the target duration leaves over. A deck that declares
+  nothing gives each slide an equal share, so this reduces exactly to the original
+  $\Delta t = t_{elapsed} - (T_{target} / N_{total}) \cdot i_{current}$.
+
+- **Why it is a sum and not a division.** The uniform form allots a title card and a fifteen-line
+  code walkthrough the same time. Real decks are quick at the front and slow in the middle, so the
+  gauge read *behind* within the first minute of almost every talk and stayed wrong for the rest
+  of it. Budget the two or three slides you know are slow, and the drift starts meaning something.
 
 - **Live Visual Gauge**:
   - 🟢 **ON TRACK** (Emerald): Within $\pm15\text{s}$ of target pace
@@ -270,6 +280,19 @@ blank panel.
 
 The `id:` is written automatically. It is what lets a question be re-worded, answered, or
 deleted and still be recognised as the same question after a reload.
+
+### Per-Slide Time Budget
+
+```markdown
+<!-- pace: 90s -->
+<!-- pace: 2m -->
+<!-- pace: 1m30s -->
+```
+
+How long this slide is expected to take; `time:` and `budget:` are synonyms. Slides without one
+share whatever the target duration leaves over, so budgeting only the slow slides is enough. If
+the declared budgets exceed the talk's target, the presenter console says so rather than quietly
+rescaling them — `pace: 90s` means ninety seconds.
 
 ### Mathematical Formula (LaTeX)
 ```markdown
