@@ -197,13 +197,16 @@ cd skaldoria
 ./gradlew desktopTest :skaldoria-markdown:test
 ```
 
-There is no CI **for now** — hosted runner minutes cost money, so verification and releases run
-on a developer machine. One command runs everything a CI job would have, both test suites and
-the zero-warning build:
+Verification and releases run on a developer machine. One command runs both test suites and the
+zero-warning build:
 
 ```powershell
 .\scripts\verify.ps1
 ```
+
+**Nothing runs automatically.** `.github/workflows/ci.yml` runs the same two checks on a Linux
+runner, but it is manual-dispatch only — **Actions → CI → Run workflow** — because hosted runner
+minutes cost money and a per-commit trigger spends them whether or not anyone wanted an answer.
 
 ### Packaging Standalone Native Executable
 
