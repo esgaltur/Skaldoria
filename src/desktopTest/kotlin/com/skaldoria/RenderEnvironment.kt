@@ -1,6 +1,5 @@
 package com.skaldoria
 
-import org.junit.Assume
 import java.awt.GraphicsEnvironment
 
 /**
