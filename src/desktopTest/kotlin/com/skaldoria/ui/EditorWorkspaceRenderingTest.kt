@@ -3,6 +3,7 @@ package com.skaldoria.ui
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.unit.Density
+import com.skaldoria.PresentationStateTestBase
 import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.screens.EditorWorkspace
 import kotlinx.coroutines.Job
@@ -27,7 +28,7 @@ import kotlin.test.assertTrue
  * is *published*; only a render can show that the pane in front of the user changed.
  */
 @OptIn(ExperimentalComposeUiApi::class)
-class EditorWorkspaceRenderingTest {
+class EditorWorkspaceRenderingTest : PresentationStateTestBase() {
 
     private val width = 1600
     private val height = 900
@@ -54,7 +55,7 @@ class EditorWorkspaceRenderingTest {
 
     private fun deckState(markdown: String): PresentationState {
         val job = Job().also { backgroundJobs += it }
-        return PresentationState(backgroundContext = job).apply {
+        return presentationState(backgroundContext = job).apply {
             updateMarkdown(markdown)
             showWelcome = false
         }

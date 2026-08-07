@@ -1,5 +1,6 @@
 package com.skaldoria.remote
 
+import com.skaldoria.PresentationStateTestBase
 import com.skaldoria.state.PresentationState
 import java.net.HttpURLConnection
 import kotlin.test.Test
@@ -9,7 +10,7 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-class RemoteCompanionServerTest {
+class RemoteCompanionServerTest : PresentationStateTestBase() {
 
     private fun open(url: String, method: String = "GET", token: String? = null): HttpURLConnection =
         (java.net.URI.create(url).toURL().openConnection() as HttpURLConnection).apply {
@@ -39,7 +40,7 @@ class RemoteCompanionServerTest {
 
     @Test
     fun testServerLifecycleAndApiEndpoints() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(
             """
             # Slide 1
@@ -93,7 +94,7 @@ class RemoteCompanionServerTest {
      */
     @Test
     fun `SEC-3 GET on a write endpoint is rejected and does not mutate state`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown("# One\n\n---\n\n# Two\n\n---\n\n# Three")
 
         withServer(state) { baseUrl ->
@@ -116,7 +117,7 @@ class RemoteCompanionServerTest {
      */
     @Test
     fun `SEC-3 no CORS headers are emitted`() {
-        val state = PresentationState()
+        val state = presentationState()
 
         withServer(state) { baseUrl ->
             for (path in listOf("/", "/audience", "/api/state")) {
@@ -140,7 +141,7 @@ class RemoteCompanionServerTest {
      */
     @Test
     fun `SEC-2 presenter endpoints reject requests without the session token`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown("# One\n\n---\n\n# Two\n\n---\n\n# Three")
 
         withServer(state) { baseUrl ->
@@ -166,7 +167,7 @@ class RemoteCompanionServerTest {
      */
     @Test
     fun `SEC-2 speaker notes are withheld from unauthenticated clients`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(
             """
             # Only Slide
@@ -191,7 +192,7 @@ class RemoteCompanionServerTest {
     /** SEC-2 — a fresh token per session; stopping the server invalidates it. */
     @Test
     fun `SEC-2 session token is regenerated on each start`() {
-        val state = PresentationState()
+        val state = presentationState()
 
         RemoteCompanionServer.start(state, preferredPort = 18888)
         val first = sessionToken()
@@ -208,7 +209,7 @@ class RemoteCompanionServerTest {
     /** SEC-2 — the audience pairing link must never carry the presenter credential. */
     @Test
     fun `SEC-2 audience url carries no token`() {
-        val state = PresentationState()
+        val state = presentationState()
 
         withServer(state) { _ ->
             val token = sessionToken()
@@ -226,7 +227,7 @@ class RemoteCompanionServerTest {
      */
     @Test
     fun `EXP-4 multi-byte request body is read without stalling`() {
-        val state = PresentationState()
+        val state = presentationState()
         val question = "Что насчёт производительности? 🚀 — Grüße"
 
         withServer(state) { baseUrl ->
@@ -252,7 +253,7 @@ class RemoteCompanionServerTest {
     /** SEC-7 — the parser only frames by Content-Length; chunked must be refused, not misread. */
     @Test
     fun `SEC-7 chunked transfer-encoding is rejected`() {
-        val state = PresentationState()
+        val state = presentationState()
 
         withServer(state) { baseUrl ->
             java.net.Socket("127.0.0.1", RemoteCompanionServer.currentPort).use { socket ->
@@ -280,7 +281,7 @@ class RemoteCompanionServerTest {
      */
     @Test
     fun `SEC-1 audience input is JSON-escaped and never rendered as markup`() {
-        val state = PresentationState()
+        val state = presentationState()
         val payload = """<img src=x onerror="alert(1)">"""
         val author = """"><script>alert(2)</script>"""
 

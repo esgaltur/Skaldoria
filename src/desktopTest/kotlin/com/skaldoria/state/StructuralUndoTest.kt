@@ -1,5 +1,6 @@
 package com.skaldoria.state
 
+import com.skaldoria.PresentationStateTestBase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -13,9 +14,9 @@ import kotlin.test.assertTrue
  * stack would repeat the mistake `EditorFindAndReplaceTest` made for find: a green test beside
  * a feature that never reached the screen.
  */
-class StructuralUndoTest {
+class StructuralUndoTest : PresentationStateTestBase() {
 
-    private fun deckOfThree() = PresentationState().apply {
+    private fun deckOfThree() = presentationState().apply {
         updateMarkdown("# Alpha\n\n---\n\n# Beta\n\n---\n\n# Gamma")
     }
 
@@ -71,7 +72,7 @@ class StructuralUndoTest {
     @Test
     fun `undo removes an inserted slide`() {
         val state = deckOfThree()
-        state.insertSlide(0, com.skaldoria.core.models.SlideLayoutType.BIG_QUOTE)
+        state.insertSlide(0, com.skaldoria.markdown.models.SlideLayoutType.BIG_QUOTE)
         assertEquals(4, state.slides.size)
 
         state.undo()

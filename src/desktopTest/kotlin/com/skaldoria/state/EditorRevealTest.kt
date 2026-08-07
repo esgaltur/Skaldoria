@@ -1,6 +1,7 @@
 package com.skaldoria.state
 
 import androidx.compose.ui.text.TextRange
+import com.skaldoria.PresentationStateTestBase
 import com.skaldoria.core.document.SlideSourceLocator
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -15,7 +16,7 @@ import kotlin.test.assertTrue
  * viewport never moved. Nothing here asserts an index. Every test asks whether the editor was
  * *told to go somewhere*, which is the thing the user experiences.
  */
-class EditorRevealTest {
+class EditorRevealTest : PresentationStateTestBase() {
 
     /** A deck long enough that a match near the end is off screen. */
     private fun longDeck(): String = buildString {
@@ -36,7 +37,7 @@ class EditorRevealTest {
 
     @Test
     fun `findNext reveals the match it selected`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(longDeck())
         state.findQuery = "Point 3"
 
@@ -55,7 +56,7 @@ class EditorRevealTest {
 
     @Test
     fun `findPrevious reveals the match it selected`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(longDeck())
         state.findQuery = "Point 3"
 
@@ -71,7 +72,7 @@ class EditorRevealTest {
     fun `a second reveal of the same match still fires`() {
         // A one-match document: the target does not change, so a target-only signal would be
         // indistinguishable from no signal and the second press would do nothing.
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(longDeck())
         state.findQuery = "needle"
         assertEquals(1, state.findMatches.size)
@@ -85,7 +86,7 @@ class EditorRevealTest {
 
     @Test
     fun `typing a query jumps to the first match at or after the caret`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(longDeck())
 
         val caret = state.currentEditorText.indexOf("# Slide 9")
@@ -104,7 +105,7 @@ class EditorRevealTest {
         // The editor and the deck must not disagree about where the user is: jumping the
         // source pane to slide 12 while the preview and filmstrip stay on slide 1 is the same
         // "half a feature" shape as revealing a match you cannot navigate from.
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(longDeck())
         state.findQuery = "Point 2 on slide 9"
         state.findNext()
@@ -116,7 +117,7 @@ class EditorRevealTest {
 
     @Test
     fun `moving the caret publishes no reveal`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(longDeck())
 
         val before = state.editorRevealToken
@@ -131,7 +132,7 @@ class EditorRevealTest {
 
     @Test
     fun `explicit navigation does publish a reveal`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(longDeck())
 
         val afterGoTo = state.editorRevealToken
@@ -149,7 +150,7 @@ class EditorRevealTest {
 
     @Test
     fun `navigation that goes nowhere publishes nothing`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(longDeck())
 
         // Already on the first slide.
@@ -165,7 +166,7 @@ class EditorRevealTest {
 
     @Test
     fun `selecting a slide reveals that slide's source`() {
-        val state = PresentationState()
+        val state = presentationState()
         val markdown = longDeck()
         state.updateMarkdown(markdown)
 
@@ -180,7 +181,7 @@ class EditorRevealTest {
 
     @Test
     fun `every slide in the deck can be revealed and each lands on its own source`() {
-        val state = PresentationState()
+        val state = presentationState()
         val markdown = longDeck()
         state.updateMarkdown(markdown)
 
@@ -199,7 +200,7 @@ class EditorRevealTest {
 
     @Test
     fun `moving the caret into a slide selects it`() {
-        val state = PresentationState()
+        val state = presentationState()
         val markdown = longDeck()
         state.updateMarkdown(markdown)
 
@@ -210,7 +211,7 @@ class EditorRevealTest {
 
     @Test
     fun `follow-caret can be turned off`() {
-        val state = PresentationState()
+        val state = presentationState()
         val markdown = longDeck()
         state.updateMarkdown(markdown)
         state.isFollowCaretEnabled = false
@@ -222,7 +223,7 @@ class EditorRevealTest {
 
     @Test
     fun `alternating navigation and caret movement does not oscillate`() {
-        val state = PresentationState()
+        val state = presentationState()
         val markdown = longDeck()
         state.updateMarkdown(markdown)
 
@@ -249,7 +250,7 @@ class EditorRevealTest {
         // stored — not the field itself. A field that re-seeds a remembered value would still
         // pass here, so the manual script's "type in the middle of a long deck" step is not
         // replaced by this test; it is the floor beneath it.
-        val state = PresentationState()
+        val state = presentationState()
         val markdown = longDeck()
         state.updateMarkdown(markdown)
 
@@ -275,7 +276,7 @@ class EditorRevealTest {
     fun `the editor text is never stored, only derived`() {
         // EDT-1 stated as an assertion: nothing the session holds can outvote the deck. After
         // a whole-document replacement the editor shows the new deck, not a remembered buffer.
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(longDeck())
         state.onEditorSelectionChanged(TextRange(40))
 
@@ -288,7 +289,7 @@ class EditorRevealTest {
 
     @Test
     fun `a selection past the end of a shorter document is clamped, not thrown`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(longDeck())
         state.onEditorSelectionChanged(TextRange(state.currentEditorText.length - 1))
 
@@ -300,7 +301,7 @@ class EditorRevealTest {
 
     @Test
     fun `a reveal target past the end of a shorter document is clamped`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(longDeck())
         state.findQuery = "needle"
         state.findNext()

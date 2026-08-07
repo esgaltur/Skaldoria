@@ -1,7 +1,7 @@
 package com.skaldoria.remote
 
 import com.skaldoria.core.audience.AudienceSession
-import com.skaldoria.core.models.SlideElement
+import com.skaldoria.markdown.models.SlideElement
 import java.net.HttpURLConnection
 import kotlin.test.Test
 import kotlin.test.assertEquals

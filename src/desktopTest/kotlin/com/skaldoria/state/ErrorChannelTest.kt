@@ -1,5 +1,6 @@
 package com.skaldoria.state
 
+import com.skaldoria.PresentationStateTestBase
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -15,7 +16,7 @@ import kotlin.test.assertTrue
  * That is the archetypal god-object symptom: with every field in one bag, the nearest field
  * wins, and a speaker trying to pair a phone would be shown a file-system error.
  */
-class ErrorChannelTest {
+class ErrorChannelTest : PresentationStateTestBase() {
 
     /**
      * Builds a project whose `slides` path is an ordinary **file**, so the manager cannot
@@ -41,7 +42,7 @@ class ErrorChannelTest {
     fun `a failed slide-file creation does not populate the companion server error`() {
         val root = brokenProjectRoot()
         try {
-            val state = PresentationState()
+            val state = presentationState()
             state.openDeckProject(File(root, "deck.mdpres"))
             assertTrue(state.isProjectMode, "fixture must put the state into project mode")
 
@@ -61,7 +62,7 @@ class ErrorChannelTest {
     fun `a failed slide-file creation is reported on the general error channel`() {
         val root = brokenProjectRoot()
         try {
-            val state = PresentationState()
+            val state = presentationState()
             state.openDeckProject(File(root, "deck.mdpres"))
 
             state.addNewSlideFile("Doomed Slide")
@@ -79,7 +80,7 @@ class ErrorChannelTest {
     fun `clearing the error channel works`() {
         val root = brokenProjectRoot()
         try {
-            val state = PresentationState()
+            val state = presentationState()
             state.openDeckProject(File(root, "deck.mdpres"))
             state.addNewSlideFile("Doomed Slide")
             assertNotNull(state.lastError)
@@ -94,7 +95,7 @@ class ErrorChannelTest {
 
     @Test
     fun `the companion error channel still reports a failed server start`() {
-        val state = PresentationState()
+        val state = presentationState()
         // Port 1 is privileged/unavailable; the fallback sweep is bounded, so if every
         // candidate fails the error must land on the companion channel — not the general one.
         state.toggleRemoteServer(port = 1)

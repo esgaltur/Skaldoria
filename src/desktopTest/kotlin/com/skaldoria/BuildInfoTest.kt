@@ -1,7 +1,6 @@
 package com.skaldoria
 
 import com.skaldoria.export.DeckExporter
-import com.skaldoria.state.PresentationState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -12,7 +11,7 @@ import kotlin.test.assertTrue
  * The version used to exist only in `build.gradle.kts` — written twice, and unreachable
  * from Kotlin — so a running build could not report which version it was.
  */
-class BuildInfoTest {
+class BuildInfoTest : PresentationStateTestBase() {
 
     @Test
     fun `version is generated and well formed`() {
@@ -33,7 +32,7 @@ class BuildInfoTest {
      */
     @Test
     fun `exported html carries the version`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown("# Slide One\n\nBody text")
 
         val html = DeckExporter.generatePrintableHtml(state, autoTriggerPrint = false)

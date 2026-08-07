@@ -17,8 +17,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skaldoria.core.layout.SlideCanvasFit
-import com.skaldoria.core.models.Slide
-import com.skaldoria.core.models.SlideLayoutType
+import com.skaldoria.markdown.models.Slide
+import com.skaldoria.markdown.models.SlideLayoutType
 import com.skaldoria.core.presentation.SlideFooterLabel
 import com.skaldoria.theme.PresentationTheme
 import com.skaldoria.ui.layouts.*

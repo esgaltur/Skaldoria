@@ -9,6 +9,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.unit.Density
+import com.skaldoria.PresentationStateTestBase
 import com.skaldoria.core.presentation.HudVisibility
 import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.screens.FullscreenDeck
@@ -30,7 +31,7 @@ import kotlin.test.assertNotEquals
  */
 @OptIn(ExperimentalComposeUiApi::class, InternalComposeUiApi::class)
 @Ignore
-class FullscreenDeckKeyTest {
+class FullscreenDeckKeyTest : PresentationStateTestBase() {
 
     private fun deck(state: PresentationState) = ImageComposeScene(
         width = 1280,
@@ -62,7 +63,7 @@ class FullscreenDeckKeyTest {
 
     private fun freshState(): PresentationState {
         val job = Job().also { backgroundJobs += it }
-        return PresentationState(backgroundContext = job).apply {
+        return presentationState(backgroundContext = job).apply {
             updateMarkdown("# One\n\n- a\n\n---\n\n# Two\n\n- b\n\n---\n\n# Three\n\n- c\n")
             showWelcome = false
             isFullscreen = true

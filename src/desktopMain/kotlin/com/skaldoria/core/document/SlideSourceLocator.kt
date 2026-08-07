@@ -1,6 +1,6 @@
 package com.skaldoria.core.document
 
-import com.skaldoria.core.models.Slide
+import com.skaldoria.markdown.models.Slide
 
 /**
  * Where a slide lives inside the deck's markdown, as a character offset — and the reverse.

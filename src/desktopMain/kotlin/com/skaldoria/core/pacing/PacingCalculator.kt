@@ -1,6 +1,6 @@
 package com.skaldoria.core.pacing
 
-import com.skaldoria.core.models.PacingStatus
+import com.skaldoria.markdown.models.PacingStatus
 
 /**
  * A fully-resolved pacing readout for one moment in a talk.

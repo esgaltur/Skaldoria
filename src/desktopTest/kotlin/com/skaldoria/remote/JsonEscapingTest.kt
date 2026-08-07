@@ -1,7 +1,7 @@
 package com.skaldoria.remote
 
+import com.skaldoria.PresentationStateTestBase
 import com.skaldoria.core.json.Json
-import com.skaldoria.state.PresentationState
 import java.net.HttpURLConnection
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -21,7 +21,7 @@ import kotlin.test.assertTrue
  * `catch(e){}`, and **both portals stop updating for everyone** until that question is
  * dismissed — from a single crafted submission.
  */
-class JsonEscapingTest {
+class JsonEscapingTest : PresentationStateTestBase() {
 
     private fun open(url: String, method: String = "GET", token: String? = null): HttpURLConnection =
         (java.net.URI.create(url).toURL().openConnection() as HttpURLConnection).apply {
@@ -94,7 +94,7 @@ class JsonEscapingTest {
 
     @Test
     fun `a control character in an audience question cannot corrupt the state feed`() {
-        val state = PresentationState()
+        val state = presentationState()
         RemoteCompanionServer.start(state, preferredPort = 18899)
         try {
             val base = "http://127.0.0.1:${RemoteCompanionServer.currentPort}"
@@ -119,7 +119,7 @@ class JsonEscapingTest {
 
     @Test
     fun `a quote in an audience question cannot break out of its JSON string`() {
-        val state = PresentationState()
+        val state = presentationState()
         RemoteCompanionServer.start(state, preferredPort = 18899)
         try {
             val base = "http://127.0.0.1:${RemoteCompanionServer.currentPort}"

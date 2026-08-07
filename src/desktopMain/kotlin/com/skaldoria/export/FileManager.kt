@@ -1,6 +1,6 @@
 package com.skaldoria.export
 
-import com.skaldoria.core.models.SlideElement
+import com.skaldoria.markdown.models.SlideElement
 import com.skaldoria.state.PresentationState
 import java.awt.FileDialog
 import java.awt.Frame

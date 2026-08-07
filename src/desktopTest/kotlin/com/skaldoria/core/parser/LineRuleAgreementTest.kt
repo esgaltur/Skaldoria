@@ -1,6 +1,7 @@
 package com.skaldoria.core.parser
 
-import com.skaldoria.core.models.SlideElement
+import com.skaldoria.markdown.models.SlideElement
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.ui.editor.MarkdownVisualTransformation
 import kotlin.test.Test

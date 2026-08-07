@@ -31,7 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.skaldoria.core.models.SlideLayoutType
+import com.skaldoria.markdown.models.SlideLayoutType
 import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.components.*
 import com.skaldoria.ui.editor.MarkdownVisualTransformation

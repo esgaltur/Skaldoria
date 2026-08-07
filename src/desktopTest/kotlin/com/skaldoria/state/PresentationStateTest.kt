@@ -1,5 +1,6 @@
 package com.skaldoria.state
 
+import com.skaldoria.PresentationStateTestBase
 import com.skaldoria.core.models.AnnotationStroke
 import com.skaldoria.theme.BuiltinThemes
 import kotlin.test.Test
@@ -7,11 +8,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class PresentationStateTest {
+class PresentationStateTest : PresentationStateTestBase() {
 
     @Test
     fun testNavigationAndClamping() {
-        val state = PresentationState(
+        val state = presentationState(
             initialMarkdown = """
                 # Slide 1
                 ---
@@ -61,7 +62,7 @@ class PresentationStateTest {
 
     @Test
     fun testEditorFontSizeScaling() {
-        val state = PresentationState()
+        val state = presentationState()
         assertEquals(14, state.editorFontSize)
 
         state.increaseEditorFontSize()
@@ -79,7 +80,7 @@ class PresentationStateTest {
 
     @Test
     fun testPresenterAndFullscreenToggles() {
-        val state = PresentationState()
+        val state = presentationState()
         assertFalse(state.isFullscreen)
         assertFalse(state.isPresenterModeActive)
 
@@ -98,7 +99,7 @@ class PresentationStateTest {
 
     @Test
     fun testThemeAssignment() {
-        val state = PresentationState()
+        val state = presentationState()
         assertEquals("Skaldoria Dark", state.currentTheme.name)
 
         state.currentTheme = BuiltinThemes.CyberMidnight
@@ -108,7 +109,7 @@ class PresentationStateTest {
 
     @Test
     fun testLaserAndPenToggles() {
-        val state = PresentationState()
+        val state = presentationState()
         assertFalse(state.isLaserPointerActive)
         assertFalse(state.isPenDrawingActive)
 
@@ -123,7 +124,7 @@ class PresentationStateTest {
 
     @Test
     fun testAnnotationsManagement() {
-        val state = PresentationState()
+        val state = presentationState()
         assertEquals(0, state.currentSlideStrokes.size)
 
         val stroke = AnnotationStroke(points = emptyList())
@@ -140,7 +141,7 @@ class PresentationStateTest {
 
     @Test
     fun testTargetDurationAndPacingCalculations() {
-        val state = PresentationState(
+        val state = presentationState(
             initialMarkdown = """
                 # Slide 1
                 ---
@@ -153,7 +154,7 @@ class PresentationStateTest {
         )
 
         assertEquals(4, state.slides.size)
-        assertEquals(com.skaldoria.core.models.PacingStatus.OFF, state.pacingStatus)
+        assertEquals(com.skaldoria.markdown.models.PacingStatus.OFF, state.pacingStatus)
 
         // Set target talk duration: 20 minutes = 1200 seconds -> 300s per slide
         state.setTargetDuration(20)
@@ -173,7 +174,7 @@ class PresentationStateTest {
 
     @Test
     fun testCorporateThemeUnlocking() {
-        val state = PresentationState()
+        val state = presentationState()
         assertFalse(state.isCorporateThemeUnlocked)
         assertEquals(4, state.availableThemes.size)
         assertFalse(state.availableThemes.any { it.id == "deutsche-borse" })

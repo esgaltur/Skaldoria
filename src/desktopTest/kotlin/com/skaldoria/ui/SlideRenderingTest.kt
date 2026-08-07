@@ -3,8 +3,8 @@ package com.skaldoria.ui
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.unit.Density
-import com.skaldoria.core.models.SlideLayoutType
-import com.skaldoria.core.parser.MarkdownSlideParser
+import com.skaldoria.markdown.models.SlideLayoutType
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.ui.components.SlideSurface
 import java.io.File

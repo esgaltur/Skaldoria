@@ -1,6 +1,6 @@
 # Quality Baseline
 
-**Version:** 1.4.0 · **Last reviewed:** 2026-08-06 · **Suite:** 588 tests, 0 failures
+**Version:** 1.5.0 · **Last reviewed:** 2026-08-07 · **Suite:** 619 tests, 0 failures
 
 This document is the reference for the invariants this codebase holds, established during a
 systematic pre-release review of `src/desktopMain`. Every entry has a stable identifier, and
@@ -84,6 +84,7 @@ Entries without a **Rationale** are self-evident and need none.
 | COR-11 | Config | Persistence has one injection point; the suite never writes to the real home | `ConfigStorageLocationTest` |
 | COR-12 | Companion | JSON string encoding escapes the whole C0 range | `JsonEscapingTest` |
 | COR-13 | Search | Slide search covers every `SlideElement` variant | `SlideSearchTest` |
+| COR-14 | Config | A test's `PresentationState` is disposed before the next test runs | `PresentationStateDisposalTest` |
 | EXP-1 | Export | Exported colours match the source theme | `CharacterizationTest` |
 | EXP-2 | Export | Exported HTML cannot be broken out of by content | `CharacterizationTest` |
 | EXP-3 | Export | Every slide element reaches the image export | — |
@@ -606,6 +607,38 @@ remember to redirect.
 
 **Guard.** `ConfigStorageLocationTest` — asserts the suite's root is not the real home, and that
 writes follow the configured root.
+
+---
+
+### COR-14 — A test's `PresentationState` does not outlive the test
+
+**Invariant.** Every `PresentationState` a test creates is disposed before the next test starts.
+Tests obtain one from `PresentationStateTestBase.presentationState()`, which tracks it and
+disposes it in `@AfterTest`; constructing one directly anywhere in `src/desktopTest` is a failure.
+
+**Rationale.** COR-11 stopped the suite writing to the developer's home. It did not stop the suite
+writing to *itself*. A mutation schedules a debounced draft save (`DRAFT_SAVE_DEBOUNCE_MS`, 750 ms)
+on that instance's own scope, and `dispose()` is the only thing that cancels it; the whole suite
+shares one JVM and one draft file. An undisposed instance's save therefore lands inside whatever
+test is running 750 ms later, replacing the draft between another test's write and its assertion.
+It blocked two builds through `DraftRecoveryTest`, and `ConfigManagerTest` reads the same file with
+no protection at all. Because the landing point depends on timing, the failure moves as the suite
+reorders and never presents the same way twice.
+
+The earlier mitigation — `Thread.sleep(DRAFT_SAVE_DEBOUNCE_MS + 250)` in `DraftRecoveryTest` —
+made one symptom deterministic without removing the cause, and left every other reader of that
+file exposed.
+
+**Why the guard is structural.** Disposal by convention had already been tried and had already
+decayed: `MARKDOWN_UNIFICATION_PLAN.md` recorded 15 leaking files, and by the time the defect was
+fixed there were 18 of 23, every addition made by someone who did not know the rule existed. A
+base class alone would still be opt-in, so the guard forbids the constructor rather than asking
+for the base class — the same shape as DED-7 and SEC-8, where the policy is derived from a
+declaration instead of being restated at each site.
+
+**Guard.** `PresentationStateDisposalTest` — scans the test sources and fails on any direct
+construction outside `PresentationStateTestBase`; a second case asserts the scan actually reaches
+the sources, so a moved source set cannot make it pass vacuously.
 
 ---
 

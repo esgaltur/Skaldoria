@@ -1,6 +1,6 @@
 package com.skaldoria.export
 
-import com.skaldoria.state.PresentationState
+import com.skaldoria.PresentationStateTestBase
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -15,9 +15,9 @@ import kotlin.test.assertTrue
  * Both are now rendered by the application itself at export time and embedded as images, so
  * the exported file carries no third-party script at all.
  */
-class OfflineHtmlExportTest {
+class OfflineHtmlExportTest : PresentationStateTestBase() {
 
-    private fun deckWithMathAndDiagram() = PresentationState().apply {
+    private fun deckWithMathAndDiagram() = presentationState().apply {
         updateMarkdown(
             """
             # Core Equation
@@ -73,7 +73,7 @@ class OfflineHtmlExportTest {
         // EXP-2 sanitises URLs but does not forbid them. The author choosing to reference a
         // remote image is their decision; shipping a CDN dependency they never asked for is
         // not the same thing.
-        val state = PresentationState().apply {
+        val state = presentationState().apply {
             updateMarkdown("# Visual\n\n![Chart](https://example.com/chart.png)\n")
         }
         val html = DeckExporter.generatePrintableHtml(state, autoTriggerPrint = false)
@@ -83,7 +83,7 @@ class OfflineHtmlExportTest {
 
     @Test
     fun `a deck with neither maths nor diagrams still exports`() {
-        val state = PresentationState().apply {
+        val state = presentationState().apply {
             updateMarkdown("# Plain\n\n- One\n- Two\n")
         }
         val html = DeckExporter.generatePrintableHtml(state, autoTriggerPrint = false)
@@ -96,7 +96,7 @@ class OfflineHtmlExportTest {
     fun `EXP-2 escaping still holds`() {
         // Regression guard: the element branches were rewritten, so the escaping invariant
         // is re-asserted rather than assumed.
-        val state = PresentationState().apply {
+        val state = presentationState().apply {
             updateMarkdown("# Title\n\n- <script>alert('x')</script>\n")
         }
         val html = DeckExporter.generatePrintableHtml(state, autoTriggerPrint = false)

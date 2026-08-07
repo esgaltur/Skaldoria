@@ -1,6 +1,6 @@
 package com.skaldoria.core.deck
 
-import com.skaldoria.core.models.SlideLayoutType
+import com.skaldoria.markdown.models.SlideLayoutType
 
 /**
  * Starter markdown for each slide layout, used by "add slide".

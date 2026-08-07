@@ -1,7 +1,7 @@
 package com.skaldoria.core.search
 
-import com.skaldoria.core.models.Slide
-import com.skaldoria.core.models.SlideElement
+import com.skaldoria.markdown.models.Slide
+import com.skaldoria.markdown.models.SlideElement
 
 /**
  * Full-text search across a deck, for the command palette.
