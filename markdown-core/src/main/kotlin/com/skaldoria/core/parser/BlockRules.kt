@@ -82,9 +82,15 @@ internal val BLOCK_RULES: List<BlockRule> = listOf(
  * "background: dark blue" cannot be swallowed as configuration.
  */
 internal object DirectiveRule : BlockRule {
-    private fun find(line: String, context: SectionContext) =
-        MarkdownSlideParser.DIRECTIVE_COMMENT_REGEX.find(line)
+    private fun find(line: String, context: SectionContext): MatchResult? {
+        // PRF-7: every directive form — comment or bare line — needs a colon. This rule is first
+        // in the chain, so *every* line in the deck pays it, and without the guard that is two
+        // `Regex.find` calls per ordinary prose line.
+        if (!line.contains(':')) return null
+
+        return MarkdownSlideParser.DIRECTIVE_COMMENT_REGEX.find(line)
             ?: if (!context.hasTitle) MarkdownSlideParser.DIRECTIVE_LINE_REGEX.find(line) else null
+    }
 
     override fun matches(line: String, context: SectionContext) = find(line, context) != null
 
@@ -105,8 +111,9 @@ internal object DirectiveRule : BlockRule {
 }
 
 internal object NoteCommentRule : BlockRule {
+    // PRF-7: the pattern requires an HTML comment, so `<!--` is a cheap prerequisite.
     override fun matches(line: String, context: SectionContext) =
-        MarkdownSlideParser.NOTE_COMMENT_REGEX.containsMatchIn(line)
+        line.contains("<!--") && MarkdownSlideParser.NOTE_COMMENT_REGEX.containsMatchIn(line)
 
     override fun consume(line: String, raw: String, context: SectionContext) {
         MarkdownSlideParser.NOTE_COMMENT_REGEX.find(line)?.let { context.notes.add(it.groupValues[1]) }
@@ -116,8 +123,9 @@ internal object NoteCommentRule : BlockRule {
 }
 
 internal object NoteQuoteRule : BlockRule {
+    // PRF-7: the pattern is anchored at `>`, so the first character decides.
     override fun matches(line: String, context: SectionContext) =
-        MarkdownSlideParser.NOTE_QUOTE_REGEX.containsMatchIn(line)
+        line.startsWith(">") && MarkdownSlideParser.NOTE_QUOTE_REGEX.containsMatchIn(line)
 
     override fun consume(line: String, raw: String, context: SectionContext) {
         MarkdownSlideParser.NOTE_QUOTE_REGEX.find(line)?.let { context.notes.add(it.groupValues[1]) }
@@ -257,7 +265,15 @@ internal object ListRule : BlockRule {
     private val BULLET = Regex("""^[-*+]\s+(.+)$""")
     private val NUMBERED = Regex("""^\d+\.\s+(.+)$""")
 
-    private fun find(line: String) = BULLET.find(line) ?: NUMBERED.find(line)
+    private fun find(line: String): MatchResult? {
+        // PRF-7: both patterns are anchored, so the first character decides. Prose reaches this
+        // rule having already failed several others, and it would otherwise pay two `Regex.find`
+        // calls to learn what one char comparison answers.
+        val first = line.firstOrNull() ?: return null
+        if (first != '-' && first != '*' && first != '+' && !first.isDigit()) return null
+
+        return BULLET.find(line) ?: NUMBERED.find(line)
+    }
 
     override fun matches(line: String, context: SectionContext) = find(line) != null
 
@@ -284,8 +300,10 @@ internal object QuoteRule : BlockRule {
 }
 
 internal object ImageRule : BlockRule {
+    // PRF-7: `![` must appear somewhere for the pattern to match at all. `indexOf` on a short
+    // literal is far cheaper than running the regex over the whole line.
     override fun matches(line: String, context: SectionContext) =
-        MarkdownSlideParser.IMAGE_REGEX.containsMatchIn(line)
+        line.contains("![") && MarkdownSlideParser.IMAGE_REGEX.containsMatchIn(line)
 
     override fun consume(line: String, raw: String, context: SectionContext) {
         MarkdownSlideParser.IMAGE_REGEX.find(line)?.let {
@@ -309,7 +327,21 @@ internal object MetricRule : BlockRule {
         context.elements.isEmpty() &&
             // A block that has not been flushed yet is still content; see hasPendingBlocks.
             !context.hasPendingBlocks &&
+            startsLikeMetric(line) &&
             MarkdownSlideParser.METRIC_REGEX.containsMatchIn(line)
+
+    /**
+     * PRF-7: the cheapest possible reject for the most expensive pattern in the chain.
+     *
+     * `METRIC_REGEX` is anchored and begins with a five-way alternation, so only a sign, a digit
+     * or a currency symbol can start a match. Ordinary prose reaching this rule would otherwise
+     * pay that alternation in full, immediately before `ParagraphRule` accepts it anyway.
+     */
+    private fun startsLikeMetric(line: String): Boolean {
+        val first = line.firstOrNull() ?: return false
+        return first.isDigit() || first == '+' || first == '-' || first == '~' ||
+            first == '$' || first == '€' || first == '£'
+    }
 
     override fun consume(line: String, raw: String, context: SectionContext) {
         MarkdownSlideParser.METRIC_REGEX.find(line)?.let {

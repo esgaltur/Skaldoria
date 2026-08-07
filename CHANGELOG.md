@@ -38,7 +38,7 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   and checkbox task lists — because the obvious `parking-lot:`-only check would have silently
   dropped every checkbox-derived item.
 
-  Together: **~2.4 ms to ~1.63 ms per keystroke** on an 886-line deck.
+  Together with PRF-7: **~2.4 ms to ~1.08 ms per keystroke** on an 886-line deck.
 
 - **The benchmark itself was unreliable, and that is the finding worth keeping.**
   `PerformanceProbe` timed a single pass and discarded every result. Back-to-back runs of an

@@ -39,18 +39,45 @@ drawn.
 
 | Path | Runs on | Cost |
 | :--- | :--- | ---: |
-| `MarkdownSlideParser.parse` | every keystroke | 1.10 ms |
+| `MarkdownSlideParser.parse` | every keystroke | 560 µs |
 | `highlightMarkdown` — **cache hit** | every caret move, selection drag, recomposition | **1 µs** |
-| `highlightMarkdown` — cold | every keystroke | 515 µs |
+| `highlightMarkdown` — cold | every keystroke | 490 µs |
 | `extractFollowUpQuestions` — **guarded** | every keystroke, deck with no follow-ups | **31 µs** |
-| `extractFollowUpQuestions` — full scan | every keystroke, deck with follow-ups | 583 µs |
+| `extractFollowUpQuestions` — full scan | every keystroke, deck with follow-ups | 536 µs |
 | `SlideSourceLocator.slideIndexAtOffset` | every caret move | 14 µs |
 | `SlideSourceLocator.offsetOfSlideIndex` | every explicit navigation | 30 µs |
 | `DeckProject.slideOwnerFileIndices` | project change only, now cached | 1.10 ms |
 | `DeckDocument.editorTextFor` (project mode) | every composition | < 1 µs |
 
-**A keystroke costs ~1.63 ms** on the 886-line reference deck: `parse` + cold `highlight` +
-guarded follow-up scan. It was ~3.0 ms before PRF-5 and ~2.4 ms before PRF-6.
+**A keystroke costs ~1.08 ms** on the 886-line reference deck: `parse` + cold `highlight` +
+guarded follow-up scan. It was ~3.0 ms before PRF-5, ~2.4 ms before PRF-6 and ~1.63 ms before
+PRF-7.
+
+### PRF-7 — first-character rejection in the rule chain
+
+`BLOCK_RULES` runs up to 16 `matches` calls before an ordinary prose line reaches `ParagraphRule`,
+and eight of those were regex operations. Every one of them was answering a question the first
+character of the line already settled, because the patterns are anchored or require a literal that
+is trivially searched for:
+
+| Rule | Cheap prerequisite added |
+| :--- | :--- |
+| `DirectiveRule` | a `:` must be present — and this rule is **first**, so every line paid two `Regex.find` calls |
+| `NoteCommentRule`, `HtmlCommentRule` | `<!--` |
+| `NoteQuoteRule` | first char `>` |
+| `ListRule` | first char `-`, `*`, `+` or a digit — was two regexes |
+| `ImageRule` | `![` |
+| `MetricRule` | first char is a sign, digit or currency symbol — the most expensive pattern in the chain, sitting immediately before the fallback |
+
+**`parse` halved: 1.10 ms → ~560 µs.** Reproduced across three runs.
+
+Each guard is a strict *superset* of what its pattern can match, so no rule accepts less than it
+did and **the chain order is untouched** — which matters, because that order is load-bearing and
+asserted by `BlockRuleOrderTest`.
+
+The same shape had already appeared twice: `HeadingRules` and `ThematicBreakRules` got first-char
+rejects in Phase F, for correctness reasons rather than speed, and that alone took `parse` from
+1.25 ms to 1.10 ms. This is that observation applied deliberately to the rest of the chain.
 
 **A caret move costs ~15 µs** — `slideIndexAtOffset` plus a memo hit. It previously re-highlighted
 the entire document, because `VisualTransformation.filter()` runs on every recomposition rather
@@ -108,7 +135,7 @@ file, which is a defect this project has already shipped once. Four invalidation
 
 | Cost | Why it is still there |
 | :--- | :--- |
-| **`parse` at 1.10 ms per keystroke** | The whole deck is reparsed on every character, and this is now **67% of the keystroke budget** — by far the largest remaining item. Fixing it properly means incremental parsing: reparse the edited slide, reuse the rest. That changes the contract `Slide.sourceLineRange` and COR-1 rest on, so it is a design change with an ADR, not a micro-optimisation. `SlideSourceRangeTest` was written to be the safety net for exactly this. |
+| **`parse` at ~560 µs per keystroke** | The whole deck is reparsed on every character. PRF-7 halved the constant; it did not change the shape. Still ~52% of the keystroke budget and the largest remaining item. Fixing it properly means incremental parsing: reparse the edited slide, reuse the rest. That changes the contract `Slide.sourceLineRange` and COR-1 rest on, so it is a design change with an ADR, not a micro-optimisation. `SlideSourceRangeTest` was written to be the safety net for exactly this. |
 | **`extractFollowUpQuestions` at 583 µs on decks that use the feature** | The guard (PRF-6) removes this for decks with no parking-lot items, which is most of them, but a deck that uses the feature still pays a full second scan of the document on every keystroke. Folding it into the main parse pass would remove it entirely. |
 | **`BLOCK_RULES` dispatch** | Up to 16 `matches` calls per line before a plain prose line reaches `ParagraphRule`. The regexes are precompiled, so this is matching cost, not compilation. **Partly addressed sideways:** `HeadingRules` and `ThematicBreakRules` now reject on the first character before touching a regex, which is what took `parse` from 1.25 ms to 1.10 ms. Extending that to the rest of the chain is the obvious next step, but **the order is load-bearing** and asserted by `BlockRuleOrderTest` — read the warnings in `BlockRules.kt` first. |
 | **Companion server polling** | `AUD-01` covers this, and ADR-001 names the trigger for revisiting it: *polling becomes a measured bottleneck*. It has not been measured yet. This probe does not cover the server. |
