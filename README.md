@@ -194,6 +194,8 @@ cd skaldoria
 | <kbd>Ctrl</kbd> + <kbd>K</kbd>                                  | Open Spotlight Command Palette                                                                         |
 | <kbd>Ctrl</kbd> + <kbd>F</kbd> | Find in Slide Source Editor |
 | <kbd>Ctrl</kbd> + <kbd>H</kbd> | Find & Replace in Slide Source Editor |
+| <kbd>F3</kbd> / <kbd>Ctrl</kbd> + <kbd>G</kbd> | Next Match — repeats the last search with the find bar closed |
+| <kbd>Shift</kbd> + <kbd>F3</kbd> / <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> | Previous Match |
 | <kbd>Ctrl</kbd> + <kbd>O</kbd>                                  | Open Markdown File, Directory, or `.mdpres` Project                                                    |
 | <kbd>Ctrl</kbd> + <kbd>S</kbd>                                  | Save Current Slide / Project                                                                           |
 | <kbd>Ctrl</kbd> + <kbd>E</kbd>                                  | Export to Standalone HTML / PDF                                                                        |

@@ -1,6 +1,6 @@
 # Feature Index — Long-Term Product Roadmap
 
-**Version:** 1.2.0 · **Drafted:** 2026-08-06 · **Status:** Living document
+**Version:** 1.3.0 · **Drafted:** 2026-08-06 · **Revised:** 2026-08-07 · **Status:** Living document
 
 The catalogue of what Skaldoria could become. One row per candidate feature, each with a
 permanent identifier, so a feature can be referenced in an issue, a commit, or a code comment
@@ -83,7 +83,40 @@ reading the code rather than the README, and all small once found.
 | :--- | :--- | :--- |
 | **DEL-01** transitions | `SlideTransition` had four values, the parser accepted `transition: zoom`, `DeckProject` persisted it and the TopBar offered a picker — and `FullscreenDeck` hardcoded `fadeIn() togetherWith fadeOut()`. Picking "Zoom Scale" gave you a fade. | `TransitionResolver` + an exhaustive `transitionSpecFor` |
 | **AUT-01** shortcuts | The README documented `Ctrl+E`, `T`, `Home`/`End`, `Backspace`. None was bound — there was no `Key.E`, `Key.T`, `Key.MoveHome`, `Key.MoveEnd` or `Key.Backspace` anywhere in `src/desktopMain`. | All five bound, now guarded by `DocumentedShortcutsTest` |
-| **AUT-03** find reveal | `findNext()` advanced an index; nothing scrolled to the match. The buttons looked dead. **Closed 2026-08-06**, once `AUT-05` laid the caret foundation. | `EditorSession`'s reveal token, guarded by `EditorWorkspaceRenderingTest` — which asserts the *rendered pane moved*, not that a token changed |
+| **AUT-03** find reveal | `findNext()` advanced an index; nothing scrolled to the match. The buttons looked dead. **Closed 2026-08-06** — and reopened the same day without anyone noticing. See the correction directly below. | `EditorSession`'s reveal token; the guard that was supposed to prove it is the subject of the correction |
+
+### The AUT-03 row above was wrong for a day, and the guard is why
+
+**2026-08-07.** The row claimed the fix was proved by a guard that "asserts the *rendered pane
+moved*, not that a token changed". It rendered, and it moved, and **the feature was still
+broken**: in the running application, pressing next match scrolled the source pane by
+**zero pixels** for its entire shipped life. The counter advanced, the filmstrip jumped to the
+right slide, the preview followed — every signal except the pane the user is reading.
+
+The cause was that revealing a match re-lays out the text (the active match restyles), which
+changed a `LaunchedEffect` key, which cancelled the scroll animation the reveal had just
+started; the "already handled" flag had been set before the suspend, so the retry refused.
+Recorded as **EDT-6**.
+
+**Why the render guard could not see it.** `EditorWorkspaceRenderingTest` mutates the state and
+*then* renders into a fresh scene. The reveal therefore always arrives **before the first
+composition**, with nothing yet measured and no previous reveal handled — so there is no
+re-layout to interrupt it. That configuration is unreachable in the UI, where `Ctrl+F` opens the
+bar into a composition that is already running and already measured.
+
+**The lesson this document already carried was not enough.** "Assert the user-visible outcome,
+not the intermediate variable" was satisfied — the guard asserted pixels. The missing half is
+*the state the user is actually in*: *rendering a fresh scene is not driving a live one.*
+`FindRevealScrollTest` keeps one scene open and steps it, and reported `0.0%` movement across
+three consecutive presses before the fix.
+
+**A second defect was hiding behind the first.** Even once scrolled, the match had no caret:
+`MarkdownSourceField` had no `FocusRequester` at all, and an unfocused Compose text field draws
+neither cursor nor selection, so only the focus-independent highlight overlay rendered. Closing
+the bar now returns focus with the caret on the match (**EDT-7**). That half is guarded at state
+level only — an `ImageComposeScene` has no platform text-input session, so `requestFocus()`
+returns cleanly while the field still reports itself unfocused, which no pixel assertion can
+work around. Logged in `RENDERING_STATUS.md` under what the harness cannot see.
 
 ### It reopened once, and took three other features with it
 
@@ -141,7 +174,7 @@ spends in it. It is a single `TextField` with a syntax-highlighting `VisualTrans
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **AUT-01** | Bind the four documented-but-absent shortcuts | ✅ | S | — | `Ctrl+E`, `Home`, `End`, `Backspace`, `T`. `T` is bound in the presentation window only — a bare letter in the studio window would race the markdown editor for the keystroke. |
 | **AUT-02** | Editor ⇄ slide synchronisation | ✅ | M | AUT-05 | Both directions. Selecting a slide reveals its source (`SlideSourceLocator`, EDT-3); moving the caret selects the slide, behind a follow-caret toggle that defaults on (EDT-2). ADR-004 Phases 4–5. |
-| **AUT-03** | Find reveal — scroll the match into view | ✅ | S | AUT-05 | EDT-4. Also: focus returns to the query field after ▲/▼, the bar states its scope, and the first match is taken from the caret rather than from 0. ADR-004 Phase 3. |
+| **AUT-03** | Find reveal — scroll the match into view | ✅ | S | AUT-05 | EDT-4/**EDT-6**/**EDT-7**. Shipped 2026-08-06 and **was broken from the day it shipped until 2026-08-07** — see the correction below. Also: focus returns to the query field after ▲/▼ so Enter keeps cycling, the bar states its scope, the first match is taken from the caret rather than from 0, and closing the bar hands the caret back to the editor on the match (EDT-7). ADR-004 Phase 3. |
 | **AUT-04** | **Undo/redo for structural edits** | ✅ | M | — | `DeckHistory` + snapshot/restore in `PresentationState`. Covers delete, move, duplicate, insert in both single-file and project mode; `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` plus TopBar buttons. Does **not** cover free-text editing (the `TextField` has its own undo). |
 | **AUT-05** | Caret & selection model | ✅ | M | — | `EditorSession` — selection stored, text derived (EDT-1), clamped on change (EDT-5). The pane took ADR-004's **Option B** (`BasicTextField` + explicit `ScrollState` + `onTextLayout`) rather than Option A, so the reveal works while the *find bar* holds focus; this also unblocks AUT-06's gutter, which Option A would not have. |
 | **AUT-06** | Line-number gutter with slide-boundary markers | 📋 | M | AUT-05 | Makes deck structure legible in a long single-file deck. |
@@ -155,6 +188,10 @@ spends in it. It is a single `TextField` with a syntax-highlighting `VisualTrans
 | **AUT-14** | Draggable splitter between editor and preview | 📋 | S | — | |
 | **AUT-15** | Slide-source folding | 🕓 | L | AUT-06 | |
 | **AUT-16** | Multi-caret / column selection | 🕓 | L | AUT-05 | Editor-nerd feature; low value for deck authoring. |
+| **AUT-17** | GFM tables without outer pipes | ✅ | S | — | **Shipped 2026-08-07.** `TableRules` is now the one authority — the parser, the delimiter filter in `flushTable` and the editor's highlighter had three different opinions. `TableRule` recognises a header by the delimiter row that follows it, via a one-line lookahead (`SectionContext.nextLine`). The editor styles the delimiter row but not the header/body of a pipe-less table: it has no lookahead and adding one touches the per-keystroke path, so the asymmetry is pinned in `LineRuleAgreementTest` rather than left to be rediscovered. Original note: | `a \| b` over `---\|---` is ordinary GFM and **neither the parser nor the highlighter handles it** — `TableRule` matches only the separator row, via `contains("-\|-")`, so header and body stay prose and no table is assembled. The two agree, which is why no divergence test caught it; it is a missing feature, not a defect. From `MARKDOWN_UNIFICATION_PLAN.md`. |
+| **AUT-18** | Deck-wide find & replace in project mode | 📋 | M | AUT-03 | Find searches `currentEditorText`, so in per-slide project mode it covers **one file**. The bar says so, which is honest but not a substitute. ADR-004 Phase 6, deferred there and still not a commitment. |
+| **AUT-19** | Find results list — every match, with its slide | 📋 | M | AUT-03 | Stepping ▲/▼ answers "where is the next one"; it never answers "how many, and where". Cheap now that `findMatches` and `SlideSourceLocator` both exist, and it makes a large deck searchable rather than merely steppable. |
+| **AUT-20** | Repeat the last search without the bar (`F3` / `Ctrl+G`) | ✅ | S | AUT-03 | **Shipped 2026-08-07.** `Shift+F3` / `Ctrl+Shift+G` step backwards. A no-op before a first search rather than opening an empty bar. In the README table and guarded by `DocumentedShortcutsTest`. Original note: | Newly sensible: EDT-7 hands the caret back on close, so "close the bar, keep searching" is now a coherent flow instead of a dead end. |
 
 ---
 
@@ -276,13 +313,15 @@ A design proposal already exists:
 
 | ID | Feature | Status | Size | Depends | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **PLT-01** | **CI pipeline** | 🟡 | S | — | `.github/workflows/ci.yml` — compile + test on Linux/Windows/macOS (Xvfb for the headless render guards), with test reports and rendered PNGs uploaded. **The zero-warning job is present but currently vacuous:** this toolchain emits no Kotlin warnings at all — verified by planting an unused local *and* an unused private function and seeing zero `w:` lines, with and without `allWarningsAsErrors`. The gate cannot fire until that is understood. Never executed on a runner. |
-| **PLT-02** | Verify macOS and Linux packaging | 📋 | M | PLT-01 | `.dmg`, `.pkg`, `.deb`, `.rpm` targets are declared and unproven. |
+| **PLT-01** | **CI pipeline** | ❌ | S | — | **Rejected 2026-08-07, owner decision — the project does not want CI.** The workflow was written but never executed on a runner, and was deleted from the tree by `566e4b7` (a commit labelled as a README change; the deletion looks accidental, but the outcome matches the decision, so it stays deleted). The verification it would have automated is now manual and is documented as such: `./gradlew desktopTest :skaldoria-markdown:test` and `./gradlew … -PwarningsAsErrors`. Its one non-obvious finding is preserved in PLT-08. |
+| **PLT-02** | Verify macOS and Linux packaging | 📋 | M | PLT-08 | `.dmg`, `.pkg`, `.deb`, `.rpm` targets are declared and unproven. With PLT-01 rejected this is a manual pass on real machines — and the first attempt found PLT-08 rather than a packaging result. |
 | **PLT-03** | UI localisation | 🕓 | L | — | Every string is inline today. |
 | **PLT-04** | Screen-reader semantics and keyboard-only operation | 📋 | M | — | The project holds itself to WCAG 2.1 AA for *contrast* and has real machinery for it. Contrast is one clause of one guideline; navigability is untested. |
 | **PLT-05** | Crash reporting / diagnostics bundle | 📋 | M | — | Related: `F-03` in the refactoring backlog notes `remoteServerError` is an overloaded error channel. |
-| **PLT-06** | Auto-update | 🕓 | L | PLT-01, PLT-02 | |
+| **PLT-06** | Auto-update | 🕓 | L | PLT-02 | Was gated on PLT-01 too; with CI rejected, a release would be cut and verified by hand. |
 | **PLT-07** | Command palette coverage for every action | 📋 | S | — | The palette exists; whether it reaches all commands should be audited as new features land. |
+| **PLT-08** | **Render guards must skip, not fail, without a display** | ✅ | S | — | **Shipped 2026-08-07.** `RenderEnvironment` skips via a JUnit assumption when `GraphicsEnvironment.isHeadless()`, overridable with `-PskipRenderTests` (forwarded to the forked test JVM, which a bare `-D` is not). The blanket `@Ignore` is gone and **`FullscreenDeckKeyTest`'s 8 tests run again**. Skips report as skipped, never as passed. Original note: | Building the Linux packages under WSL fails the `ImageComposeScene` suites, because there is no display for Skia to target — the reason `FullscreenDeckKeyTest` currently carries a blanket `@Ignore`. That `@Ignore` was added inside an unrelated commit with no note, so **8 passing tests covering the presenter window's entire keyboard are silently inert on developer machines that *do* have a display** — including the guard `FEATURE_INDEX` itself credits with finding that `H`, the arrows, blackout and the clicker were all dead. Replace it with a headless-conditional skip (`GraphicsEnvironment.isHeadless`, or a `skaldoria.skipRenderTests` property) so the guards run wherever they can and stand down where they cannot. |
+| **PLT-09** | A packaging path that does not need a display | ✅ | S | PLT-08 | **Shipped 2026-08-07.** `scripts/build_linux.sh` ran `./gradlew desktopTest` before packaging — the exact command that failed under WSL. It now detects a missing `DISPLAY`/`WAYLAND_DISPLAY`, says so, and passes `-PskipRenderTests`. Documented in CONTRIBUTING, including why `@Ignore` is the wrong answer. Original note: | Follows from the same session: producing installers should not require the render suites to run at all. A `-x desktopTest` packaging recipe, or a Gradle task that packages without the graphical guards, documented in CONTRIBUTING. |
 
 ---
 
@@ -301,7 +340,7 @@ editor track.
 
 `DEL-01`/`DEL-10` transitions · `AUT-01` the five missing shortcuts · `DEL-02` HUD visibility ·
 `DEL-08` jump to slide · `DIA-06` diagram footer · `AUT-04` undo/redo · `AUD-09` link ranking ·
-`OUT-01` offline HTML export · `PLT-01` CI *(written, never executed)* ·
+`OUT-01` offline HTML export ·
 **`AUT-05` caret foundation · `AUT-03` find reveal · `AUT-02` editor ⇄ slide sync ·
 `AUD-08` presenter clickers**
 
@@ -327,18 +366,24 @@ Suite: **235 → 575 tests**, zero compiler warnings throughout.
 > arrives, an index that advances is not a match that is visible, and a model that parses is
 > not a pixel that is drawn.** Every guard this project adds should end at the user.
 
-### Now — proving the build works off this machine
+### Now — make the guards tell the truth
 
-The editor track is done. What is left in this tier is entirely about trusting the build.
+**Re-planned 2026-08-07.** The previous tier was "prove the build works off this machine" and
+led with CI; CI is now rejected (`PLT-01`). What replaced it is sharper and came out of the same
+week: **three separate guards in this codebase were green while the thing they guard was
+broken or switched off.** That is the risk CI was meant to cover, and CI would not have caught
+any of the three — every one of them passes on a runner too.
 
 | | Item | Note |
 | :--- | :--- | :--- |
-| 1 | **`PLT-01` run CI** | Written but never executed. Push and watch it go green before trusting it — an unrun workflow is a guess. Needs a push, so it is the user's call, not a code change. |
-| 2 | `PLT-02` verify macOS/Linux packaging | Four installer formats are declared and unproven; CI makes this checkable. Needs runners this machine does not have. |
-| 3 | `AUT-06` line-number gutter | Newly cheap: `AUT-05` landed with an explicit `ScrollState` and `onTextLayout`, which is exactly the foundation a gutter needs. Option A would not have provided it. |
+| 1 | **`PLT-08` headless-conditional render guards** | The highest-value item in the document. A blanket `@Ignore` added in an unrelated commit has 8 keyboard tests inert on every machine, to work around a WSL run with no display. Fix the cause and the guards come back everywhere they can run. |
+| 2 | **Audit the render guards for live-composition coverage** | `EditorWorkspaceRenderingTest` mutates-then-renders, so it is structurally blind to any defect that needs an already-running composition — which is how `AUT-03` shipped broken. `FindRevealScrollTest` shows the shape; the other render suites have not been checked. Internal quality, so it belongs in `REFACTORING_BACKLOG.md`, but it gates trust in every ✅ in this document. |
+| 3 | `PLT-09` packaging without a display | Unblocks `PLT-02` on the machine the owner actually packages from. |
+| 4 | `AUT-06` line-number gutter | Newly cheap: `AUT-05` landed with an explicit `ScrollState` and `onTextLayout`, which is exactly the foundation a gutter needs. Option A would not have provided it. |
 
 ### Next — remove the sharpest edges
 
+`AUT-19` find results list · `AUT-20` repeat-search shortcut · `AUT-17` pipe-less GFM tables ·
 `AUT-10` drag-and-drop reordering · `THM-01` font themes · `AUT-12` clipboard image paste ·
 `AUD-10` SoftAP pairing guidance · `MED-02` SVG images · `DEL-04` rehearsal timings ·
 `MED-04` image sizing directives · `AUT-11` formatting shortcuts *(now unblocked — `AUT-05`
@@ -366,6 +411,7 @@ report · `AUT-08`/`AUT-09` autocomplete and diagnostics · `DIA-05` nested subg
 
 | ID | Feature | Why not |
 | :--- | :--- | :--- |
+| **PLT-01** | CI pipeline | **Owner decision, 2026-08-07.** Not wanted. The row in [PLT](#plt--platform--quality) carries the detail, including what the abandoned workflow had discovered and where that finding now lives (`PLT-08`). Verification stays manual and is written down rather than automated. |
 | **AUD-13** | Bluetooth as an application transport | The JVM has no Bluetooth API, so this means three per-platform native integrations — the largest portability regression available to this project, against an ADR-001 decision resting on `java.base`-only portability across six installer formats. Browsers cannot speak RFCOMM at all and Web Bluetooth is Chrome-only and absent from iOS, so the audience portal would require a native mobile app. Topology caps around seven devices against a 200+ NFR. **Bluetooth PAN is not rejected** — it carries IP, the OS owns the radio, and it works with no server change: see `AUD-09` and [ADR-005](./ADR_COMPANION_LINK_ESTABLISHMENT.md). |
 | — | Native companion mobile app | Would unlock BLE and destroy the feature's premise: the audience portal works *because* it is a URL — no install, no store, no trust decision, no release train. |
 | — | Internet relay / cloud rendezvous for the companion | Inverts the product — a server we operate, an account model, a privacy surface, and a hard internet dependency — and still fails the venue-with-no-network case it is meant to fix. |

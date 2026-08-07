@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.sp
 import com.skaldoria.markdown.parser.FenceInfo
 import com.skaldoria.markdown.parser.HeadingRules
 import com.skaldoria.markdown.parser.MathRules
+import com.skaldoria.markdown.parser.TableRules
 import com.skaldoria.markdown.parser.ThematicBreakRules
 import com.skaldoria.markdown.parser.FenceRules
 import com.skaldoria.theme.AdaptiveContrastEnforcer
@@ -335,8 +336,10 @@ class MarkdownVisualTransformation(
                     }
 
 
-                    // Table Rows (| ... |)
-                    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+                    // AUT-17: table rows, with or without the outer pipes. Delegated to the
+                    // parser's own grammar so the editor cannot style a table the parser does
+                    // not build — the divergence that FenceRules already fixed for fences.
+                    if (TableRules.isFencedRow(trimmed) || TableRules.isSeparatorRow(trimmed)) {
                         addStyle(
                             SpanStyle(
                                 color = theme.textSecondary,

@@ -81,6 +81,18 @@ internal class SectionContext {
 
     fun addTableLine(line: String) = tableLines.add(line)
 
+    /**
+     * AUT-17: the line after the one being dispatched, or null at the end of the section.
+     *
+     * A table header is only a header because a delimiter row follows it, and nothing else in
+     * the grammar needs to see forward. Rather than give every rule a lookahead parameter, the
+     * parse loop parks it here for the one rule that asks.
+     */
+    var nextLine: String? = null
+
+    /** AUT-17: whether a table is currently accumulating, so continuation rows can be claimed. */
+    val hasOpenTable: Boolean get() = tableLines.isNotEmpty()
+
     fun addMathLine(line: String) = mathLines.add(line)
 
     fun addCodeLine(line: String) = codeLines.add(line)
@@ -177,7 +189,8 @@ internal class SectionContext {
         val headers = splitCells(tableLines[0])
         val rows = tableLines.drop(1)
             // The `|---|---|` separator carries no data.
-            .filterNot { it.trim().replace(Regex("[|:\\-\\s]"), "").isEmpty() }
+            // AUT-17: one authority for what a delimiter row is; see TableRules.
+            .filterNot { TableRules.isSeparatorRow(it) }
             .map { splitCells(it) }
 
         if (headers.isNotEmpty()) elements.add(SlideElement.Table(headers = headers, rows = rows))

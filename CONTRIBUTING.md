@@ -107,8 +107,11 @@ Three inputs are untrusted and must stay that way:
 
 ### Build and Test
 ```bash
-# Run full automated test suite
-./gradlew desktopTest
+# Run full automated test suite (both modules)
+./gradlew desktopTest :skaldoria-markdown:test
+
+# The zero-warning NFR, as CI would enforce it
+./gradlew compileKotlinDesktop compileTestKotlinDesktop -PwarningsAsErrors
 
 # Launch development desktop instance
 ./gradlew run
@@ -116,6 +119,25 @@ Three inputs are untrusted and must stay that way:
 # Verify native packaging
 ./gradlew createDistributable
 ```
+
+### Building without a display (WSL, containers, headless boxes)
+
+The render guards drive real Compose frames through `ImageComposeScene`, which needs a surface
+Skia can target. On a machine with no display they cannot run:
+
+```bash
+./gradlew desktopTest -PskipRenderTests
+```
+
+They are then reported as **skipped**, never as passed, so the suite total visibly drops rather
+than quietly claiming the same coverage. `RenderEnvironment` also detects headlessness on its
+own, so `scripts/build_linux.sh` handles this automatically; the flag is for the case where a
+display exists but rendering still should not be attempted.
+
+**Do not reach for `@Ignore` when a render test fails on a headless box.** That was tried, and it
+disabled 8 keyboard tests on every machine — including the ones where they run fine — to work
+around one environment. A platform problem gets a platform-conditional skip. See `PLT-08` in
+[`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md).
 
 ---
 

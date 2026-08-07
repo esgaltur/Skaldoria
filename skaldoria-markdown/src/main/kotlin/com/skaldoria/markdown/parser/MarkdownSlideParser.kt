@@ -166,8 +166,10 @@ object MarkdownSlideParser {
     ): Slide {
         val context = SectionContext()
 
-        for (raw in lines) {
+        for ((position, raw) in lines.withIndex()) {
             val line = raw.trim()
+            // AUT-17: a table header is only a header because a delimiter row follows it.
+            context.nextLine = lines.getOrNull(position + 1)?.trim()
             val rule = BLOCK_RULES.firstOrNull { it.matches(line, context) } ?: continue
             if (rule.flushesPendingBlocks) context.flushPending()
             rule.consume(line, raw, context)

@@ -24,8 +24,23 @@ mkdir -p dist
 rm -f dist/*
 
 # 2. Run Automated Verification Tests
+#
+# PLT-09: packaging must not require a display. The render guards drive real Compose frames
+# through ImageComposeScene, which needs a surface Skia can target — absent under WSL, in a
+# container, and on any headless build box. Without this the *packaging* run fails on a
+# graphics problem that says nothing about the packages being built, which is what made an
+# earlier attempt abandon the suite entirely with a blanket @Ignore (see PLT-08).
+#
+# RenderEnvironment already detects headlessness on its own; the flag is passed explicitly so
+# the reason appears in the log rather than being inferred from a skip count.
 echo -e "\n[1/5] 🧪 Running test suite..."
-./gradlew desktopTest --no-daemon
+RENDER_FLAG=""
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    echo "  -> No DISPLAY/WAYLAND_DISPLAY: render guards will be skipped, not failed."
+    echo "     Run this on a machine with a display to exercise them (see docs/RENDERING_STATUS.md)."
+    RENDER_FLAG="-PskipRenderTests"
+fi
+./gradlew desktopTest :skaldoria-markdown:test --no-daemon ${RENDER_FLAG}
 echo "  -> All tests passed successfully!"
 
 # 3. Build Linux Distributable & Universal JAR

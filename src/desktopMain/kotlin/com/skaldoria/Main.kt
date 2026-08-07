@@ -119,6 +119,10 @@ fun main() = application {
                 AppCommands.COMMAND_PALETTE -> state.isCommandPaletteOpen = !state.isCommandPaletteOpen
                 AppCommands.FIND -> state.toggleFind(withReplace = false)
                 AppCommands.REPLACE -> state.toggleFind(withReplace = true)
+                // AUT-20: repeat the search with the bar shut. Coherent only since EDT-7 —
+                // closing the bar now leaves the caret on the match instead of nowhere.
+                AppCommands.FIND_NEXT -> state.repeatFindNext()
+                AppCommands.FIND_PREVIOUS -> state.repeatFindPrevious()
                 AppCommands.PRESENT -> state.startPresenting(presenterMode = false)
                 else -> {
                     // Escape is only ours while the find bar is up; otherwise it belongs to

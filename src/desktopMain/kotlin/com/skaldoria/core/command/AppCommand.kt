@@ -127,6 +127,19 @@ object AppCommands {
     val EXPORT = AppCommand("studio.export", "Export to HTML / PDF", setOf(CommandScope.STUDIO), listOf(Shortcut("E", ctrl = true)))
     val FIND = AppCommand("studio.find", "Find in Slide Source", setOf(CommandScope.STUDIO), listOf(Shortcut("F", ctrl = true)))
     val REPLACE = AppCommand("studio.replace", "Find & Replace", setOf(CommandScope.STUDIO), listOf(Shortcut("H", ctrl = true)))
+
+    // AUT-20: repeat the search without the bar. Declared before FIND_PREVIOUS is irrelevant —
+    // they differ by Shift, which AppCommandsTest already treats as a distinct chord — but the
+    // Shift variant is listed first for the same reason SAVE_AS precedes SAVE: a reader should
+    // see the more specific chord first.
+    val FIND_PREVIOUS = AppCommand(
+        "studio.findPrevious", "Previous Match", setOf(CommandScope.STUDIO),
+        listOf(Shortcut("F3", shift = true), Shortcut("G", ctrl = true, shift = true))
+    )
+    val FIND_NEXT = AppCommand(
+        "studio.findNext", "Next Match", setOf(CommandScope.STUDIO),
+        listOf(Shortcut("F3"), Shortcut("G", ctrl = true))
+    )
     val FONT_INCREASE = AppCommand(
         "studio.fontUp", "Increase Editor Font Size", setOf(CommandScope.STUDIO),
         listOf(Shortcut("Equals", ctrl = true), Shortcut("NumPadAdd", ctrl = true), Shortcut("Plus", ctrl = true))
@@ -150,7 +163,7 @@ object AppCommands {
         NEXT_SLIDE, PREVIOUS_SLIDE, FIRST_SLIDE, LAST_SLIDE, CYCLE_THEME,
         TOGGLE_HUD, BLACKOUT, WHITEOUT, GRID_OVERVIEW,
         LASER_POINTER, PEN_DRAWING, CLEAR_ANNOTATIONS, UNDO_STROKE, EXIT_FULLSCREEN,
-        REDO, UNDO, OPEN, SAVE_AS, SAVE, EXPORT, FIND, REPLACE,
+        REDO, UNDO, OPEN, SAVE_AS, SAVE, EXPORT, FIND, REPLACE, FIND_PREVIOUS, FIND_NEXT,
         FONT_INCREASE, FONT_DECREASE, FONT_RESET, COMMAND_PALETTE, PRESENT
     )
 

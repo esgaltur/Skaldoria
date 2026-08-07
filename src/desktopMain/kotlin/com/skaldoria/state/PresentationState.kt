@@ -414,6 +414,25 @@ class PresentationState(
         revealCurrentMatch()
     }
 
+    /**
+     * AUT-20: `F3` / `Ctrl+G` — step the search without opening the bar.
+     *
+     * A no-op when nothing has been searched for yet, rather than opening an empty bar: the
+     * shortcut means "again", and there is no "again" before a first search. When a query does
+     * exist the match is revealed exactly as ▼ would reveal it, so the two entry points cannot
+     * drift.
+     */
+    fun repeatFindNext() {
+        if (findReplace.matches.isEmpty()) return
+        findNext()
+    }
+
+    /** AUT-20: `Shift+F3` / `Ctrl+Shift+G`. See [repeatFindNext]. */
+    fun repeatFindPrevious() {
+        if (findReplace.matches.isEmpty()) return
+        findPrevious()
+    }
+
     fun replaceCurrent() = findReplace.replaceCurrent()
 
     fun replaceAll() = findReplace.replaceAll()

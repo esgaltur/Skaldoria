@@ -71,6 +71,7 @@ object KeyBindings {
         "NumPadSubtract" to Key.NumPadSubtract,
         "Zero" to Key.Zero,
         "NumPad0" to Key.NumPad0,
+        "F3" to Key.F3,
         "F5" to Key.F5,
         "F11" to Key.F11,
         "B" to Key.B,
