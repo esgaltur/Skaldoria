@@ -1,6 +1,6 @@
 # Performance Baseline
 
-**Version:** 1.0.0 · **Measured:** 2026-08-06 · **Probe:** `PerformanceProbe`
+**Version:** 1.2.0 · **Measured:** 2026-08-07 · **Probe:** `PerformanceProbe` (best of three)
 
 What the hot paths actually cost, measured rather than reasoned about. The numbers below come
 from `PerformanceProbe` on an 886-line, 60-slide deck — the size of a real conference talk.
@@ -14,13 +14,15 @@ from `PerformanceProbe` on an 886-line, 60-slide deck — the size of a real con
 > prints; this document records. If a number here doubles, that is a conversation, not a build
 > failure.
 
-> ⚠️ **The numbers below predate PRF-6 and were produced by a harness now known to be unreliable.**
-> It timed a single pass and discarded every result. Back-to-back runs of an unchanged binary were
-> later shown to vary by **2.2×** on the highlighter benchmark — enough that a doubling here means
-> nothing without a repeat. `PerformanceProbe` now reports the fastest of three passes and routes
-> every result through a sink. **Re-run it before trusting any figure on this page**; see
-> `MARKDOWN_UNIFICATION_PLAN.md`, Phase C, for how three false conclusions were drawn from the old
-> harness before the variance was recognised.
+> **PRF-6 — the harness was replaced, and the numbers below are from the new one.** The original
+> probe timed a *single* pass and discarded every result. Back-to-back runs of an unchanged binary
+> varied by **2.2×** on the highlighter benchmark, and three separate false conclusions were drawn
+> against that noise before it was recognised as noise. `PerformanceProbe` now reports the
+> **fastest of three** passes and routes every result through a sink so nothing can be optimised
+> away. See `MARKDOWN_UNIFICATION_PLAN.md`, Phase C.
+>
+> Minimum rather than mean, because every interference source — JIT recompilation, GC, scheduling
+> — makes a pass slower and none makes it faster.
 
 ---
 
@@ -33,20 +35,35 @@ drawn.
 
 ---
 
-## Measured, before and after
+## Measured — current, on the new harness
 
-| Path | Runs on | Before | After |
-| :--- | :--- | ---: | ---: |
-| `MarkdownSlideParser.parse` | every keystroke | 1.54 ms | 1.49 ms *(unchanged)* |
-| `MarkdownVisualTransformation.highlightMarkdown` | every composition of the editor | 896 µs | **561 µs** |
-| `MarkdownSlideParser.extractFollowUpQuestions` | every keystroke | 544 µs | 547 µs *(unchanged)* |
-| `SlideSourceLocator.slideIndexAtOffset` | every caret move | 51 µs | **15 µs** |
-| `SlideSourceLocator.offsetOfSlideIndex` | every explicit navigation | 115 µs | **41 µs** |
-| `DeckProject.slideOwnerFileIndices` | — | 1.09 ms | 1.09 ms *(unchanged)* |
-| `DeckDocument.editorTextFor` (project mode) | **every composition** | 1.09 ms | **1 µs** |
+| Path | Runs on | Cost |
+| :--- | :--- | ---: |
+| `MarkdownSlideParser.parse` | every keystroke | 1.10 ms |
+| `highlightMarkdown` — **cache hit** | every caret move, selection drag, recomposition | **1 µs** |
+| `highlightMarkdown` — cold | every keystroke | 515 µs |
+| `extractFollowUpQuestions` — **guarded** | every keystroke, deck with no follow-ups | **31 µs** |
+| `extractFollowUpQuestions` — full scan | every keystroke, deck with follow-ups | 583 µs |
+| `SlideSourceLocator.slideIndexAtOffset` | every caret move | 14 µs |
+| `SlideSourceLocator.offsetOfSlideIndex` | every explicit navigation | 30 µs |
+| `DeckProject.slideOwnerFileIndices` | project change only, now cached | 1.10 ms |
+| `DeckDocument.editorTextFor` (project mode) | every composition | < 1 µs |
 
-A keystroke in a single-file deck went from roughly **3.0 ms to 2.6 ms**. In project mode it
-also stops paying `slideOwnerFileIndices` several times per frame.
+**A keystroke costs ~1.63 ms** on the 886-line reference deck: `parse` + cold `highlight` +
+guarded follow-up scan. It was ~3.0 ms before PRF-5 and ~2.4 ms before PRF-6.
+
+**A caret move costs ~15 µs** — `slideIndexAtOffset` plus a memo hit. It previously re-highlighted
+the entire document, because `VisualTransformation.filter()` runs on every recomposition rather
+than only on text change.
+
+Two rows deserve emphasis because they are the same measurement asked two different ways:
+
+- The **cache hit / cold** split on the highlighter is not an optimisation detail. Typing pays
+  515 µs; everything else that triggers a recomposition pays 1 µs. Quoting one number for both
+  would misrepresent the editor either way.
+- The **guarded / full scan** split on follow-ups is likewise conditional: the guard is a
+  short-circuit for decks with no parking-lot items, not a general speed-up. Decks that use the
+  feature still pay the full scan.
 
 ---
 
@@ -91,9 +108,9 @@ file, which is a defect this project has already shipped once. Four invalidation
 
 | Cost | Why it is still there |
 | :--- | :--- |
-| **`parse` at 1.49 ms per keystroke** | The whole deck is reparsed on every character. Fixing it properly means incremental parsing — reparse the edited slide, reuse the rest — which changes the contract `Slide.sourceLineRange` and COR-1 rest on. That is a design change with an ADR, not a micro-optimisation, and it is the single biggest remaining item. |
-| **`extractFollowUpQuestions` at 547 µs per keystroke** | Runs from `ParkingLotStore.reconcile` on every deck change even when the deck contains no parking-lot directive at all. A cheap pre-scan for the marker would skip it entirely in the common case. Small, safe, and not done here only because it was not measured to matter as much as the two above. |
-| **`BLOCK_RULES` dispatch** | Up to 16 `matches` calls per line, of which the first three are regex-based, before a plain prose line reaches `ParagraphRule`. The regexes are precompiled, so this is matching cost, not compilation. Reordering is possible but **the order is load-bearing** and asserted by `BlockRuleOrderTest` — see the warnings in `BlockRules.kt` before touching it. |
+| **`parse` at 1.10 ms per keystroke** | The whole deck is reparsed on every character, and this is now **67% of the keystroke budget** — by far the largest remaining item. Fixing it properly means incremental parsing: reparse the edited slide, reuse the rest. That changes the contract `Slide.sourceLineRange` and COR-1 rest on, so it is a design change with an ADR, not a micro-optimisation. `SlideSourceRangeTest` was written to be the safety net for exactly this. |
+| **`extractFollowUpQuestions` at 583 µs on decks that use the feature** | The guard (PRF-6) removes this for decks with no parking-lot items, which is most of them, but a deck that uses the feature still pays a full second scan of the document on every keystroke. Folding it into the main parse pass would remove it entirely. |
+| **`BLOCK_RULES` dispatch** | Up to 16 `matches` calls per line before a plain prose line reaches `ParagraphRule`. The regexes are precompiled, so this is matching cost, not compilation. **Partly addressed sideways:** `HeadingRules` and `ThematicBreakRules` now reject on the first character before touching a regex, which is what took `parse` from 1.25 ms to 1.10 ms. Extending that to the rest of the chain is the obvious next step, but **the order is load-bearing** and asserted by `BlockRuleOrderTest` — read the warnings in `BlockRules.kt` first. |
 | **Companion server polling** | `AUD-01` covers this, and ADR-001 names the trigger for revisiting it: *polling becomes a measured bottleneck*. It has not been measured yet. This probe does not cover the server. |
 
 ---
@@ -108,6 +125,11 @@ Stated so nobody reads absence as a clean bill of health:
 - **Memory and allocation rate.** The boxing fix above was reasoned from the code, not from a
   profiler; the time saved was measured, the garbage avoided was not.
 - **Startup and file open.**
+- **Anything above 886 lines.** Every figure here is one document size. Cost is linear in document
+  length with no viewport windowing anywhere, so a keystroke at 4,000 lines costs roughly four and
+  a half times what it does here — see [`EDITOR_SCALING_ANALYSIS.md`](./EDITOR_SCALING_ANALYSIS.md).
+  That document's *scaling sweep* is still not reproducible from the tree: it came from a probe
+  that was removed after use, and only this single-size probe is committed.
 
 ---
 

@@ -25,7 +25,8 @@ markdown and nothing makes them agree."** That is fixable with one shared functi
 
 ## Phase 0 — the gate that killed the rewrite ✅
 
-Run via `AstLibrarySpike`. Delete it once Phase D is settled.
+Run via `AstLibrarySpike`, **since deleted** along with the `org.jetbrains:markdown` dependency it
+existed to evaluate — the question it answered is closed. The numbers below are the record.
 
 **Dialect representation: the library passed everything.** `<!-- … -->` directives → addressable
 `HTML_BLOCK`; `---` → `HORIZONTAL_RULE`; `##` → `ATX_2`; fence info strings intact; `~~~`
