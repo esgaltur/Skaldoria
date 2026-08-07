@@ -86,6 +86,9 @@ class PresentationState(
 
     val editorRevealToken: Long get() = editor.revealToken
 
+    /** EDT-7: increments when the source field should take keyboard focus. */
+    val editorFocusToken: Long get() = editor.focusToken
+
     /** EDT-5: clamped for a document of [length] characters before it reaches the field. */
     fun editorSelectionWithin(length: Int): TextRange = editor.selectionWithin(length)
 
@@ -362,14 +365,31 @@ class PresentationState(
             "the whole deck"
         }
 
-    fun closeFind() = findReplace.close()
+    /**
+     * EDT-7: closing hands the caret back to the editor, on the match that was found.
+     *
+     * The find bar keeps focus on its own query field while it is open, deliberately — clicking
+     * next/prev used to move focus out and stop Enter cycling. Close is therefore the moment
+     * the user has finished searching and wants to edit, and the only point at which taking
+     * focus back cannot break match navigation.
+     */
+    fun closeFind() {
+        if (!findReplace.isOpen) return
+        findReplace.close()
+        editor.requestEditorFocus()
+    }
 
     fun toggleReplaceRow() = findReplace.toggleReplaceRow()
 
     fun toggleFind(withReplace: Boolean = false) {
+        val wasOpen = findReplace.isOpen
         findReplace.toggle(withReplace)
         // Opening with an existing query should resume from the caret, not restart at match 0.
-        if (findReplace.isOpen && findReplace.focusFrom(editor.selection.min)) revealCurrentMatch()
+        if (findReplace.isOpen) {
+            if (findReplace.focusFrom(editor.selection.min)) revealCurrentMatch()
+        } else if (wasOpen) {
+            editor.requestEditorFocus()
+        }
     }
 
     /**

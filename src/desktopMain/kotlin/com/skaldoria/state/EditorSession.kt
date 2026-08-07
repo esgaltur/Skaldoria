@@ -46,6 +46,27 @@ class EditorSession {
     var followCaret by mutableStateOf(true)
 
     /**
+     * Increments when something asks the source field to take keyboard focus.
+     *
+     * EDT-7: a token rather than a boolean for the same reason as [revealToken] — "focus the
+     * editor" is an *event*, and two consecutive requests are indistinguishable as a flag.
+     */
+    var focusToken by mutableStateOf(0L)
+        private set
+
+    /**
+     * EDT-7: asks the source field for focus, leaving [selection] alone.
+     *
+     * Closing the find bar is the caller. [requestReveal] has already put the selection on the
+     * match, but an unfocused text field draws neither cursor nor selection highlight, so
+     * without this the match is revealed to a field the user cannot see a caret in and has to
+     * click before typing — losing the very position that was just found.
+     */
+    fun requestEditorFocus() {
+        focusToken++
+    }
+
+    /**
      * Records a caret or selection change made *by the user*.
      *
      * EDT-2: publishes no reveal. The field already shows the caret the user just placed;
