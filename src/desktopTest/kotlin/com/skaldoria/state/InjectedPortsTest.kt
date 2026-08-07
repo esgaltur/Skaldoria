@@ -1,5 +1,6 @@
 package com.skaldoria.state
 
+import com.skaldoria.PresentationStateTestBase
 import com.skaldoria.core.models.DeckProject
 import com.skaldoria.core.models.SlideFileEntry
 import com.skaldoria.core.ports.CompanionServerPort
@@ -21,7 +22,7 @@ import kotlin.test.assertTrue
  * opening a **modal native dialog**, so it never was: a test that reaches one hangs rather
  * than fails.
  */
-class InjectedPortsTest {
+class InjectedPortsTest : PresentationStateTestBase() {
 
     private class FakeProjects(private val project: DeckProject? = null) : ProjectRepository {
         var savedProjects = 0
@@ -67,7 +68,7 @@ class InjectedPortsTest {
     @Test
     fun `saving goes through the injected dialogs, never a real one`() {
         val dialogs = FakeDialogs()
-        val state = PresentationState(fileDialogs = dialogs)
+        val state = presentationState(fileDialogs = dialogs)
         state.updateMarkdown("# Deck\n\n- content")
 
         state.saveFile()
@@ -85,7 +86,7 @@ class InjectedPortsTest {
     fun `opening routes the chosen file through the injected repository`() {
         val markdown = File.createTempFile("ports_", ".md").apply { writeText("# Opened\n\n- from a fake dialog") }
         try {
-            val state = PresentationState(
+            val state = presentationState(
                 fileDialogs = FakeDialogs(chosen = markdown),
                 projects = FakeProjects(project = null)
             )
@@ -112,7 +113,7 @@ class InjectedPortsTest {
                     SlideFileEntry("one.md", slide.absolutePath, slide.readText())
                 )
             )
-            val state = PresentationState(
+            val state = presentationState(
                 fileDialogs = FakeDialogs(chosen = File(root, "deck.mdpres").apply { writeText("{}") }),
                 projects = FakeProjects(project = project)
             )
@@ -129,7 +130,7 @@ class InjectedPortsTest {
     @Test
     fun `the companion server is started and stopped through its port`() {
         val server = FakeServer()
-        val state = PresentationState(companionServer = server)
+        val state = presentationState(companionServer = server)
 
         state.toggleRemoteServer(port = 12345)
         assertTrue(server.running)
@@ -149,7 +150,7 @@ class InjectedPortsTest {
             override fun start(deck: DeckControl, preferredPort: Int): String = error("no network")
             override fun stop() = Unit
         }
-        val state = PresentationState(companionServer = exploding)
+        val state = presentationState(companionServer = exploding)
 
         state.toggleRemoteServer()
 

@@ -11,11 +11,11 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.sp
-import com.skaldoria.core.parser.FenceInfo
-import com.skaldoria.core.parser.HeadingRules
-import com.skaldoria.core.parser.MathRules
-import com.skaldoria.core.parser.ThematicBreakRules
-import com.skaldoria.core.parser.FenceRules
+import com.skaldoria.markdown.parser.FenceInfo
+import com.skaldoria.markdown.parser.HeadingRules
+import com.skaldoria.markdown.parser.MathRules
+import com.skaldoria.markdown.parser.ThematicBreakRules
+import com.skaldoria.markdown.parser.FenceRules
 import com.skaldoria.theme.AdaptiveContrastEnforcer
 import com.skaldoria.theme.PresentationTheme
 
@@ -41,7 +41,7 @@ class MarkdownVisualTransformation(
          * allowed — expected — to be looser than the parser: this file styles `### Sub` and
          * `#hashtag` as headings, neither of which begins a slide, and that is correct for both.
          *
-         * The rules that must *not* diverge are the shared-grammar ones in `:markdown-core`
+         * The rules that must *not* diverge are the shared-grammar ones in `:skaldoria-markdown`
          * (`FenceRules`), which this file calls rather than reimplements. See
          * `docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase E, for the three that still disagree in ways
          * that are genuine bugs — horizontal rules, table rows and `$$` blocks.

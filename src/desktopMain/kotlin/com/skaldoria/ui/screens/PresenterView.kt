@@ -24,7 +24,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.skaldoria.core.models.PacingStatus
+import com.skaldoria.markdown.models.PacingStatus
 import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.DeckKeyHandler
 import com.skaldoria.ui.components.ParkingLotView

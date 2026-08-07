@@ -1,8 +1,8 @@
 package com.skaldoria.core.parkinglot
 
 import androidx.compose.runtime.mutableStateListOf
-import com.skaldoria.core.models.FollowUpQuestion
-import com.skaldoria.core.parser.MarkdownSlideParser
+import com.skaldoria.markdown.models.FollowUpQuestion
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 
 /**
  * The parking lot: questions deferred during a talk, stored **in the deck markdown itself**.

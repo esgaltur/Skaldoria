@@ -1,4 +1,4 @@
-# Markdown Core — Extraction, Convergence, and Speed
+# The Markdown Engine — Extraction, Convergence, and Speed
 
 **Opened:** 2026-08-06 · **Updated:** 2026-08-07 · **Baseline:** `2e40c02`
 
@@ -109,17 +109,17 @@ pinned deliberately, so a fix must update them rather than change behaviour sile
 
 # The revised plan
 
-## Phase A — Extract `:markdown-core` ✅ *complete*
+## Phase A — Extract `:skaldoria-markdown` ✅ *complete*
 
 - [x] New Gradle module (`kotlin("jvm")`, declared `apply false` in the root plugins block)
 - [x] Moved with `git mv` so history follows: `MarkdownSlideParser`, `BlockRules`,
       `SectionContext`, `SmartLayoutClassifier`, `SlideModels`, `FollowUpQuestion`
 - [x] Moved six pure parser tests in with them — the module tests itself rather than relying on
       the app's suite to cover it
-- [x] **Verified Compose-free:** `:markdown-core:dependencies --configuration compileClasspath`
+- [x] **Verified Compose-free:** `:skaldoria-markdown:dependencies --configuration compileClasspath`
       matches **zero** Compose/Skiko artifacts
 
-**Result:** 6 test classes in `:markdown-core`, 70 in the app — 76 total, exactly the
+**Result:** 6 test classes in `:skaldoria-markdown`, 70 in the app — 76 total, exactly the
 pre-extraction count. No performance regression (`parse` 1.30 ms, `highlight` 538 µs,
 `extractFollowUpQuestions` 534 µs — all within noise of the baseline).
 
@@ -153,7 +153,7 @@ against the root project directory. Moving it needs a path fix, not just a `git 
 The correctness win from the cancelled rewrite, at a tenth of the cost.
 
 - [x] `FenceRules.openingFence(line): FenceInfo?` and `FenceRules.closes(line, open)` — the single
-      authority, in `:markdown-core`
+      authority, in `:skaldoria-markdown`
 - [x] Backtick **and** tilde fences, any length ≥ 3, arbitrary info strings, and closing-fence
       matching (same marker, at least as long, no info string)
 - [x] `MarkdownSlideParser.CODE_FENCE_START` **deleted** — it was the source of the language-loss
@@ -538,7 +538,7 @@ The cheap wins were largely collected by accident:
 
 Ordered by payoff-to-risk. None depends on the performance question.
 
-### 1. Test suites leak `PresentationState` scopes *(highest value)*
+### 1. Test suites leak `PresentationState` scopes — ✅ **done (2026-08-07)**, now COR-14
 
 **19 test files construct a `PresentationState`; only 4 dispose it.** Each undisposed instance
 leaves a debounced autosave that fires 750 ms later and writes the process-wide draft file.
@@ -551,6 +551,20 @@ so it will not present the same way twice.
 The fix is disposal discipline, ideally enforced rather than remembered — a shared test base or a
 JUnit rule, so a new test cannot forget.
 
+> **Fixed.** `PresentationStateTestBase.presentationState()` creates and tracks; an `@AfterTest`
+> disposes. 104 construction sites across 22 files moved onto it, and `DraftRecoveryTest`'s
+> `Thread.sleep` drain is gone.
+>
+> **The count in the heading above was already stale when it was written, which is the argument
+> for the guard.** At fix time it was **18 of 23 files**, not 15 of 19 — three more leaks had been
+> added in the interval by people who had no way to know the rule existed. So the fix is not the
+> base class, which would have been equally forgettable: it is
+> `PresentationStateDisposalTest`, which fails on any direct construction in the test sources.
+> Verified in the order CONTRIBUTING §4 requires — the guard failed against the old suite first,
+> naming all 22 offenders, before any of them were converted.
+>
+> Registered as **COR-14** in [`QUALITY_BASELINE.md`](./QUALITY_BASELINE.md).
+
 ### 2. Tables without outer pipes are unsupported
 
 `a | b` over `---|---` is ordinary GFM and **neither** the parser nor the highlighter handles it.
@@ -560,7 +574,7 @@ body stay prose and no table is assembled.
 They agree, and both are wrong — which makes this a **missing feature, not a divergence**. It is
 in this document only because it was misfiled as one until `LineRuleAgreementTest` was written.
 
-### 3. `DocumentedSyntaxTest` cannot move into `:markdown-core`
+### 3. `DocumentedSyntaxTest` cannot move into `:skaldoria-markdown`
 
 It reads files from `docs/` and its paths resolve against the root project directory. Moving it
 needs a path fix, not just a `git mv`.

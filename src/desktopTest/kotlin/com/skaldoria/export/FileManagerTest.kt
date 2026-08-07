@@ -1,11 +1,11 @@
 package com.skaldoria.export
 
-import com.skaldoria.state.PresentationState
+import com.skaldoria.PresentationStateTestBase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class FileManagerTest {
+class FileManagerTest : PresentationStateTestBase() {
 
     @Test
     fun testEscapeHtml() {
@@ -16,7 +16,7 @@ class FileManagerTest {
 
     @Test
     fun testGenerateStandaloneHtmlContainsSkaldoriaBranding() {
-        val state = PresentationState(
+        val state = presentationState(
             initialMarkdown = """
                 # Welcome to Skaldoria
                 ### Ultra-smooth Presentations

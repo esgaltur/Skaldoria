@@ -1,5 +1,6 @@
 package com.skaldoria.state
 
+import com.skaldoria.PresentationStateTestBase
 import com.skaldoria.theme.BuiltinThemes
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -12,11 +13,11 @@ import kotlin.test.assertTrue
  * anywhere in the source, so the key did nothing — the table described a feature that had
  * never been bound.
  */
-class ThemeCyclingTest {
+class ThemeCyclingTest : PresentationStateTestBase() {
 
     @Test
     fun `cycling advances to the next available theme`() {
-        val state = PresentationState()
+        val state = presentationState()
         val first = state.currentTheme
 
         state.cycleTheme()
@@ -27,7 +28,7 @@ class ThemeCyclingTest {
 
     @Test
     fun `cycling visits every public theme and wraps`() {
-        val state = PresentationState()
+        val state = presentationState()
         val expected = state.availableThemes.size
         val start = state.currentTheme.id
 
@@ -45,7 +46,7 @@ class ThemeCyclingTest {
     fun `cycling never selects a locked corporate theme`() {
         // The corporate theme sits behind an access code. Cycling past it would hand out a
         // gated theme for the price of pressing a key.
-        val state = PresentationState()
+        val state = presentationState()
         repeat(state.availableThemes.size * 2) {
             state.cycleTheme()
             assertTrue(
@@ -57,7 +58,7 @@ class ThemeCyclingTest {
 
     @Test
     fun `cycling includes the corporate theme once unlocked`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.isCorporateThemeUnlocked = true
 
         val seen = mutableSetOf<String>()
@@ -76,7 +77,7 @@ class ThemeCyclingTest {
     fun `cycling from a theme no longer available starts from the beginning`() {
         // Locking the corporate theme while it is active leaves `currentTheme` outside the
         // available list; cycling must recover rather than sticking or throwing.
-        val state = PresentationState()
+        val state = presentationState()
         state.isCorporateThemeUnlocked = true
         state.currentTheme = BuiltinThemes.DeutscheBorseExecutive
         state.isCorporateThemeUnlocked = false

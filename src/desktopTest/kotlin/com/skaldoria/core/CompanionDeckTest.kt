@@ -1,10 +1,10 @@
 package com.skaldoria.core
 
-import com.skaldoria.core.models.SlideElement
-import com.skaldoria.core.models.SlideLayoutType
-import com.skaldoria.core.parser.MarkdownSlideParser
+import com.skaldoria.PresentationStateTestBase
+import com.skaldoria.markdown.models.SlideElement
+import com.skaldoria.markdown.models.SlideLayoutType
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.project.DeckProjectManager
-import com.skaldoria.state.PresentationState
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
  * Guards the bundled companion test deck: it exists to exercise the remote, polls and Q&A,
  * so if a directive stops parsing the deck stops being a usable test fixture.
  */
-class CompanionDeckTest {
+class CompanionDeckTest : PresentationStateTestBase() {
 
     private val manifest = File("examples/companion_test_deck/deck.mdpres")
 
@@ -108,7 +108,7 @@ class CompanionDeckTest {
      */
     @Test
     fun `opening the manifest loads it as a project`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.openPath(manifest)
 
         val project = assertNotNull(state.activeProject, "picking a .mdpres must enter project mode")
@@ -127,7 +127,7 @@ class CompanionDeckTest {
     /** Selecting the project folder is equivalent to selecting its manifest. */
     @Test
     fun `opening the project directory loads the same deck`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.openPath(manifest.parentFile)
 
         assertNotNull(state.activeProject)
@@ -137,7 +137,7 @@ class CompanionDeckTest {
     /** A plain markdown file must still open as a single file, not as a project. */
     @Test
     fun `opening a single markdown slide does not enter project mode`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.openPath(File("examples/companion_test_deck/slides/04_bullets.md"))
 
         assertEquals(null, state.activeProject, "a lone .md is not a project")
@@ -152,7 +152,7 @@ class CompanionDeckTest {
         try {
             tmp.writeText("""{ "name": "Broken", "slides": ["slides/missing.md"] }""")
 
-            val state = PresentationState()
+            val state = presentationState()
             state.openPath(tmp)
 
             assertEquals(null, state.activeProject, "must not enter project mode with zero slides")
@@ -179,7 +179,7 @@ class CompanionDeckTest {
             File(dir, "README.md").writeText("# Readme")
             File(dir, "CHANGELOG.md").writeText("# Changelog")
 
-            val state = PresentationState()
+            val state = presentationState()
             state.openPath(File(dir, "package.json"))
 
             assertEquals(null, state.activeProject, "an unrelated json must not become a project")
@@ -250,7 +250,7 @@ class CompanionDeckTest {
         try {
             File(plain, "a.md").writeText("# A")
 
-            val state = PresentationState()
+            val state = presentationState()
             val before = state.markdownText
             state.openPath(plain)
 

@@ -23,7 +23,7 @@
 
 ```mermaid
 flowchart TD
-    subgraph Authoring["1. Authoring & Parsing — :markdown-core"]
+    subgraph Authoring["1. Authoring & Parsing — :skaldoria-markdown"]
         MD[Markdown / .skaldoria Deck] --> Fence[FenceRules — shared fence authority]
         Fence --> Lexer[Slide Lexer & Delimiter Splitter]
         Lexer --> Blocks[Block Rule Dispatch — BLOCK_RULES]
@@ -60,7 +60,7 @@ current per-keystroke pipeline costs. Specialisation wins here because the scann
 what slides need and nothing else. *(Earlier revisions of this document described a "CommonMark AST
 Generator" in this stage; no such component has ever existed.)*
 
-Stage 1 lives in **`:markdown-core`**, a Gradle module with no Compose dependency, so the engine
+Stage 1 lives in **`:skaldoria-markdown`**, a Gradle module with no Compose dependency, so the engine
 can be compiled, tested and benchmarked without a UI toolkit.
 
 `FenceRules` sits ahead of the lexer because fence state decides whether a `---` splits a slide or
@@ -132,7 +132,7 @@ state.addFollowUpQuestion("Throughput per shard?", slideIndex = 3)
 ```
 ````
 
-Fence handling follows CommonMark, and one authority — `FenceRules` in `:markdown-core` — answers
+Fence handling follows CommonMark, and one authority — `FenceRules` in `:skaldoria-markdown` — answers
 for the slide parser and the editor's syntax highlighter alike.
 
 | Rule | Behaviour |

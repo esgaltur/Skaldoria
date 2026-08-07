@@ -42,7 +42,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.skaldoria.core.models.SlideTransition
+import com.skaldoria.markdown.models.SlideTransition
 import com.skaldoria.core.presentation.HudVisibility
 import com.skaldoria.core.presentation.SlideNumberEntry
 import com.skaldoria.core.presentation.TransitionResolver

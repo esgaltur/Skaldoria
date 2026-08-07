@@ -1,8 +1,8 @@
 package com.skaldoria.core
 
-import com.skaldoria.core.models.FollowUpQuestion
-import com.skaldoria.core.parser.MarkdownSlideParser
-import com.skaldoria.state.PresentationState
+import com.skaldoria.PresentationStateTestBase
+import com.skaldoria.markdown.models.FollowUpQuestion
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
  *  B. `updateMarkdown` re-added *every* directive whenever the list happened to be empty,
  *     and it runs on every keystroke — so deleting the last item undid itself immediately.
  */
-class ParkingLotDeleteTest {
+class ParkingLotDeleteTest : PresentationStateTestBase() {
 
     private val deck = """
         # Talk
@@ -36,7 +36,7 @@ class ParkingLotDeleteTest {
 
     @Test
     fun `deleting a directive item removes the directive from the markdown`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(deck)
         assertEquals(2, state.followUpQuestions.size, "both directives should load")
 
@@ -57,7 +57,7 @@ class ParkingLotDeleteTest {
     /** The delete has to survive a reload, which is where "it came back" was observed. */
     @Test
     fun `a deleted item does not return when the deck is re-parsed`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(deck)
 
         val target = state.followUpQuestions.first { it.question.contains("latency") }
@@ -75,7 +75,7 @@ class ParkingLotDeleteTest {
     /** The exact reported reproduction: delete, then type one character. */
     @Test
     fun `Defect B a deleted item is not resurrected by the next keystroke`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(deck)
 
         val target = state.followUpQuestions.first { it.question.contains("latency") }
@@ -91,7 +91,7 @@ class ParkingLotDeleteTest {
     /** Deleting the *last* item emptied the list, which is what triggered the old guard. */
     @Test
     fun `Defect B deleting every item leaves the list empty across re-parses`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(deck)
 
         state.followUpQuestions.map { it.id }.forEach { state.deleteFollowUpQuestion(it) }
@@ -112,7 +112,7 @@ class ParkingLotDeleteTest {
      */
     @Test
     fun `a manually captured question is persisted to the markdown`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(deck)
 
         state.addFollowUpQuestion("Typed during the talk", slideIndex = 1)
@@ -134,7 +134,7 @@ class ParkingLotDeleteTest {
     /** A captured question carries its id into the file, so identity survives the round trip. */
     @Test
     fun `captured questions persist their id and can then be deleted permanently`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(deck)
         state.addFollowUpQuestion("Ask about the retry budget")
 
@@ -159,7 +159,7 @@ class ParkingLotDeleteTest {
     /** Editing the wording is an edit, not a delete-plus-create, once the id is persisted. */
     @Test
     fun `a persisted id keeps identity stable when the question text changes`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(deck)
         state.addFollowUpQuestion("Original wording")
 
@@ -189,7 +189,7 @@ class ParkingLotDeleteTest {
 
     @Test
     fun `newly authored directives appear without wiping session state`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(deck)
         state.addFollowUpQuestion("Manual note")
 
@@ -202,7 +202,7 @@ class ParkingLotDeleteTest {
 
     @Test
     fun `answering an item is written back to the directive`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(deck)
 
         val target = state.followUpQuestions.first { it.question.contains("shard") }

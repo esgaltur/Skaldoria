@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Roadmap and delivery work. The candidate feature set is catalogued in
 [`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md); the connectivity design is
 [ADR-005](./docs/ADR_COMPANION_LINK_ESTABLISHMENT.md).
-Test suite: **235 to 617 tests** (551 in the app, 66 in `:markdown-core`), zero compiler warnings.
+Test suite: **235 to 619 tests** (553 in the app, 66 in `:skaldoria-markdown`), zero compiler warnings.
 
 ### Performance
 
@@ -50,12 +50,18 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   be re-run before being trusted.**
 
 ### Added
-- **`:markdown-core`, a Gradle module holding the markdown engine.** The parser, block rules,
+- **`:skaldoria-markdown`, a Gradle module holding the markdown engine.** The parser, block rules,
   layout classifier and slide model, with **zero Compose on its compile classpath** — verified,
   not assumed. It compiles, tests and benchmarks without a UI toolkit, which is what makes the
   parser measurable in isolation and would let a non-desktop front end consume the engine.
   `AnnotationStroke` moved back out to the app module: it was the only type in the slide model
   needing Compose, and it is a drawing concern rather than a parsing one.
+
+  Its types live under **`com.skaldoria.markdown.{parser,models,layout}`**. They were briefly
+  under `com.skaldoria.core.*`, which the app module also uses — so `com.skaldoria.core.models`
+  and `com.skaldoria.core.layout` existed *in both modules at once*, and a file in either one
+  picked up the other's types with no import to show for it. Two app files were relying on
+  exactly that. The split makes the module boundary visible in the import list.
 
   A note for anyone extracting the next module: a module boundary stops Kotlin smart-casting
   nullable `val`s, because another module could in principle change them. That produced 11 compile
@@ -135,6 +141,23 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   by a name-based denylist.
 - **The slide footer misreported diagram slides**, labelling a sequence diagram
   "Architecture / Flow Diagram" while the diagram's own header said otherwise.
+- **The test suite raced against itself through the autosave draft (COR-14).** A mutation
+  schedules a debounced save 750 ms out on that `PresentationState`'s own scope, and `dispose()`
+  is the only thing that cancels it — but disposal was by convention, and **18 of the 23 test
+  files that created a state never disposed one**. A leaked job landed inside whatever test was
+  running when it fired, replacing the process-wide draft between another test's write and its
+  assertion. It blocked two builds through `DraftRecoveryTest`; `ConfigManagerTest` reads the
+  same file and was exposed to it too.
+
+  Tests now create state through `PresentationStateTestBase.presentationState()`, which disposes
+  it in `@AfterTest` — 104 sites across 22 files. The previous mitigation, a
+  `Thread.sleep(750 + 250)` in `DraftRecoveryTest`, is gone with the cause.
+
+  **The base class is not the fix; the guard is.** Disposal by convention had already decayed
+  once — the plan that recorded this counted 15 leaking files, and there were 18 by the time
+  anyone fixed it, each added by someone with no way to know the rule existed. So
+  `PresentationStateDisposalTest` fails on any direct construction in the test sources, which is
+  what a new test cannot quietly get around.
 
 ### Known gaps
 - Editor ⇄ slide synchronisation and find-result reveal remain open; both wait on the caret
@@ -143,16 +166,7 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
 - **Tables written without outer pipes (`a | b` / `---|---`) are unsupported.** Ordinary GFM, and
   neither the parser nor the highlighter handles it — they agree, and both are wrong, so this is a
   missing feature rather than a divergence.
-- **Test suites leak `PresentationState` coroutine scopes.** A mutation schedules a debounced
-  autosave on the instance's own scope; `dispose()` cancels it, but **19 test files construct a
-  `PresentationState` and only 4 dispose it**. A leaked job outlives its test and writes the
-  process-wide draft file, which is what made `DraftRecoveryTest` fail intermittently — twice
-  during this work, each time passing on re-run.
-
-  `DraftRecoveryTest` now waits out the debounce before clearing, which makes *that* symptom
-  deterministic. **The root cause is untouched**: the other 15 files still leak, nothing enforces
-  disposal, and any future test reading shared state can be hit the same way. The durable fix is
-  disposal discipline, ideally enforced rather than remembered.
+- ~~**Test suites leak `PresentationState` coroutine scopes.**~~ **Fixed — see below (COR-14).**
 
 ## [1.2.0] - 2026-08-05
 

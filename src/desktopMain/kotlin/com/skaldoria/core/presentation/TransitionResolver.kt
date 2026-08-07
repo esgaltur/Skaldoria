@@ -1,7 +1,7 @@
 package com.skaldoria.core.presentation
 
-import com.skaldoria.core.models.Slide
-import com.skaldoria.core.models.SlideTransition
+import com.skaldoria.markdown.models.Slide
+import com.skaldoria.markdown.models.SlideTransition
 
 /**
  * Which transition a slide is presented with.

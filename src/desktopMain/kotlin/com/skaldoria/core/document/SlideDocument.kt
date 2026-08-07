@@ -1,7 +1,7 @@
 package com.skaldoria.core.document
 
-import com.skaldoria.core.models.Slide
-import com.skaldoria.core.parser.MarkdownSlideParser
+import com.skaldoria.markdown.models.Slide
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 
 /**
  * A markdown deck together with the structural edits you can perform on it.

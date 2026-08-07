@@ -1,14 +1,14 @@
 package com.skaldoria.export
 
-import com.skaldoria.state.PresentationState
+import com.skaldoria.PresentationStateTestBase
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
-class DeckExporterTest {
+class DeckExporterTest : PresentationStateTestBase() {
 
     @Test
     fun `test printable HTML generation contains slide titles and print stylesheet`() {
-        val state = PresentationState()
+        val state = presentationState()
         val markdown = """
             # Executive Overview
             ### Q3 Results

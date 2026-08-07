@@ -8,9 +8,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import com.skaldoria.core.models.SlideElement
-import com.skaldoria.core.models.SlideLayoutType
-import com.skaldoria.core.parser.MarkdownSlideParser
+import com.skaldoria.markdown.models.SlideElement
+import com.skaldoria.markdown.models.SlideLayoutType
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.ui.components.FitMode
 import com.skaldoria.ui.components.FitToCanvas

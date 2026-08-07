@@ -1,8 +1,8 @@
 package com.skaldoria.core
 
-import com.skaldoria.core.models.FollowUpQuestion
-import com.skaldoria.core.parser.MarkdownSlideParser
-import com.skaldoria.state.PresentationState
+import com.skaldoria.PresentationStateTestBase
+import com.skaldoria.markdown.models.FollowUpQuestion
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.AdaptiveContrastEnforcer
 import com.skaldoria.theme.ColorScience
 import androidx.compose.ui.graphics.Color
@@ -11,7 +11,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class ParkingLotAndThemeTest {
+class ParkingLotAndThemeTest : PresentationStateTestBase() {
 
     @Test
     fun testParkingLotDirectiveParsing() {
@@ -61,7 +61,7 @@ class ParkingLotAndThemeTest {
 
     @Test
     fun testCorporateThemeLockAndUnlock() {
-        val state = PresentationState()
+        val state = presentationState()
         
         // Deutsche Börse should not be in public availableThemes when locked
         assertFalse(state.isCorporateThemeUnlocked)

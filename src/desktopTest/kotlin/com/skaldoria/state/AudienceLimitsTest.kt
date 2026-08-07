@@ -1,5 +1,6 @@
 package com.skaldoria.state
 
+import com.skaldoria.PresentationStateTestBase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -11,11 +12,11 @@ import kotlin.test.assertTrue
  * `AudienceSessionTest` covers the same rules at the unit level; this keeps the assertions
  * on the object the application actually wires together.
  */
-class AudienceLimitsTest {
+class AudienceLimitsTest : PresentationStateTestBase() {
 
     @Test
     fun `a voter cannot stack votes by voting repeatedly`() {
-        val state = PresentationState()
+        val state = presentationState()
 
         repeat(20) { state.recordVote(slideIndex = 0, optionIndex = 1, voterKey = "192.168.1.50") }
 
@@ -28,7 +29,7 @@ class AudienceLimitsTest {
 
     @Test
     fun `a voter can change their mind without inflating the total`() {
-        val state = PresentationState()
+        val state = presentationState()
 
         state.recordVote(0, optionIndex = 0, voterKey = "device-a")
         state.recordVote(0, optionIndex = 2, voterKey = "device-a")
@@ -38,7 +39,7 @@ class AudienceLimitsTest {
 
     @Test
     fun `distinct voters are counted separately`() {
-        val state = PresentationState()
+        val state = presentationState()
 
         state.recordVote(0, 0, voterKey = "a")
         state.recordVote(0, 0, voterKey = "b")
@@ -50,7 +51,7 @@ class AudienceLimitsTest {
     /** In-app votes come from the speaker's own machine and have no device key. */
     @Test
     fun `local votes without a key each count`() {
-        val state = PresentationState()
+        val state = presentationState()
 
         state.recordVote(0, 1)
         state.recordVote(0, 1)
@@ -60,7 +61,7 @@ class AudienceLimitsTest {
 
     @Test
     fun `votes are tracked per slide`() {
-        val state = PresentationState()
+        val state = presentationState()
 
         state.recordVote(0, 0, voterKey = "a")
         state.recordVote(1, 1, voterKey = "a")
@@ -71,7 +72,7 @@ class AudienceLimitsTest {
 
     @Test
     fun `the question queue is bounded and drops the oldest`() {
-        val state = PresentationState()
+        val state = presentationState()
 
         repeat(PresentationState.MAX_AUDIENCE_QUESTIONS + 25) { index ->
             state.audience.submit("Asker $index", "Question number $index")
@@ -90,7 +91,7 @@ class AudienceLimitsTest {
 
     @Test
     fun `oversized question text and author are truncated`() {
-        val state = PresentationState()
+        val state = presentationState()
 
         val question = state.audience.submit("A".repeat(500), "Q".repeat(5_000))
 
@@ -100,7 +101,7 @@ class AudienceLimitsTest {
 
     @Test
     fun `blank author falls back to Anonymous`() {
-        val state = PresentationState()
+        val state = presentationState()
         assertEquals("Anonymous", state.audience.submit("   ", "hello").author)
     }
 }

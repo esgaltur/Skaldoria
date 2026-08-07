@@ -4,7 +4,7 @@ import com.skaldoria.core.deck.DeckDocument
 import com.skaldoria.core.document.SlideSourceLocator
 import com.skaldoria.core.models.DeckProject
 import com.skaldoria.core.models.SlideFileEntry
-import com.skaldoria.core.parser.MarkdownSlideParser
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.ui.editor.MarkdownVisualTransformation
 import kotlin.test.Test
