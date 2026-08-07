@@ -55,8 +55,10 @@ class ParkingLotAndThemeTest : PresentationStateTestBase() {
         )
 
         val serialized = MarkdownSlideParser.serializeFollowUpQuestions(questions)
-        assertTrue(serialized.contains("<!-- parking-lot: [ ] What is the memory footprint? | slide:4 -->"))
-        assertTrue(serialized.contains("<!-- parking-lot: [x] What are the SLA guarantees? | 99.99% uptime with multi-AZ failover | slide:5 -->"))
+        val lines = serialized.lines().filter { it.startsWith("<!-- parking-lot:") }
+        assertEquals(2, lines.size, "expected exactly two parking-lot directives")
+        assertTrue(lines[0].startsWith("<!-- parking-lot: [ ] What is the memory footprint? | slide:4 | id:"))
+        assertTrue(lines[1].startsWith("<!-- parking-lot: [x] What are the SLA guarantees? | 99.99% uptime with multi-AZ failover | slide:5 | id:"))
     }
 
     @Test

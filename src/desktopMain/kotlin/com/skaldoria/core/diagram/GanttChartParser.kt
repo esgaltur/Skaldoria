@@ -14,16 +14,18 @@ object GanttChartParser {
     private val TITLE = Regex("""^title\s+(.+)$""", RegexOption.IGNORE_CASE)
     private val DATE_FORMAT = Regex("""^dateFormat\s+(.+)$""", RegexOption.IGNORE_CASE)
     private val AXIS_FORMAT = Regex("""^axisFormat\s+(.+)$""", RegexOption.IGNORE_CASE)
+    private val EXCLUDES = Regex("""^excludes\s+(.+)$""", RegexOption.IGNORE_CASE)
     private val SECTION = Regex("""^section\s+(.+)$""", RegexOption.IGNORE_CASE)
     private val TASK = Regex("""^(.+?)\s*:\s*(.*)$""")
 
     /** The single-value header statements, in the order they are tried. */
-    private enum class HeaderField { TITLE, DATE_FORMAT, AXIS_FORMAT, SECTION }
+    private enum class HeaderField { TITLE, DATE_FORMAT, AXIS_FORMAT, EXCLUDES, SECTION }
 
     private val HEADERS = listOf(
         TITLE to HeaderField.TITLE,
         DATE_FORMAT to HeaderField.DATE_FORMAT,
         AXIS_FORMAT to HeaderField.AXIS_FORMAT,
+        EXCLUDES to HeaderField.EXCLUDES,
         SECTION to HeaderField.SECTION
     )
 
@@ -45,6 +47,7 @@ object GanttChartParser {
         var title: String? = null
         var dateFormat: String? = null
         var axisFormat: String? = null
+        var excludes: String? = null
 
         val sections = mutableListOf<MutableSection>()
         // Tasks may appear before any `section`; they belong to an unnamed one rather than
@@ -65,6 +68,7 @@ object GanttChartParser {
                     HeaderField.TITLE -> title = value
                     HeaderField.DATE_FORMAT -> dateFormat = value
                     HeaderField.AXIS_FORMAT -> axisFormat = value
+                    HeaderField.EXCLUDES -> excludes = value
                     HeaderField.SECTION -> sections += MutableSection(value)
                 }
                 continue
@@ -79,6 +83,7 @@ object GanttChartParser {
             title = title,
             dateFormat = dateFormat,
             axisFormat = axisFormat,
+            excludes = excludes,
             sections = sections.map { GanttSection(it.name, it.tasks.toList()) }
         )
     }

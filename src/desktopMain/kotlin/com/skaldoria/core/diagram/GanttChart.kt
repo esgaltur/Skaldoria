@@ -19,6 +19,7 @@ data class GanttChart(
     val dateFormat: String? = null,
     /** `axisFormat %m-%d`, as declared. */
     val axisFormat: String? = null,
+    val excludes: String? = null,
     val sections: List<GanttSection> = emptyList()
 ) {
     val isEmpty: Boolean get() = sections.all { it.tasks.isEmpty() }
