@@ -1016,7 +1016,8 @@ class PresentationState(
          * Quiet period before an autosave lands. Long enough that continuous typing never
          * touches the disk, short enough that a crash loses at most a sentence.
          */
-        private const val DRAFT_SAVE_DEBOUNCE_MS = 750L
+        /** Internal so tests can wait out a pending save rather than hard-coding the number. */
+        internal const val DRAFT_SAVE_DEBOUNCE_MS = 750L
 
         /** SEC-5: bounds on audience-supplied content. */
         /**

@@ -143,10 +143,16 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
 - **Tables written without outer pipes (`a | b` / `---|---`) are unsupported.** Ordinary GFM, and
   neither the parser nor the highlighter handles it — they agree, and both are wrong, so this is a
   missing feature rather than a divergence.
-- **`DraftRecoveryTest` is order-dependent.** `the bundled sample decks are not offered as
-  recovered work` failed once, then passed in isolation and across repeated full runs. The likely
-  cause is a pre-existing race between `PresentationState`'s debounced autosave and the shared
-  draft file. Recorded rather than papered over; it will resurface.
+- **Test suites leak `PresentationState` coroutine scopes.** A mutation schedules a debounced
+  autosave on the instance's own scope; `dispose()` cancels it, but **19 test files construct a
+  `PresentationState` and only 4 dispose it**. A leaked job outlives its test and writes the
+  process-wide draft file, which is what made `DraftRecoveryTest` fail intermittently — twice
+  during this work, each time passing on re-run.
+
+  `DraftRecoveryTest` now waits out the debounce before clearing, which makes *that* symptom
+  deterministic. **The root cause is untouched**: the other 15 files still leak, nothing enforces
+  disposal, and any future test reading shared state can be hit the same way. The durable fix is
+  disposal discipline, ideally enforced rather than remembered.
 
 ## [1.2.0] - 2026-08-05
 
