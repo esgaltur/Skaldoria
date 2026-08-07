@@ -3,7 +3,7 @@ package com.skaldoria.core.audience
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.snapshots.Snapshot
-import com.skaldoria.core.models.AudienceQuestion
+import com.skaldoria.markdown.models.AudienceQuestion
 import java.util.UUID
 
 /**

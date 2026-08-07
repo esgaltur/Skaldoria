@@ -1,5 +1,10 @@
 package com.skaldoria.ui.components
 
+import com.skaldoria.core.diagram.DiagramEdge
+import com.skaldoria.core.diagram.DiagramGroup
+import com.skaldoria.core.diagram.DiagramNode
+import com.skaldoria.core.diagram.NodeShape
+import com.skaldoria.core.diagram.ParsedDiagram
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -24,73 +29,27 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.skaldoria.core.diagram.DiagramStyling
+import com.skaldoria.core.diagram.EdgeStyle
+import com.skaldoria.core.diagram.NodeStyle
+import com.skaldoria.core.diagram.StyleDeclarationParser
+import com.skaldoria.core.diagram.ClassDiagramParser
+import com.skaldoria.core.diagram.DiagramKind
+import com.skaldoria.core.diagram.toFlowchart
+import com.skaldoria.core.diagram.ErDiagramParser
+import com.skaldoria.core.diagram.GanttChart
+import com.skaldoria.core.diagram.GanttChartParser
 import com.skaldoria.core.diagram.FlowDirection
+import com.skaldoria.core.diagram.StateDiagramParser
 import com.skaldoria.core.diagram.SequenceDiagram
 import com.skaldoria.core.diagram.SequenceDiagramParser
+import com.skaldoria.theme.AdaptiveContrastEnforcer
 import com.skaldoria.theme.PresentationTheme
 import com.skaldoria.ui.components.MermaidParser.ARROW_TOKEN
 import com.skaldoria.ui.components.MermaidParser.NODE_BRACKETS
 import com.skaldoria.ui.components.MermaidParser.NODE_TOKEN
 import com.skaldoria.ui.components.MermaidParser.parseEdgeChain
 import com.skaldoria.ui.components.MermaidParser.shapeOf
-
-/**
- * Parsed diagram model for native Compose visualization of Mermaid flowcharts,
- * sequence diagrams, and architecture graphs.
- */
-data class DiagramNode(
-    val id: String,
-    val label: String,
-    val shape: NodeShape = NodeShape.ROUNDED_RECT
-)
-
-/**
- * Node shapes the parser can actually produce.
- *
- * DED-4 removed shapes that no code path could emit rather than leave dead branches implying
- * support that did not exist. `DATABASE` is back because MMD-9 added `[(cylinder)]` parsing —
- * the rule being that a shape exists here only when the parser can actually produce it.
- */
-enum class NodeShape {
-    ROUNDED_RECT,
-    CIRCLE,
-    DIAMOND,
-    /** `A[(Label)]` — a datastore. Reinstated once the parser could actually emit it. */
-    DATABASE
-}
-
-data class DiagramEdge(
-    val fromId: String,
-    val toId: String,
-    val label: String? = null,
-    val isDashed: Boolean = false,
-    val isBiDirectional: Boolean = false
-)
-
-/**
- * A `subgraph … end` cluster: a titled frame drawn around the nodes declared inside it.
- *
- * Nested subgraphs are flattened — a node belongs to the innermost group that declared it —
- * because the layered layout has no notion of nested containers. The frame still reads
- * correctly; only the nesting relationship is lost.
- */
-data class DiagramGroup(
-    val id: String,
-    val title: String,
-    val nodeIds: List<String>
-)
-
-data class ParsedDiagram(
-    val type: String, // "flowchart", "sequence", "graph"
-    /** DIA-08: all four Mermaid directions, not just the two an axis flag could express. */
-    val direction: FlowDirection = FlowDirection.DEFAULT,
-    val nodes: List<DiagramNode>,
-    val edges: List<DiagramEdge>,
-    val groups: List<DiagramGroup> = emptyList()
-) {
-    /** Kept so every existing renderer call site reads the same; now derived, not stored. */
-    val isHorizontal: Boolean get() = direction.isHorizontal
-}
 
 /**
  * Parses Mermaid flowchart and sequence definitions into structured renderable models.
@@ -208,9 +167,24 @@ object MermaidParser {
     /** Closes a `subgraph` block. */
     private val BLOCK_END = Regex("""^end$""", RegexOption.IGNORE_CASE)
 
+    /** `classDef name fill:#f9f,stroke:#333` — the name list may be comma-separated. */
+    private val CLASS_DEF = Regex("""^\s*classDef\s+([\w,\s]+?)\s+(.+)$""", RegexOption.IGNORE_CASE)
+
+    /** `class nodeA,nodeB styleName` — applies a `classDef` to nodes. */
+    private val CLASS_APPLY = Regex("""^\s*class\s+([\w,\s]+?)\s+(\w+)\s*$""", RegexOption.IGNORE_CASE)
+
+    /** `style nodeA fill:#f9f` — an inline style for a single node. */
+    private val STYLE_NODE = Regex("""^\s*style\s+(\w+)\s+(.+)$""", RegexOption.IGNORE_CASE)
+
+    /** `linkStyle 0,2 stroke:#f00`, or `linkStyle default stroke:#f00`. */
+    private val LINK_STYLE = Regex("""^\s*linkStyle\s+([\w,\s]+?)\s+(.+)$""", RegexOption.IGNORE_CASE)
+
     /**
-     * Styling and interaction statements. They contribute no nodes or edges, and matching them
-     * here is what stops the node scanner registering `classDef`, `class` or `style` as ids.
+     * Statements that contribute no nodes or edges, and matching them here is what stops the
+     * node scanner registering `classDef`, `class` or `style` as node ids.
+     *
+     * DIA-07: they are no longer *discarded*. The styling ones are collected first; only
+     * `click` and `direction` still fall through to being genuinely ignored.
      */
     private val IGNORED_DIRECTIVE =
         Regex("""^\s*(classDef|class|style|linkStyle|click|direction)\b""", RegexOption.IGNORE_CASE)
@@ -218,6 +192,78 @@ object MermaidParser {
     /** Accumulates a subgraph's members while its block is open. */
     private class MutableGroup(val id: String, val title: String) {
         val nodeIds = mutableListOf<String>()
+    }
+
+    /**
+     * DIA-07: gathers styling statements, then resolves them once the graph is complete.
+     *
+     * Two-phase because Mermaid imposes no ordering — `class a big` may appear before the
+     * `classDef big …` it refers to, and `linkStyle default` has to be applied to a count of
+     * edges that is not known until parsing ends. Resolving eagerly would silently drop the
+     * forward references, which is the sort of partial support that is worse than none.
+     */
+    private class StyleCollector {
+        private val classDefs = mutableMapOf<String, NodeStyle>()
+        private val classAssignments = mutableListOf<Pair<String, String>>()
+        private val inlineNodeStyles = mutableMapOf<String, NodeStyle>()
+        private val edgeStyles = mutableMapOf<Int, EdgeStyle>()
+        private var defaultEdgeStyle: EdgeStyle? = null
+
+        /** @return true when [line] was a styling statement and needs no further parsing. */
+        fun tryConsume(line: String): Boolean {
+            CLASS_DEF.find(line)?.let { match ->
+                val style = StyleDeclarationParser.parseNodeStyle(match.groupValues[2])
+                for (name in splitNames(match.groupValues[1])) classDefs[name] = style
+                return true
+            }
+            // Checked after CLASS_DEF: `classDef` also begins with `class`.
+            CLASS_APPLY.find(line)?.let { match ->
+                val className = match.groupValues[2]
+                for (node in splitNames(match.groupValues[1])) classAssignments += node to className
+                return true
+            }
+            STYLE_NODE.find(line)?.let { match ->
+                val style = StyleDeclarationParser.parseNodeStyle(match.groupValues[2])
+                val id = match.groupValues[1]
+                inlineNodeStyles[id] = inlineNodeStyles[id]?.mergedWith(style) ?: style
+                return true
+            }
+            LINK_STYLE.find(line)?.let { match ->
+                val style = StyleDeclarationParser.parseEdgeStyle(match.groupValues[2])
+                val targets = splitNames(match.groupValues[1])
+                if (targets.any { it.equals("default", ignoreCase = true) }) {
+                    defaultEdgeStyle = style
+                } else {
+                    for (index in targets.mapNotNull { it.toIntOrNull() }) edgeStyles[index] = style
+                }
+                return true
+            }
+            return false
+        }
+
+        fun resolve(edgeCount: Int): DiagramStyling {
+            val perNode = mutableMapOf<String, NodeStyle>()
+
+            // `class` first, inline `style` layered on top: the more specific statement wins.
+            for ((nodeId, className) in classAssignments) {
+                val classStyle = classDefs[className] ?: continue
+                perNode[nodeId] = perNode[nodeId]?.mergedWith(classStyle) ?: classStyle
+            }
+            for ((nodeId, inline) in inlineNodeStyles) {
+                perNode[nodeId] = perNode[nodeId]?.mergedWith(inline) ?: inline
+            }
+
+            val perEdge = mutableMapOf<Int, EdgeStyle>()
+            defaultEdgeStyle?.let { fallback ->
+                for (index in 0 until edgeCount) perEdge[index] = fallback
+            }
+            perEdge.putAll(edgeStyles)
+
+            return DiagramStyling(classes = classDefs.toMap(), nodeStyles = perNode, edgeStyles = perEdge)
+        }
+
+        private fun splitNames(raw: String): List<String> =
+            raw.split(',').map { it.trim() }.filter { it.isNotEmpty() }
     }
 
     /** Resolved arrow: the label (or null) plus whether it is dashed, and where it ends. */
@@ -318,15 +364,29 @@ object MermaidParser {
         fun consume(line: String) {
             if (tryOpenSubgraph(line)) return
             if (tryCloseSubgraph(line)) return
+            // DIA-07: collected *before* the blanket skip, so a styling statement contributes
+            // its colours and still never reaches the node scanner.
+            if (styleCollector.tryConsume(line)) return
             if (IGNORED_DIRECTIVE.containsMatchIn(line)) return
             assignToOpenGroup(scanNodesAndEdges(line))
         }
+
+        private val styleCollector = StyleCollector()
 
         /** Finalises the diagram: close any unterminated subgraphs, then fall back if empty. */
         fun build(bodyLines: List<String>, direction: FlowDirection): ParsedDiagram {
             drainOpenSubgraphs()
             if (nodes.isEmpty()) fillFallback(bodyLines)
-            return ParsedDiagram("flowchart", direction, nodes.values.toList(), edges, groups)
+            return ParsedDiagram(
+                type = "flowchart",
+                direction = direction,
+                nodes = nodes.values.toList(),
+                edges = edges,
+                groups = groups,
+                // Resolved last: `class` statements may precede or follow the `classDef` they
+                // name, and Mermaid does not require an order.
+                styling = styleCollector.resolve(edgeCount = edges.size)
+            )
         }
 
         private fun tryOpenSubgraph(line: String): Boolean {
@@ -400,9 +460,15 @@ object MermaidParser {
             return ParsedDiagram("flowchart", FlowDirection.DEFAULT, emptyList(), emptyList())
         }
 
-        val firstLine = lines.first().lowercase()
-        if (firstLine.startsWith("sequence") || firstLine.contains("sequencediagram")) {
-            return parseSequenceDiagram(lines)
+        // DIA-01/02/03/04: the language is decided by the header keyword, deterministically.
+        when (DiagramKind.of(code)) {
+            DiagramKind.SEQUENCE -> return parseSequenceDiagram(lines)
+            DiagramKind.STATE -> return StateDiagramParser.parse(code).toFlowchart()
+            DiagramKind.CLASS -> return ClassDiagramParser.parse(code).toFlowchart()
+            DiagramKind.ER -> return ErDiagramParser.parse(code).toFlowchart()
+            // Gantt is a timeline, not a graph; it has its own renderer and never reaches here.
+            DiagramKind.GANTT -> return ParsedDiagram("gantt", FlowDirection.DEFAULT, emptyList(), emptyList())
+            DiagramKind.FLOWCHART -> Unit
         }
         // DIA-08: parsed as a word, by FlowDirection. The previous test asked whether the
         // header *contained* "lr", which could not see RL or BT at all.
@@ -463,6 +529,11 @@ fun MermaidDiagramCanvas(
     var showRawCode by remember { mutableStateOf(false) }
     val diagram = remember(code) { MermaidParser.parse(code) }
 
+    // DIA-04: a Gantt is a timeline, not a graph, so it never goes through the flowchart model.
+    val gantt = remember(code) {
+        if (DiagramKind.of(code) == DiagramKind.GANTT) GanttChartParser.parse(code) else null
+    }
+
     // MMD-2/MMD-3: sequence diagrams get their own model and renderer. The flowchart
     // node/edge model cannot express ordering or nesting, so reusing it dropped
     // participants, half the arrow types, and every block construct.
@@ -474,6 +545,10 @@ fun MermaidDiagramCanvas(
         when {
             sequence != null && !sequence.isEmpty -> "SEQUENCE DIAGRAM"
             diagram.type == "flowchart" -> "ARCHITECTURE FLOWCHART"
+            diagram.type == "class" -> "CLASS DIAGRAM"
+            diagram.type == "state" -> "STATE DIAGRAM"
+            diagram.type == "er" -> "ENTITY RELATIONSHIP"
+            diagram.type == "gantt" -> "GANTT CHART"
             else -> "MERMAID DIAGRAM"
         }
     }
@@ -504,6 +579,7 @@ fun MermaidDiagramCanvas(
             DiagramContent(
                 diagram = diagram,
                 sequence = sequence,
+                gantt = gantt,
                 code = code,
                 theme = theme
             )
@@ -538,6 +614,7 @@ private fun RawCodeView(code: String) {
 private fun DiagramContent(
     diagram: ParsedDiagram,
     sequence: SequenceDiagram?,
+    gantt: GanttChart?,
     code: String,
     theme: PresentationTheme
 ) {
@@ -550,6 +627,20 @@ private fun DiagramContent(
         when {
             sequence != null && !sequence.isEmpty ->
                 SequenceDiagramView(sequence, theme, Modifier.fillMaxSize())
+
+            // DIA-04: `GanttChartView` returns false when the schedule cannot be resolved
+            // deterministically — a non-ISO `dateFormat`, or nothing anchored to a calendar.
+            // Falling through to the source then is the honest outcome; a chart drawn from a
+            // guessed date format would be confidently wrong.
+            gantt != null && !gantt.isEmpty ->
+                if (!GanttChartView(gantt, theme, Modifier.fillMaxSize())) {
+                    Text(
+                        text = code,
+                        color = theme.textMuted,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp
+                    )
+                }
 
             diagram.nodes.isEmpty() ->
                 Text(
@@ -574,7 +665,15 @@ private fun DiagramContent(
 @Composable
 internal fun NodeCard(
     node: DiagramNode,
-    theme: PresentationTheme
+    theme: PresentationTheme,
+    /**
+     * DIA-07: the node's declared style, or null to use the theme.
+     *
+     * Every field is applied independently rather than as a bundle, because Mermaid lets an
+     * author set only `fill` — and a diagram that sets one property must not lose the other
+     * two to defaults the palette never chose.
+     */
+    style: NodeStyle? = null
 ) {
     val shape = when (node.shape) {
         NodeShape.ROUNDED_RECT -> RoundedCornerShape(12.dp)
@@ -589,14 +688,16 @@ internal fun NodeCard(
             .shadow(10.dp, shape, spotColor = theme.primary.copy(alpha = 0.2f))
             .clip(shape)
             .background(
-                Brush.linearGradient(
-                    listOf(
-                        theme.surfaceVariant,
-                        theme.surface
-                    )
-                )
+                // A declared fill is flat: the gradient is Skaldoria's own styling, and
+                // applying it over an author's colour changes the colour they asked for.
+                style?.fill?.let { Brush.linearGradient(listOf(it, it)) }
+                    ?: Brush.linearGradient(listOf(theme.surfaceVariant, theme.surface))
             )
-            .border(1.5.dp, theme.primary.copy(alpha = 0.8f), shape)
+            .border(
+                (style?.strokeWidthPx?.dp ?: 1.5.dp),
+                style?.stroke ?: theme.primary.copy(alpha = 0.8f),
+                shape
+            )
             .padding(horizontal = 20.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -606,17 +707,30 @@ internal fun NodeCard(
         ) {
             Text(
                 text = node.label,
-                color = theme.textPrimary,
+                color = style?.textColor ?: theme.textPrimary,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
-                maxLines = 3,
+                // DIA-02/03: a class or entity box lists its members, so three lines truncates
+                // most real ones. Still bounded — an unbounded box would break the layout.
+                maxLines = NODE_LABEL_MAX_LINES,
                 overflow = TextOverflow.Ellipsis
             )
-            if (node.id != node.label && node.id.isNotBlank()) {
+            if (node.showId && node.id != node.label && node.id.isNotBlank()) {
                 Text(
                     text = node.id,
-                    color = theme.textMuted,
+                    // DIA-07: `textMuted` is chosen to sit on the theme's surface. On a node
+                    // with a declared fill it is near-invisible — the id vanished on a yellow
+                    // node, which the styling tests could not see and the render did. Muted
+                    // against the actual fill instead, via the same enforcer that keeps body
+                    // text legible.
+                    color = style?.fill?.let { fill ->
+                        AdaptiveContrastEnforcer.ensureContrast(
+                            foreground = style.textColor ?: theme.textMuted,
+                            background = fill,
+                            minContrastRatio = NODE_ID_MIN_CONTRAST
+                        )
+                    } ?: theme.textMuted,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
@@ -626,3 +740,15 @@ internal fun NodeCard(
         }
     }
 }
+
+/**
+ * Contrast floor for a node's id sublabel against a declared fill.
+ *
+ * Lower than body text on purpose — it is deliberately secondary information — but not so low
+ * that it disappears, which is what `textMuted` did on a bright custom fill. WCAG 1.4.11's 3:1
+ * for non-text-critical graphics is the right reference point.
+ */
+private const val NODE_ID_MIN_CONTRAST = 3.0f
+
+/** Bound on a node label's lines. Enough for a real class box, short of unbounded. */
+private const val NODE_LABEL_MAX_LINES = 12

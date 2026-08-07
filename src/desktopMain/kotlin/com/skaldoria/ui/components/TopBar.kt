@@ -17,7 +17,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.skaldoria.core.models.SlideTransition
+import com.skaldoria.markdown.models.SlideTransition
 import com.skaldoria.export.DeckExporter
 import com.skaldoria.state.PresentationState
 import com.skaldoria.theme.BuiltinThemes

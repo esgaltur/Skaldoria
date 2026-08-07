@@ -1,6 +1,6 @@
 # Quality Baseline
 
-**Version:** 1.4.0 · **Last reviewed:** 2026-08-06 · **Suite:** 588 tests, 0 failures
+**Version:** 1.7.0 · **Last reviewed:** 2026-08-07 · **Suite:** 624 tests, 0 failures
 
 This document is the reference for the invariants this codebase holds, established during a
 systematic pre-release review of `src/desktopMain`. Every entry has a stable identifier, and
@@ -84,6 +84,7 @@ Entries without a **Rationale** are self-evident and need none.
 | COR-11 | Config | Persistence has one injection point; the suite never writes to the real home | `ConfigStorageLocationTest` |
 | COR-12 | Companion | JSON string encoding escapes the whole C0 range | `JsonEscapingTest` |
 | COR-13 | Search | Slide search covers every `SlideElement` variant | `SlideSearchTest` |
+| COR-14 | Config | A test's `PresentationState` is disposed before the next test runs | `PresentationStateDisposalTest` |
 | EXP-1 | Export | Exported colours match the source theme | `CharacterizationTest` |
 | EXP-2 | Export | Exported HTML cannot be broken out of by content | `CharacterizationTest` |
 | EXP-3 | Export | Every slide element reaches the image export | — |
@@ -123,6 +124,9 @@ Entries without a **Rationale** are self-evident and need none.
 | EDT-3 | Editor | Slide ⇄ offset mapping derives from `Slide.sourceLineRange`; nothing re-derives boundaries (extends COR-1) | `SlideSourceLocatorTest` |
 | EDT-4 | Editor | Every match-navigation action scrolls its match into view — asserted on the **rendered** pane, not on the index | `EditorWorkspaceRenderingTest` |
 | EDT-5 | Editor | Selection is clamped to the new text length before it reaches the field | `EditorRevealTest` |
+| EDT-6 | Editor | A reveal survives the re-layout that revealing itself causes — asserted in a **live** composition | `FindRevealScrollTest` |
+| EDT-7 | Editor | Ending a search hands the caret back to the editor, still on the match | `EditorRevealTest` |
+| WCAG-1 | Contrast | `ensureContrast` reaches its target in whichever lightness direction achieves it | `AdaptiveContrastEnforcerTest` |
 | CLK-1 | Presentation | The key codes an off-the-shelf presenter clicker emits reach a deck command | `PresenterClickerTest` |
 | KEY-1 | Presentation | Every window that hosts the deck answers to the whole `DECK` keyboard surface — asserted by sending keys into a real composition, not by resolving the registry | `FullscreenDeckKeyTest` |
 | PRF-5 | Performance | No `Regex` is constructed inside a per-line or per-frame loop, and no per-keystroke path allocates the whole document to answer a question about part of it | `PerformanceProbe` (measured, not asserted — see [`PERFORMANCE_BASELINE.md`](./PERFORMANCE_BASELINE.md)) |
@@ -240,7 +244,7 @@ refused with `411`.
 **Rationale.** This is a hand-written HTTP parser reading from an untrusted network. It frames
 bodies by `Content-Length` only; refusing chunked encoding explicitly is correct, whereas
 mis-reading a chunked body silently is not. Recorded because the trade-off of hand-rolling the
-parser (see [ADR-001](./ADR_COMPANION_SERVER_ARCHITECTURE.md)) is that these limits are ours to
+parser (see [ADR-001](./adr/001-companion-server-architecture.md)) is that these limits are ours to
 maintain.
 
 ---
@@ -512,7 +516,7 @@ all (LNK-2); and Windows names its hotspot adapter *"Microsoft Wi-Fi Direct **Vi
 Adapter"*, so the direct-link checks must run **before** the virtual denylist or the fix defeats
 itself.
 
-See [ADR-005](./ADR_COMPANION_LINK_ESTABLISHMENT.md).
+See [ADR-005](./adr/005-companion-link-establishment.md).
 
 **Guard.** `LinkRankingTest`.
 
@@ -609,6 +613,121 @@ writes follow the configured root.
 
 ---
 
+### EDT-6 — A reveal survives the re-layout it causes
+
+**Invariant.** The reveal effect is keyed on `editorRevealToken` alone; the text layout is
+awaited *inside* it, and `handledRevealToken` is marked only after the scroll has landed.
+
+**Rationale.** EDT-4 shipped with `layout` as a second effect key, so that a reveal published
+before the text had been measured — a slide-file swap in project mode — would re-run once a
+measurement existed. It also made every *later* measurement restart the effect, and advancing a
+find match is exactly that: a new `activeMatchIndex` restyles the active span, the field
+re-lays out, `onTextLayout` publishes a new `TextLayoutResult`, the key changes, and Compose
+cancels the running `animateScrollTo`. Re-entering, the token guard — already satisfied,
+because it was set *before* the suspend — returned immediately. **Pressing "next match" moved
+the pane zero pixels**, while the index, the filmstrip and the preview all advanced correctly,
+so every non-visual signal said the feature worked.
+
+**Why the guard had to change too.** `EditorWorkspaceRenderingTest` covered EDT-4 and passed
+throughout, because it mutates the state and *then* renders into a fresh scene: the reveal
+arrives before the first composition, when nothing has been measured and no token has been
+handled. That configuration is unreachable in the UI. A reveal defect is only observable in a
+composition that is already running, so the guard drives one long-lived scene and steps it.
+
+**Guard.** `FindRevealScrollTest` — opens find, types, and presses next three times in a single
+live scene, failing if the pane is unchanged between any two presses. Verified against the
+defect: it reports `0.0%` movement on all three before the fix.
+
+---
+
+### EDT-7 — Ending a search hands the caret back
+
+**Invariant.** Closing the find bar publishes a focus request (`EditorSession.focusToken`) and
+leaves the selection on the active match. Opening it, and closing an already-closed bar, publish
+nothing.
+
+**Rationale.** `requestReveal` had always put the selection on the match, but an unfocused
+Compose text field draws **neither cursor nor selection**, and the find bar holds focus on its
+own query field on purpose — clicking next/prev used to move focus out and stop Enter cycling.
+So a found match was revealed into a pane with no visible caret, and typing over it meant
+clicking first, which discards the position that was just found. The only thing left on screen
+was the highlight overlay, which is focus-independent — the symptom reported as "it only
+highlights the word". Close is the one moment that means "done searching, now edit", so it is
+where the handover belongs; doing it per match would reintroduce the fixed Enter defect.
+
+**Why the composable retries.** The request is raised by the same action that unmounts the find
+bar, and Compose clears focus from an unmounting node during that pass, so a single
+`requestFocus()` is a coin flip — the first version of this fix passed once and failed on
+re-run. The effect waits a frame and re-asserts, bounded.
+
+**Guard.** `EditorRevealTest` — four cases over the state contract.
+
+**Not covered by the render harness, and this is a limitation rather than an omission.** An
+`ImageComposeScene` has no platform text-input session: `requestFocus()` returns without
+throwing and the field still reports `isFocused == false`. That was measured, not assumed. A
+pixel guard on the focused container tint therefore fails for reasons unrelated to this code,
+and the obvious pane-difference guard passes vacuously because closing the bar reflows the
+column. The drawn caret is a manual check; see `RENDERING_STATUS.md`.
+
+---
+
+### WCAG-1 — Contrast enforcement searches both directions
+
+**Invariant.** `AdaptiveContrastEnforcer.ensureContrast` returns the colour closest to the
+original lightness that reaches the requested ratio, considering both darkening and lightening;
+where the ratio is unreachable it returns the highest contrast available.
+
+**Rationale.** It used to choose a direction from `relativeLuminance(background) > 0.5f` and
+search only that way. Relative luminance is not perceptual lightness: mid-grey `#808080`
+measures **0.216**, so the check called it dark, lightened the foreground, and stopped at
+3.9:1 — while darkening the same colour reaches 5.3:1. The function then returned its best
+effort rather than failing, so every caller on a mid-luminance surface was quietly handed the
+worse of two options and nothing said so. This is the machinery the WCAG 2.1 AA badge in the
+README rests on.
+
+**How it survived.** `ParkingLotAndThemeTest.testAdaptiveContrastEnforcement` covered it and
+passed throughout — on a **pure white** background, where the direction check happens to be
+right. The bug lived entirely in the range the one test did not sample. Found while deriving
+THM-05's pointer colours, where a violet accent on mid-grey came back at 3.32:1.
+
+**Guard.** `AdaptiveContrastEnforcerTest` — the reported case, a sweep across 21 background
+greys comparing against the arithmetic ceiling, plus pins that hue and saturation survive, an
+already-compliant colour is untouched, and the adjustment stays minimal.
+
+---
+
+### COR-14 — A test's `PresentationState` does not outlive the test
+
+**Invariant.** Every `PresentationState` a test creates is disposed before the next test starts.
+Tests obtain one from `PresentationStateTestBase.presentationState()`, which tracks it and
+disposes it in `@AfterTest`; constructing one directly anywhere in `src/desktopTest` is a failure.
+
+**Rationale.** COR-11 stopped the suite writing to the developer's home. It did not stop the suite
+writing to *itself*. A mutation schedules a debounced draft save (`DRAFT_SAVE_DEBOUNCE_MS`, 750 ms)
+on that instance's own scope, and `dispose()` is the only thing that cancels it; the whole suite
+shares one JVM and one draft file. An undisposed instance's save therefore lands inside whatever
+test is running 750 ms later, replacing the draft between another test's write and its assertion.
+It blocked two builds through `DraftRecoveryTest`, and `ConfigManagerTest` reads the same file with
+no protection at all. Because the landing point depends on timing, the failure moves as the suite
+reorders and never presents the same way twice.
+
+The earlier mitigation — `Thread.sleep(DRAFT_SAVE_DEBOUNCE_MS + 250)` in `DraftRecoveryTest` —
+made one symptom deterministic without removing the cause, and left every other reader of that
+file exposed.
+
+**Why the guard is structural.** Disposal by convention had already been tried and had already
+decayed: `MARKDOWN_UNIFICATION_PLAN.md` recorded 15 leaking files, and by the time the defect was
+fixed there were 18 of 23, every addition made by someone who did not know the rule existed. A
+base class alone would still be opt-in, so the guard forbids the constructor rather than asking
+for the base class — the same shape as DED-7 and SEC-8, where the policy is derived from a
+declaration instead of being restated at each site.
+
+**Guard.** `PresentationStateDisposalTest` — scans the test sources and fails on any direct
+construction outside `PresentationStateTestBase`; a second case asserts the scan actually reaches
+the sources, so a moved source set cannot make it pass vacuously.
+
+---
+
 ## Design decisions worth preserving
 
 Four choices are deliberate and look like oversights if the reasoning is missing.
@@ -621,14 +740,14 @@ runtime — the wrong trade for software whose failure is discovered in front of
 closed earns its keep against unbounded extension; this set is bounded and curated.
 
 **The companion server is not framework-based.** Evaluated and re-evaluated; see
-[ADR-001](./ADR_COMPANION_SERVER_ARCHITECTURE.md) and
+[ADR-001](./adr/001-companion-server-architecture.md) and
 [the Ktor analysis](./KTOR_MIGRATION_TRADEOFFS.md). The decision holds on packaging and JPMS
 portability across six installer formats, not on the dependency-size figures originally quoted,
 which were overstated. Revisit if push (WebSockets/SSE) replaces polling.
 
 **Geometry is separated from drawing.** Diagram layout produces a `FlowchartScene` of pure
 rectangles and offsets; renderers walk it. See
-[ADR-002](./ADR_DIAGRAM_GEOMETRY_ARCHITECTURE.md). This is what allows subgraph invariants to be
+[ADR-002](./adr/002-diagram-geometry-architecture.md). This is what allows subgraph invariants to be
 asserted without rendering.
 
 **Compact text inputs are not Material text fields.** `CompactTextField` exists because Material 3

@@ -1,18 +1,17 @@
 package com.skaldoria.core
 
-import com.skaldoria.state.PresentationState
+import com.skaldoria.PresentationStateTestBase
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.ui.editor.MarkdownVisualTransformation
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class EditorFindAndReplaceTest {
+class EditorFindAndReplaceTest : PresentationStateTestBase() {
 
     @Test
     fun testFindMatchesCaseInsensitiveAndSensitive() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown("# Kotlin Engine\nKotlin is fast, kotlin is modern.\nKOTLIN rocks!")
 
         state.findQuery = "kotlin"
@@ -25,7 +24,7 @@ class EditorFindAndReplaceTest {
 
     @Test
     fun testFindMatchesWholeWord() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown("cat concatenate caterpillar cat")
 
         state.findQuery = "cat"
@@ -38,7 +37,7 @@ class EditorFindAndReplaceTest {
 
     @Test
     fun testFindMatchesRegex() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown("Slide 1: Alpha\nSlide 2: Beta\nSlide 42: Omega")
 
         state.findQuery = "Slide \\d+"
@@ -48,7 +47,7 @@ class EditorFindAndReplaceTest {
 
     @Test
     fun testFindNextAndPreviousCycling() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown("alpha beta alpha gamma alpha")
         state.findQuery = "alpha"
 
@@ -70,7 +69,7 @@ class EditorFindAndReplaceTest {
 
     @Test
     fun testReplaceCurrentAndReplaceAll() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown("apple banana apple cherry apple")
         state.findQuery = "apple"
         state.replaceQuery = "orange"

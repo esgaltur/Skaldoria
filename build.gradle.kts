@@ -1,9 +1,9 @@
 plugins {
-    kotlin("multiplatform") version "2.2.0"
-    id("org.jetbrains.compose") version "1.7.3"
-    id("org.jetbrains.kotlin.plugin.compose") version "2.2.0"
-    // Declared here so `:markdown-core` can apply it without restating the version.
-    kotlin("jvm") version "2.2.0" apply false
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.compose)
+    alias(libs.plugins.kotlin.compose)
+    // Declared here so `:skaldoria-markdown` can apply it without restating the version.
+    alias(libs.plugins.kotlin.jvm) apply false
 }
 
 group = "com.skaldoria"
@@ -18,9 +18,6 @@ group = "com.skaldoria"
 val appVersion = "1.2.0"
 version = appVersion
 
-/** Single version for every coroutines artifact, so `-core` and `-swing` cannot drift. */
-val coroutinesVersion = "1.11.0"
-
 /**
  * Emits `BuildInfo.kt` so the version is available at runtime.
  *
@@ -28,6 +25,8 @@ val coroutinesVersion = "1.11.0"
  * generated rather than committed to keep one authority for the number.
  */
 val generateBuildInfo = tasks.register("generateBuildInfo") {
+    group = "build"
+    description = "Generates the BuildInfo Kotlin source with build metadata (e.g. app version)."
     val outputDir = layout.buildDirectory.dir("generated/source/buildinfo")
     inputs.property("appVersion", appVersion)
     outputs.dir(outputDir)
@@ -55,14 +54,36 @@ val generateBuildInfo = tasks.register("generateBuildInfo") {
     }
 }
 
+/**
+ * Makes `appVersion` readable from outside Gradle.
+ *
+ * The release scripts used to carry their own `1.0.0` default, so running one without an
+ * explicit argument produced `Skaldoria-v1.0.0-*` artefacts from a 1.2.0 build. They now ask
+ * this task instead, which keeps the "single source of truth" above honest rather than merely
+ * claimed.
+ *
+ *     ./gradlew -q printVersion
+ */
+tasks.register("printVersion") {
+    group = "help"
+    description = "Prints the application version, for the local release scripts to read."
+    // Captured at configuration time so the task body touches no project state.
+    val versionToPrint = appVersion
+    doLast { println(versionToPrint) }
+}
+
 kotlin {
     jvm("desktop")
 
     /**
      * The zero-warning NFR, enforceable.
      *
-     * Off by default so a local build stays workable mid-edit, and turned on by CI with
-     * `-PwarningsAsErrors`. Without a gate the NFR is a wish: the Kotlin compiler does not
+     * Off by default so a local build stays workable mid-edit, and turned on with
+     * `-PwarningsAsErrors` by `scripts/verify.ps1`, by both release pipelines, and by
+     * `.github/workflows/ci.yml` — which sets it unchanged, as the property-driven design
+     * intended. That workflow is manual-dispatch only (`PLT-01`: automatic triggers are still
+     * deferred on cost), so the gate that actually holds remains the one where the release is
+     * cut. Without a gate the NFR is a wish: the Kotlin compiler does not
      * report unused *public* declarations at all, so several dead functions sat in this
      * codebase through a full release with a green build.
      */
@@ -71,31 +92,34 @@ kotlin {
     }
 
     sourceSets {
-        val desktopMain = getByName("desktopMain") {
+        getByName("desktopMain") {
             // Passing the task provider (not a path) lets Gradle wire the dependency itself.
             kotlin.srcDir(generateBuildInfo)
 
             dependencies {
-                // The markdown engine, Compose-free by construction. See markdown-core/build.gradle.kts.
-                implementation(project(":markdown-core"))
+                // The Markdown engine, Compose-free by construction. See skaldoria-markdown/build.gradle.kts.
+                implementation(project(":skaldoria-markdown"))
 
                 implementation(compose.desktop.currentOs)
-                implementation(compose.material3)
-                implementation(compose.materialIconsExtended)
-                implementation(compose.components.resources)
+                implementation(libs.compose.material3)
+                implementation(libs.compose.material.icons.extended)
+                implementation(libs.compose.components.resources)
 
                 // Coroutines & Desktop Swing dispatcher.
                 //
                 // Both must move together. `-swing` was pinned at 1.1.0 (2018) against a
                 // 1.11.0 core: harmless in practice, because the coroutines BOM lifted it,
                 // but it read as a live version and hid that the two had drifted.
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutinesVersion")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:$coroutinesVersion")
+                implementation(libs.kotlinx.coroutines.core)
+                implementation(libs.kotlinx.coroutines.swing)
             }
         }
-        val desktopTest = getByName("desktopTest") {
+        getByName("desktopTest") {
             dependencies {
-                implementation(kotlin("test"))
+                // kotlin.test backed by JUnit 5 (Jupiter); junit-jupiter pulls the engine so the
+                // JUnit Platform can run these tests. JUnit 4 is deliberately not on the classpath.
+                implementation(kotlin("test-junit5"))
+                implementation(libs.junit.jupiter)
             }
         }
     }
@@ -110,10 +134,28 @@ kotlin {
  * on the task makes every test hermetic without each one having to remember to redirect.
  */
 tasks.withType<Test>().configureEach {
+    // JUnit 5 only — kotlin.test is wired to Jupiter via kotlin("test-junit5").
+    useJUnitPlatform()
+
     systemProperty(
         "skaldoria.configDir",
         layout.buildDirectory.dir("test-config").get().asFile.absolutePath
     )
+
+    /**
+     * PLT-08: lets the render guards be stood down from the command line.
+     *
+     * Tests run in a forked JVM, so a `-D` on the Gradle invocation does not reach them — it
+     * configures the daemon and the guards keep rendering, which is exactly the false negative
+     * this forwarding removes. `RenderEnvironment` also detects a genuinely headless machine on
+     * its own; this is the explicit override for the case where a display exists but rendering
+     * still should not be attempted.
+     *
+     *     ./gradlew desktopTest -PskipRenderTests
+     */
+    if (providers.gradleProperty("skipRenderTests").isPresent) {
+        systemProperty("skaldoria.skipRenderTests", "true")
+    }
 }
 
 compose.desktop {
@@ -130,7 +172,7 @@ compose.desktop {
             )
             packageName = "Skaldoria"
             packageVersion = appVersion
-            description = "Skaldoria — Native Markdown Presentation Studio"
+            description = "Skaldoria - Native Markdown Presentation Studio"
             vendor = "Skaldoria"
 
             val iconsDir = project.file("src/desktopMain/resources/icons")

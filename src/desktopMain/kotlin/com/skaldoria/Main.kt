@@ -1,18 +1,14 @@
 package com.skaldoria
 
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.input.key.*
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.WindowPlacement
-import androidx.compose.ui.window.WindowPosition
-import androidx.compose.ui.window.application
-import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.ui.window.*
 import com.skaldoria.core.command.AppCommands
 import com.skaldoria.core.command.CommandScope
 import com.skaldoria.state.PresentationState
@@ -119,6 +115,10 @@ fun main() = application {
                 AppCommands.COMMAND_PALETTE -> state.isCommandPaletteOpen = !state.isCommandPaletteOpen
                 AppCommands.FIND -> state.toggleFind(withReplace = false)
                 AppCommands.REPLACE -> state.toggleFind(withReplace = true)
+                // AUT-20: repeat the search with the bar shut. Coherent only since EDT-7 —
+                // closing the bar now leaves the caret on the match instead of nowhere.
+                AppCommands.FIND_NEXT -> state.repeatFindNext()
+                AppCommands.FIND_PREVIOUS -> state.repeatFindPrevious()
                 AppCommands.PRESENT -> state.startPresenting(presenterMode = false)
                 else -> {
                     // Escape is only ours while the find bar is up; otherwise it belongs to

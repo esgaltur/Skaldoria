@@ -1,6 +1,6 @@
 package com.skaldoria
 
-import com.skaldoria.core.parser.MarkdownSlideParser
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.ui.editor.MarkdownVisualTransformation
 import kotlin.test.Test

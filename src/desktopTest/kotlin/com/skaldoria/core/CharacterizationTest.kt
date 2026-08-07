@@ -1,7 +1,8 @@
 package com.skaldoria.core
 
-import com.skaldoria.core.models.SlideLayoutType
-import com.skaldoria.core.parser.MarkdownSlideParser
+import com.skaldoria.PresentationStateTestBase
+import com.skaldoria.markdown.models.SlideLayoutType
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.export.DeckExporter
 import com.skaldoria.state.PresentationState
 import java.io.File
@@ -20,7 +21,7 @@ import kotlin.test.assertTrue
  * Breaking one is a regression unless the change was intended, in which case update the
  * expectation deliberately and say why in the commit.
  */
-class CharacterizationTest {
+class CharacterizationTest : PresentationStateTestBase() {
 
     // ---------------------------------------------------------------------
     // Parser — built-in decks
@@ -125,14 +126,14 @@ class CharacterizationTest {
             content c
         """.trimIndent()
 
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(deck)
         assertEquals(listOf("Alpha", "Beta", "Gamma"), state.slides.map { it.title })
 
         state.deleteSlide(1)
         assertEquals(listOf("Alpha", "Gamma"), state.slides.map { it.title }, "deleting the middle slide")
 
-        val moveState = PresentationState()
+        val moveState = presentationState()
         moveState.updateMarkdown(deck)
         moveState.moveSlide(0, 2)
         assertEquals(listOf("Beta", "Gamma", "Alpha"), moveState.slides.map { it.title }, "moving first slide to last")
@@ -155,7 +156,7 @@ class CharacterizationTest {
             content c
         """.trimIndent()
 
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(deck)
         assertEquals(listOf("Alpha", "Beta", "Gamma"), state.slides.map { it.title }, "parser sees three slides")
 
@@ -180,7 +181,7 @@ class CharacterizationTest {
         val slides = MarkdownSlideParser.parse(deck)
         assertEquals(listOf("A", "B"), slides.map { it.title }, "parser splits on four dashes")
 
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(deck)
         state.deleteSlide(0)
         assertEquals(
@@ -203,11 +204,11 @@ class CharacterizationTest {
         val slides = MarkdownSlideParser.parse("## Roadmap\n\n2024 Roadmap Overview\n")
 
         assertFalse(
-            slides[0].elements.any { it is com.skaldoria.core.models.SlideElement.Metric },
+            slides[0].elements.any { it is com.skaldoria.markdown.models.SlideElement.Metric },
             "COR-4: a bare year must not become a Metric"
         )
         assertTrue(
-            slides[0].elements.any { it is com.skaldoria.core.models.SlideElement.Text },
+            slides[0].elements.any { it is com.skaldoria.markdown.models.SlideElement.Text },
             "COR-4: it should be ordinary text"
         )
     }
@@ -225,7 +226,7 @@ class CharacterizationTest {
         for (line in cases) {
             val slides = MarkdownSlideParser.parse("<!-- layout: metric -->\n$line\n")
             assertTrue(
-                slides[0].elements.any { it is com.skaldoria.core.models.SlideElement.Metric },
+                slides[0].elements.any { it is com.skaldoria.markdown.models.SlideElement.Metric },
                 "COR-4: '$line' should still parse as a Metric"
             )
         }
@@ -237,7 +238,7 @@ class CharacterizationTest {
 
     @Test
     fun `printable html export emits one section per slide`() {
-        val state = PresentationState()
+        val state = presentationState()
         state.updateMarkdown(PresentationState.DEFAULT_SAMPLE_MARKDOWN)
 
         val html = DeckExporter.generatePrintableHtml(state, autoTriggerPrint = false)

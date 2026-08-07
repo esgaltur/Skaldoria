@@ -1,7 +1,7 @@
 package com.skaldoria.export
 
-import com.skaldoria.core.models.Slide
-import com.skaldoria.core.models.SlideElement
+import com.skaldoria.markdown.models.Slide
+import com.skaldoria.markdown.models.SlideElement
 import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.components.LatexSymbolMapper
 import java.awt.*

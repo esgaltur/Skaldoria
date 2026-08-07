@@ -1,5 +1,6 @@
 package com.skaldoria.state
 
+import com.skaldoria.PresentationStateTestBase
 import com.skaldoria.config.ConfigManager
 import com.skaldoria.core.deck.SampleDecks
 import kotlin.test.AfterTest
@@ -19,40 +20,29 @@ import kotlin.test.assertTrue
  * anywhere in `desktopMain`, so the welcome screen never actually offered the recovery the
  * baseline describes. The feature existed; nothing reached it.
  */
-class DraftRecoveryTest {
+class DraftRecoveryTest : PresentationStateTestBase() {
 
     /**
-     * Drains any autosave still in flight from an *earlier* test before clearing.
+     * COR-14 is what makes this a plain reset rather than a wait.
      *
-     * This test reads a process-wide file that every `PresentationState` in the suite can write.
-     * A mutation schedules a debounced save on that instance's own coroutine scope; `dispose()`
-     * cancels it, but **19 test files construct a `PresentationState` and only 4 dispose it**, so
-     * a job outlives the test that created it and lands here, replacing the draft between the
-     * `saveDraft` call and the assertion. That is the race behind
-     * `the bundled sample decks are not offered as recovered work` failing intermittently —
-     * reproducibly enough to block two builds, rarely enough to pass in isolation and on re-run.
-     *
-     * Waiting out the debounce is a workaround, not the fix. The fix is disposal discipline in the
-     * other 15 files; this makes the symptom deterministic in the meantime, and the sleep is
-     * bounded and derived rather than a guessed magic number.
+     * This test reads a process-wide file every `PresentationState` in the suite can write, and
+     * a mutation schedules a debounced save that only `dispose()` cancels. While disposal was
+     * by convention — 18 of 23 test files skipped it — a job outlived the test that created it
+     * and landed here, replacing the draft between the `saveDraft` call and the assertion. The
+     * workaround was `Thread.sleep(DRAFT_SAVE_DEBOUNCE_MS + 250)` here, which made the symptom
+     * deterministic without removing the cause, and cost the suite a second per test in this
+     * class. [com.skaldoria.PresentationStateTestBase] now disposes every state before the next
+     * test starts, so there is nothing left in flight to drain.
      */
     @BeforeTest
-    fun drainPendingAutosaves() {
-        Thread.sleep(PresentationState.DRAFT_SAVE_DEBOUNCE_MS + DRAIN_MARGIN_MS)
-        ConfigManager.clearDraft()
-    }
+    fun clearDraftBefore() = ConfigManager.clearDraft()
 
     @AfterTest
     fun clearDraft() = ConfigManager.clearDraft()
 
-    private companion object {
-        /** Slack over the debounce, for the IO dispatch and file write that follow it. */
-        const val DRAIN_MARGIN_MS = 250L
-    }
-
     @Test
     fun `no draft means nothing to recover`() {
-        assertNull(PresentationState().recoverableDraft())
+        assertNull(presentationState().recoverableDraft())
     }
 
     @Test
@@ -60,23 +50,23 @@ class DraftRecoveryTest {
         val work = "# Half-written keynote\n\n- a point I had not saved"
         ConfigManager.saveDraft(work)
 
-        assertEquals(work, PresentationState().recoverableDraft())
+        assertEquals(work, presentationState().recoverableDraft())
     }
 
     /** A user who never edited anything must not be prompted about the built-in decks. */
     @Test
     fun `the bundled sample decks are not offered as recovered work`() {
         ConfigManager.saveDraft(SampleDecks.DEFAULT_SAMPLE_MARKDOWN)
-        assertNull(PresentationState().recoverableDraft(), "the demo deck is not the user's work")
+        assertNull(presentationState().recoverableDraft(), "the demo deck is not the user's work")
 
         ConfigManager.saveDraft(SampleDecks.BLANK_STARTER_MARKDOWN)
-        assertNull(PresentationState().recoverableDraft(), "the blank starter is not the user's work")
+        assertNull(presentationState().recoverableDraft(), "the blank starter is not the user's work")
     }
 
     @Test
     fun `a blank draft is not offered`() {
         ConfigManager.saveDraft("   \n  \n")
-        assertNull(PresentationState().recoverableDraft())
+        assertNull(presentationState().recoverableDraft())
     }
 
     @Test
@@ -84,7 +74,7 @@ class DraftRecoveryTest {
         val work = "# Recovered\n\n- restored content\n\n---\n\n## Second slide"
         ConfigManager.saveDraft(work)
 
-        val state = PresentationState()
+        val state = presentationState()
         val draft = state.recoverableDraft()
         assertNotNull(draft)
 
@@ -101,7 +91,7 @@ class DraftRecoveryTest {
     @Test
     fun `discarding stops the draft being offered again`() {
         ConfigManager.saveDraft("# Unwanted")
-        val state = PresentationState()
+        val state = presentationState()
         assertNotNull(state.recoverableDraft())
 
         state.discardDraft()
@@ -117,6 +107,6 @@ class DraftRecoveryTest {
         val edited = "# Live edit\n\n- typed during a talk"
         ConfigManager.saveDraft(edited)
         assertTrue(ConfigManager.loadDraft()!!.contains("typed during a talk"))
-        assertEquals(edited, PresentationState().recoverableDraft())
+        assertEquals(edited, presentationState().recoverableDraft())
     }
 }

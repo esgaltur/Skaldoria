@@ -25,7 +25,9 @@ fun AppTooltip(
     content: @Composable () -> Unit
 ) {
     TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        // `rememberPlainTooltipPositionProvider` is deprecated in favour of this one, which
+        // takes the anchor position explicitly; `Above` is the plain-tooltip default.
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
         tooltip = {
             Surface(
                 shape = RoundedCornerShape(6.dp),

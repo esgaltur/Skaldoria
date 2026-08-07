@@ -1,8 +1,8 @@
 package com.skaldoria.core
 
-import com.skaldoria.core.models.FollowUpQuestion
-import com.skaldoria.core.parser.MarkdownSlideParser
-import com.skaldoria.state.PresentationState
+import com.skaldoria.PresentationStateTestBase
+import com.skaldoria.markdown.models.FollowUpQuestion
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.AdaptiveContrastEnforcer
 import com.skaldoria.theme.ColorScience
 import androidx.compose.ui.graphics.Color
@@ -11,7 +11,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class ParkingLotAndThemeTest {
+class ParkingLotAndThemeTest : PresentationStateTestBase() {
 
     @Test
     fun testParkingLotDirectiveParsing() {
@@ -55,13 +55,15 @@ class ParkingLotAndThemeTest {
         )
 
         val serialized = MarkdownSlideParser.serializeFollowUpQuestions(questions)
-        assertTrue(serialized.contains("<!-- parking-lot: [ ] What is the memory footprint? | slide:4 -->"))
-        assertTrue(serialized.contains("<!-- parking-lot: [x] What are the SLA guarantees? | 99.99% uptime with multi-AZ failover | slide:5 -->"))
+        val lines = serialized.lines().filter { it.startsWith("<!-- parking-lot:") }
+        assertEquals(2, lines.size, "expected exactly two parking-lot directives")
+        assertTrue(lines[0].startsWith("<!-- parking-lot: [ ] What is the memory footprint? | slide:4 | id:"))
+        assertTrue(lines[1].startsWith("<!-- parking-lot: [x] What are the SLA guarantees? | 99.99% uptime with multi-AZ failover | slide:5 | id:"))
     }
 
     @Test
     fun testCorporateThemeLockAndUnlock() {
-        val state = PresentationState()
+        val state = presentationState()
         
         // Deutsche Börse should not be in public availableThemes when locked
         assertFalse(state.isCorporateThemeUnlocked)

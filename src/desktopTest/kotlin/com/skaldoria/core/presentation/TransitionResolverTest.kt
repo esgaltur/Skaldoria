@@ -1,8 +1,8 @@
 package com.skaldoria.core.presentation
 
-import com.skaldoria.core.models.Slide
-import com.skaldoria.core.models.SlideLayoutType
-import com.skaldoria.core.models.SlideTransition
+import com.skaldoria.markdown.models.Slide
+import com.skaldoria.markdown.models.SlideLayoutType
+import com.skaldoria.markdown.models.SlideTransition
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

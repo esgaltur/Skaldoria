@@ -17,8 +17,10 @@ import com.skaldoria.core.document.DeckHistory
 import com.skaldoria.core.document.SlideSourceLocator
 import com.skaldoria.core.editor.FindReplaceController
 import com.skaldoria.core.models.*
+import com.skaldoria.markdown.models.*
 import com.skaldoria.core.pacing.Pacing
 import com.skaldoria.core.pacing.PacingCalculator
+import com.skaldoria.core.pacing.PacingPlan
 import com.skaldoria.core.pacing.TalkTimer
 import com.skaldoria.core.parkinglot.ParkingLotStore
 import com.skaldoria.core.ports.*
@@ -28,6 +30,7 @@ import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.theme.PresentationTheme
 import kotlinx.coroutines.*
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * @param backgroundContext where debounced autosave runs. PRF-4: injected rather than
@@ -84,6 +87,9 @@ class PresentationState(
     val editorSelection: TextRange get() = editor.selection
 
     val editorRevealToken: Long get() = editor.revealToken
+
+    /** EDT-7: increments when the source field should take keyboard focus. */
+    val editorFocusToken: Long get() = editor.focusToken
 
     /** EDT-5: clamped for a document of [length] characters before it reaches the field. */
     fun editorSelectionWithin(length: Int): TextRange = editor.selectionWithin(length)
@@ -196,8 +202,12 @@ class PresentationState(
         lastError = null
     }
 
-    var isCustomThemeDialogOpen by mutableStateOf(false)
-    var isExportBundleDialogOpen by mutableStateOf(false)
+    // DED-10: `isCustomThemeDialogOpen` and `isExportBundleDialogOpen` sat here and were read
+    // by nothing. Neither is an unfinished feature — ZIP export ships and is reachable from the
+    // Export menu (`TopBar`), it just opens a native AWT `FileDialog`, which is modal and holds
+    // no Compose state. Both flags are residue of a superseded design, so there was nothing to
+    // wire them to. They outlived the 2026-08-06 dead-code pass because that pass scanned
+    // functions, not properties.
     var isUnlockThemeDialogOpen by mutableStateOf(false)
     var isCorporateThemeUnlocked by mutableStateOf(false)
 
@@ -361,14 +371,31 @@ class PresentationState(
             "the whole deck"
         }
 
-    fun closeFind() = findReplace.close()
+    /**
+     * EDT-7: closing hands the caret back to the editor, on the match that was found.
+     *
+     * The find bar keeps focus on its own query field while it is open, deliberately — clicking
+     * next/prev used to move focus out and stop Enter cycling. Close is therefore the moment
+     * the user has finished searching and wants to edit, and the only point at which taking
+     * focus back cannot break match navigation.
+     */
+    fun closeFind() {
+        if (!findReplace.isOpen) return
+        findReplace.close()
+        editor.requestEditorFocus()
+    }
 
     fun toggleReplaceRow() = findReplace.toggleReplaceRow()
 
     fun toggleFind(withReplace: Boolean = false) {
+        val wasOpen = findReplace.isOpen
         findReplace.toggle(withReplace)
         // Opening with an existing query should resume from the caret, not restart at match 0.
-        if (findReplace.isOpen && findReplace.focusFrom(editor.selection.min)) revealCurrentMatch()
+        if (findReplace.isOpen) {
+            if (findReplace.focusFrom(editor.selection.min)) revealCurrentMatch()
+        } else if (wasOpen) {
+            editor.requestEditorFocus()
+        }
     }
 
     /**
@@ -391,6 +418,25 @@ class PresentationState(
     fun findPrevious() {
         findReplace.findPrevious()
         revealCurrentMatch()
+    }
+
+    /**
+     * AUT-20: `F3` / `Ctrl+G` — step the search without opening the bar.
+     *
+     * A no-op when nothing has been searched for yet, rather than opening an empty bar: the
+     * shortcut means "again", and there is no "again" before a first search. When a query does
+     * exist the match is revealed exactly as ▼ would reveal it, so the two entry points cannot
+     * drift.
+     */
+    fun repeatFindNext() {
+        if (findReplace.matches.isEmpty()) return
+        findNext()
+    }
+
+    /** AUT-20: `Shift+F3` / `Ctrl+Shift+G`. See [repeatFindNext]. */
+    fun repeatFindPrevious() {
+        if (findReplace.matches.isEmpty()) return
+        findPrevious()
     }
 
     fun replaceCurrent() = findReplace.replaceCurrent()
@@ -433,13 +479,35 @@ class PresentationState(
     val targetTotalSeconds: Long?
         get() = targetTalkDurationMinutes?.times(60L)
 
+    /**
+     * DEL-11: the schedule this deck declares, or an even split where it declares nothing.
+     *
+     * Rebuilt from `slides` on read rather than cached: the deck is reparsed on every keystroke,
+     * so a captured plan would describe a deck that no longer exists — the same reasoning that
+     * makes [SlideNavigator] read the slide count through a lambda.
+     */
+    val pacingPlan: PacingPlan
+        get() = PacingCalculator.plan(
+            targetTotalSeconds = targetTotalSeconds ?: 0L,
+            slideBudgets = slides.map { it.paceSeconds }
+        )
+
+    /**
+     * DEL-11: true when the declared budgets already exceed the talk's target duration.
+     *
+     * A planning error the speaker should see *before* the room does, rather than discovering
+     * it as overtime on stage.
+     */
+    val isPacingOverCommitted: Boolean
+        get() = targetTotalSeconds != null && pacingPlan.isOverCommitted
+
     /** One consistent readout, so the ribbon's delta and status can never disagree. */
     private val pacing: Pacing
         get() = PacingCalculator.compute(
             elapsedSeconds = elapsedSeconds,
             targetTotalSeconds = targetTotalSeconds,
             slideIndex = currentSlideIndex,
-            slideCount = slides.size
+            plan = pacingPlan
         )
 
     val targetSecondsPerSlide: Long
@@ -474,7 +542,7 @@ class PresentationState(
     private fun scheduleDraftSave(content: String) {
         draftSaveJob?.cancel()
         draftSaveJob = scope.launch(Dispatchers.IO) {
-            delay(DRAFT_SAVE_DEBOUNCE_MS)
+            delay(DRAFT_SAVE_DEBOUNCE_MS.milliseconds)
             ConfigManager.saveDraft(content)
         }
     }

@@ -23,7 +23,7 @@
 
 ```mermaid
 flowchart TD
-    subgraph Authoring["1. Authoring & Parsing — :markdown-core"]
+    subgraph Authoring["1. Authoring & Parsing — :skaldoria-markdown"]
         MD[Markdown / .skaldoria Deck] --> Fence[FenceRules — shared fence authority]
         Fence --> Lexer[Slide Lexer & Delimiter Splitter]
         Lexer --> Blocks[Block Rule Dispatch — BLOCK_RULES]
@@ -60,7 +60,7 @@ current per-keystroke pipeline costs. Specialisation wins here because the scann
 what slides need and nothing else. *(Earlier revisions of this document described a "CommonMark AST
 Generator" in this stage; no such component has ever existed.)*
 
-Stage 1 lives in **`:markdown-core`**, a Gradle module with no Compose dependency, so the engine
+Stage 1 lives in **`:skaldoria-markdown`**, a Gradle module with no Compose dependency, so the engine
 can be compiled, tested and benchmarked without a UI toolkit.
 
 `FenceRules` sits ahead of the lexer because fence state decides whether a `---` splits a slide or
@@ -117,6 +117,12 @@ Relative paths resolve against the deck folder. See FR-IMG for supported sources
 Equations are enclosed in `$$ ... $$` delimiters:
 ```markdown
 $$ \Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{current} $$
+
+> **DEL-11 (2026-08-07): this is now the special case.** Drift is measured against the sum of
+> the per-slide budgets a deck declares (`<!-- pace: 90s -->`). With none declared, every slide
+> takes an equal share and the formula above is exactly what results. See `PacingPlan` and the
+> README.
+
 ```
 
 ### 3.6 Live Audience Poll Directives
@@ -132,7 +138,7 @@ state.addFollowUpQuestion("Throughput per shard?", slideIndex = 3)
 ```
 ````
 
-Fence handling follows CommonMark, and one authority — `FenceRules` in `:markdown-core` — answers
+Fence handling follows CommonMark, and one authority — `FenceRules` in `:skaldoria-markdown` — answers
 for the slide parser and the editor's syntax highlighter alike.
 
 | Rule | Behaviour |
@@ -196,11 +202,17 @@ $$\text{Contrast Ratio} = \frac{L_1 + 0.05}{L_2 + 0.05} \ge 4.5$$
 ### 5.2 Algorithmic Speaker Rhythm & Pacing (FR-PRES-06)
 - **Pacing Drift Formula:**
   $$\Delta t = t_{elapsed} - \left( \frac{T_{target}}{N_{total}} \right) \cdot i_{current}$$
+
+> **DEL-11 (2026-08-07): this is now the special case.** Drift is measured against the sum of
+> the per-slide budgets a deck declares (`<!-- pace: 90s -->`). With none declared, every slide
+> takes an equal share and the formula above is exactly what results. See `PacingPlan` and the
+> README.
+
 - **Rhythm Status Indicators:**
-  - 🟢 **ON TRACK**: $|\Delta t| \le 15\text{s}$
-  - 🔵 **AHEAD**: $\Delta t < -15\text{s}$
+  - 🟢 **ON TRACK**: $|\Delta t| \le 20\text{s}$
+  - 🔵 **AHEAD**: $\Delta t < -20\text{s}$
   - 🟠 **BEHIND**: $\Delta t > 20\text{s}$
-  - 🔴 **OVERTIME**: $t_{elapsed} > T_{target}$
+  - 🔴 **OVERTIME**: $t_{elapsed} > T_{target}$ or $\Delta t > 75\text{s}$
 
 ### 5.3 Mathematical Formula Rendering (FR-MATH)
 - **FR-MATH-01 (Recursive Descent):** Resolves arbitrarily nested fractions (`\frac{a}{b}`), subscripts, superscripts, and parenthesized terms.
@@ -224,13 +236,17 @@ $$\text{Contrast Ratio} = \frac{L_1 + 0.05}{L_2 + 0.05} \ge 4.5$$
   `-)`, `--)`), `loop`/`alt`/`else`/`opt`/`par`/`critical`/`rect` frames, `Note over|left of|right of`,
   activation bars, self-calls, and `autonumber`.
 - **FR-DIAG-04 (Fit):** A diagram larger than the slide is scaled to fit; it must not clip.
-- **FR-DIAG-05 (Out of Scope):** State, class, ER and Gantt diagrams are not supported and fall
+- **FR-DIAG-05 (Out of Scope):** State, class and ER diagrams are not supported and fall
   back to displaying the source.
+- **FR-DIAG-09 (Gantt Charts):** Gantt diagrams are parsed and drawn as a native timeline.
+  Tasks are positioned by `GanttSchedule`, coloured by status (`done`, `active`, `critical`),
+  and grouped by section. When the schedule cannot be resolved deterministically, the source
+  is displayed instead of a chart built on a guess.
 - **FR-DIAG-06 (No Runtime Dependency):** Rendering is native Compose - no embedded browser,
   JavaScript engine, or network access.
 
 ### 5.5 Remote Companion & Audience Server (FR-REMOTE)
-- **FR-REMOTE-01 (Zero-Dependency Socket Engine):** Built natively on `java.net.ServerSocket` in `java.base` with instant startup (<1ms) and 0 KB external footprint ([ADR-001](./docs/ADR_COMPANION_SERVER_ARCHITECTURE.md)).
+- **FR-REMOTE-01 (Zero-Dependency Socket Engine):** Built natively on `java.net.ServerSocket` in `java.base` with instant startup (<1ms) and 0 KB external footprint ([ADR-001](./docs/adr/001-companion-server-architecture.md)).
 - **FR-REMOTE-02 (Resilient Startup & Fallback):** Daemonized thread pool with multi-port fallback (tries preferred port through $+50$ sequential ports, then ephemeral).
 - **FR-REMOTE-03 (Scoped Access Control):** Two roles with different authority, enforced server-side.
   - **Presenter scope** (`/api/action`, `/api/qa/dismiss`) requires a per-session token: 128-bit

@@ -1,7 +1,10 @@
 package com.skaldoria.core.parser
 
 import androidx.compose.ui.text.font.FontFamily
-import com.skaldoria.core.models.SlideElement
+import com.skaldoria.markdown.models.SlideElement
+import com.skaldoria.markdown.parser.FenceInfo
+import com.skaldoria.markdown.parser.FenceRules
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.ui.editor.MarkdownVisualTransformation
 import kotlin.test.Test
@@ -19,7 +22,7 @@ import kotlin.test.assertTrue
  * Phase B replaced all four with [FenceRules]. This test is what proves it, and what would catch
  * a fifth private implementation being added later.
  *
- * It lives in the app module rather than `:markdown-core` because it has to reach the
+ * It lives in the app module rather than `:skaldoria-markdown` because it has to reach the
  * Compose-dependent [MarkdownVisualTransformation]. That is the whole point — the assertion is
  * cross-module by nature.
  */

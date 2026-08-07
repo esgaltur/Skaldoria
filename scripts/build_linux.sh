@@ -5,11 +5,31 @@
 # ==============================================================================
 set -euo pipefail
 
-VERSION="${1:-1.0.0}"
 PUBLISH_GH="${2:-false}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+cd "${PROJECT_ROOT}"
+
+# The version is the build's, not the script's.
+#
+# This defaulted to a literal "1.0.0", so running it with no argument stamped 1.0.0 filenames
+# onto whatever the build actually produced. build.gradle.kts is the single source of truth and
+# `printVersion` is how it is read. An explicit argument that disagrees with the build is
+# refused rather than silently honoured.
+BUILD_VERSION="$(./gradlew -q printVersion --console=plain | tail -n 1 | tr -d '[:space:]')"
+if [ -z "${BUILD_VERSION}" ]; then
+    echo "Error: could not read the project version from Gradle (./gradlew -q printVersion)." >&2
+    exit 1
+fi
+
+VERSION="${1:-${BUILD_VERSION}}"
+if [ "${VERSION}" != "${BUILD_VERSION}" ]; then
+    echo "Error: requested version '${VERSION}' but the build produces '${BUILD_VERSION}'." >&2
+    echo "       Change appVersion in build.gradle.kts instead of overriding it here." >&2
+    exit 1
+fi
 
 echo "=========================================================="
 echo " 👑 Skaldoria Studio — Linux Packaging Pipeline"
@@ -17,16 +37,36 @@ echo " Version: ${VERSION}"
 echo " Project: ${PROJECT_ROOT}"
 echo "=========================================================="
 
-cd "${PROJECT_ROOT}"
-
 # 1. Clean & Prepare dist directory
 mkdir -p dist
 rm -f dist/*
 
 # 2. Run Automated Verification Tests
+#
+# PLT-09: packaging must not require a display. The render guards drive real Compose frames
+# through ImageComposeScene, which needs a surface Skia can target — absent under WSL, in a
+# container, and on any headless build box. Without this the *packaging* run fails on a
+# graphics problem that says nothing about the packages being built, which is what made an
+# earlier attempt abandon the suite entirely with a blanket @Ignore (see PLT-08).
+#
+# RenderEnvironment already detects headlessness on its own; the flag is passed explicitly so
+# the reason appears in the log rather than being inferred from a skip count.
 echo -e "\n[1/5] 🧪 Running test suite..."
-./gradlew desktopTest --no-daemon
+RENDER_FLAG=""
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    echo "  -> No DISPLAY/WAYLAND_DISPLAY: render guards will be skipped, not failed."
+    echo "     Run this on a machine with a display to exercise them (see docs/RENDERING_STATUS.md)."
+    RENDER_FLAG="-PskipRenderTests"
+fi
+./gradlew desktopTest :skaldoria-markdown:test --no-daemon ${RENDER_FLAG}
 echo "  -> All tests passed successfully!"
+
+# The zero-warning NFR (CONTRIBUTING.md section 6). Nothing enforces it automatically — the CI
+# workflow is manual-dispatch only (PLT-01) — so the release run is where it actually holds; the
+# Windows pipeline does the same through scripts/verify.ps1.
+echo "  -> Compiling with warnings as errors..."
+./gradlew compileKotlinDesktop compileTestKotlinDesktop -PwarningsAsErrors --no-daemon
+echo "  -> Zero warnings."
 
 # 3. Build Linux Distributable & Universal JAR
 echo -e "\n[2/5] 🔨 Building native Linux standalone distributable & universal JAR..."

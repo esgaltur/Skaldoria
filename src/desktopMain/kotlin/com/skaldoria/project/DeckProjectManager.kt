@@ -2,7 +2,7 @@ package com.skaldoria.project
 
 import com.skaldoria.core.models.DeckProject
 import com.skaldoria.core.models.SlideFileEntry
-import com.skaldoria.core.models.SlideTransition
+import com.skaldoria.markdown.models.SlideTransition
 import java.io.File
 
 object DeckProjectManager {

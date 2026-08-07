@@ -1,7 +1,7 @@
 package com.skaldoria.core.presentation
 
-import com.skaldoria.core.models.Slide
-import com.skaldoria.core.models.SlideElement
+import com.skaldoria.markdown.models.Slide
+import com.skaldoria.markdown.models.SlideElement
 
 /**
  * The text in the slide footer's left-hand pill.
@@ -15,14 +15,22 @@ object SlideFooterLabel {
     /**
      * Human-readable names for the diagram types the renderer can actually draw.
      *
-     * DED-4 in spirit: a type is named here only if a renderer exists for it. An unsupported
-     * diagram (state, class, ER, Gantt) displays its source, so claiming a type the renderer
-     * never drew would be a lie on screen.
+     * DED-4 in spirit: a type is named here only if a renderer exists for it, so the footer can
+     * never claim a type that was actually shown as source.
+     *
+     * DIA-01/02/03/04 (2026-08-07) added the four that used to be absent. Until then this map
+     * held three entries and the KDoc explained that state, class, ER and Gantt "display their
+     * source" — true when written, and exactly the sort of comment that becomes a lie when the
+     * feature lands. They now render, so they are named.
      */
     private val DIAGRAM_TYPE_NAMES = mapOf(
         "flowchart" to "Flowchart",
         "graph" to "Flowchart",
-        "sequence" to "Sequence Diagram"
+        "sequence" to "Sequence Diagram",
+        "state" to "State Diagram",
+        "class" to "Class Diagram",
+        "er" to "Entity Relationship",
+        "gantt" to "Gantt Chart"
     )
 
     /**

@@ -1,6 +1,6 @@
 package com.skaldoria.core.document
 
-import com.skaldoria.core.parser.MarkdownSlideParser
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

@@ -20,7 +20,10 @@ data class AppConfig(
     val lastThemeId: String = "nord-dark",
     val lastTransition: String = "fade",
     val editorFontSize: Int = 14,
-    val autoSaveDraft: String? = null,
+    // DED-10: `autoSaveDraft: String?` was declared here and is gone. Removing a field from a
+    // persisted model normally changes the format — this one did not, because
+    // `serializeConfigJson` never wrote it and the parser never read it. The draft lives in its
+    // own file (`draftFile`, see saveDraft/loadDraft); this was residue from before that split.
     /**
      * DEL-02: how the presentation HUD behaves. Stored as the enum's `storageValue` rather
      * than its name so renaming a constant does not invalidate everyone's saved preference.

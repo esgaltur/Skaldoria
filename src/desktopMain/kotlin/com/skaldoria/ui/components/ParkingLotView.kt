@@ -12,23 +12,31 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.skaldoria.core.models.FollowUpQuestion
+import com.skaldoria.markdown.models.FollowUpQuestion
 import com.skaldoria.state.PresentationState
 import com.skaldoria.theme.PresentationTheme
+import kotlinx.coroutines.launch
+import java.awt.datatransfer.StringSelection
 
 /**
  * Interactive Parking Lot & Unanswered Questions Follow-Up UI.
  * Gives the speaker a structured aside for recording unanswered questions with checkboxes and expandable answers.
+ *
+ * The opt-in is the desktop `ClipEntry(Transferable)` constructor, which is the only public way
+ * to place plain text on the clipboard now that `LocalClipboardManager` is deprecated — the
+ * toolkit ships no stable text helper for it. Narrowest available scope; not a suppression.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ParkingLotView(
     state: PresentationState,
@@ -36,7 +44,15 @@ fun ParkingLotView(
     modifier: Modifier = Modifier
 ) {
     var newQuestionText by remember { mutableStateOf("") }
-    val clipboardManager = LocalClipboardManager.current
+
+    // `LocalClipboard` replaces the deprecated `LocalClipboardManager`; writing is a suspend
+    // call now, so the export needs a scope rather than running inline in the click handler.
+    //
+    // Desktop `ClipEntry` wraps an AWT `Transferable` and the toolkit ships no text
+    // convenience for it, so `StringSelection` is the supported way to put plain text on the
+    // clipboard here.
+    val clipboard = LocalClipboard.current
+    val clipboardScope = rememberCoroutineScope()
     var copyStatusText by remember { mutableStateOf<String?>(null) }
 
     val unansweredCount = state.followUpQuestions.count { !it.isAnswered }
@@ -82,8 +98,10 @@ fun ParkingLotView(
                 TextButton(
                     onClick = {
                         val md = state.exportFollowUpMarkdownChecklist()
-                        clipboardManager.setText(AnnotatedString(md))
-                        copyStatusText = "Copied to clipboard!"
+                        clipboardScope.launch {
+                            clipboard.setClipEntry(ClipEntry(StringSelection(md)))
+                            copyStatusText = "Copied to clipboard!"
+                        }
                     }
                 ) {
                     Icon(

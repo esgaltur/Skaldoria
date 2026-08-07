@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Roadmap and delivery work. The candidate feature set is catalogued in
 [`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md); the connectivity design is
-[ADR-005](./docs/ADR_COMPANION_LINK_ESTABLISHMENT.md).
-Test suite: **235 to 617 tests** (551 in the app, 66 in `:markdown-core`), zero compiler warnings.
+[ADR-005](./docs/adr/005-companion-link-establishment.md).
+Test suite: **235 to 624 tests** (558 in the app, 66 in `:skaldoria-markdown`), zero compiler warnings.
 
 ### Performance
 
@@ -50,12 +50,18 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   be re-run before being trusted.**
 
 ### Added
-- **`:markdown-core`, a Gradle module holding the markdown engine.** The parser, block rules,
+- **`:skaldoria-markdown`, a Gradle module holding the markdown engine.** The parser, block rules,
   layout classifier and slide model, with **zero Compose on its compile classpath** — verified,
   not assumed. It compiles, tests and benchmarks without a UI toolkit, which is what makes the
   parser measurable in isolation and would let a non-desktop front end consume the engine.
   `AnnotationStroke` moved back out to the app module: it was the only type in the slide model
   needing Compose, and it is a drawing concern rather than a parsing one.
+
+  Its types live under **`com.skaldoria.markdown.{parser,models,layout}`**. They were briefly
+  under `com.skaldoria.core.*`, which the app module also uses — so `com.skaldoria.core.models`
+  and `com.skaldoria.core.layout` existed *in both modules at once*, and a file in either one
+  picked up the other's types with no import to show for it. Two app files were relying on
+  exactly that. The split makes the module boundary visible in the import list.
 
   A note for anyone extracting the next module: a module boundary stops Kotlin smart-casting
   nullable `val`s, because another module could in principle change them. That produced 11 compile
@@ -82,10 +88,35 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   lines of a full-bleed code slide and the deck's own footer — and could not be hidden. It now
   auto-hides when the pointer rests, cycles with <kbd>H</kbd>, and the choice persists.
 - **Jump to a slide by number** during a presentation: type the number, press <kbd>Enter</kbd>.
-- **CI pipeline** (`.github/workflows/ci.yml`): compile and test on Linux, Windows and macOS,
-  with a job that fails the build on any Kotlin compiler warning.
+- **A local verification gate** (`scripts/verify.ps1`): both test suites and the zero-warning
+  compile in one command. This entry once announced a CI pipeline at `.github/workflows/ci.yml`
+  while no such file existed, so every rule in `CONTRIBUTING.md` was enforced by memory. The gate
+  now lives where the release is actually cut, and both release pipelines run it before packaging
+  anything.
+- **`.github/workflows/ci.yml`, and this time the file is real** — the same two checks as
+  `verify.ps1`, on `ubuntu-latest`. **`workflow_dispatch` is its only trigger:** CI was deferred
+  on cost (`PLT-01`), and a `push:`/`pull_request:` trigger bills hosted minutes for an answer on
+  every commit whether or not anyone wanted one, whereas a button costs nothing until pressed.
+  That is what made adoption possible, and it is also the limit of what changed — **nothing is
+  verified automatically, and `verify.ps1` on the developer's machine is still the gate.** The
+  render guards (`PLT-08`) need a display, so a runner stands them down by default and verifies
+  strictly less than a machine with a screen; the `render_tests` input takes `xvfb` when they
+  should actually run there.
+- **`printVersion` Gradle task**, so the release scripts read `appVersion` instead of carrying
+  their own default. `package_release.ps1`, `release.ps1` and `build_linux.sh` each defaulted to
+  a literal `1.0.0`: run without an explicit argument, they stamped `Skaldoria-v1.0.0-*` onto
+  artefacts built from 1.2.0 sources. They now read the build's version and **refuse** an
+  argument that disagrees with it, rather than honouring the mislabel.
 
 ### Fixed
+- **Two deprecated Compose APIs, found by the new gate on its first run.** The suite was green
+  and this document claimed zero warnings, but `-PwarningsAsErrors` reported
+  `TooltipDefaults.rememberPlainTooltipPositionProvider` (`AppTooltip.kt`) and
+  `LocalClipboardManager` (`ParkingLotView.kt`) — both deprecated by the Compose 1.11.1 line and
+  invisible in a default build. Migrated, not suppressed, per CONTRIBUTING §6. The clipboard one
+  is not a rename: `LocalClipboard.setClipEntry` is a **suspend** call, so the parking-lot export
+  runs in a scope now, and desktop `ClipEntry` wraps an AWT `Transferable` with no text helper —
+  hence one documented, function-scoped `@OptIn(ExperimentalComposeUiApi::class)`.
 - **Code fences lost their language unless the info string had exactly one supported shape.**
   ` ```js {highlight=2} ` and ` ```python title="demo.py" ` are ordinary markdown that every other
   tool accepts. The parser recognised only `language [1,3-5]`, so anything else fell through: the
@@ -135,24 +166,65 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   by a name-based denylist.
 - **The slide footer misreported diagram slides**, labelling a sequence diagram
   "Architecture / Flow Diagram" while the diagram's own header said otherwise.
+- **"Next match" scrolled the source pane by zero pixels (EDT-6).** The match counter advanced,
+  the filmstrip jumped to the right slide and the preview followed — every signal except the one
+  the user is looking at. The reveal effect was keyed on the text layout as well as the reveal
+  token, so advancing the match restyled the active span, which re-laid out the text, which
+  changed the key, which cancelled the scroll animation mid-flight; re-entering, the "already
+  handled" guard had been set *before* the suspend and returned immediately. Keyed on the token
+  alone now, with the layout awaited inside and the guard set after the scroll lands.
+
+  **The guard for this passed the whole time**, because it mutated the state and then rendered
+  into a fresh scene — so the reveal always arrived before the first composition, with nothing
+  measured and no token handled. That is not a state the UI can produce. `FindRevealScrollTest`
+  drives one live scene instead and reported `0.0%` pane movement across three presses.
+- **A found match had no caret you could type over (EDT-7).** The selection was on the match all
+  along, but an unfocused Compose text field draws neither cursor nor selection, and the find bar
+  keeps focus on its query field so that Enter keeps cycling. The match was therefore revealed
+  into a pane showing only the highlight overlay, and editing it meant clicking — which throws
+  away the position just found. Closing the bar now hands focus back to the editor with the
+  caret still on the match.
+
+  The composable re-asserts the request across a few frames rather than asking once: the request
+  is raised by the same action that unmounts the find bar, and Compose clears focus from an
+  unmounting node in that pass, so a single call is a coin flip.
+
+  **This one is guarded at the state level only, deliberately.** An `ImageComposeScene` has no
+  platform text-input session — `requestFocus()` returns cleanly and the field still reports
+  itself unfocused — so no pixel assertion about a caret can hold there, and the obvious
+  pane-difference guard passes vacuously because closing the bar reflows the column. Recorded
+  in `RENDERING_STATUS.md` under what the harness cannot see.
+- **The test suite raced against itself through the autosave draft (COR-14).** A mutation
+  schedules a debounced save 750 ms out on that `PresentationState`'s own scope, and `dispose()`
+  is the only thing that cancels it — but disposal was by convention, and **18 of the 23 test
+  files that created a state never disposed one**. A leaked job landed inside whatever test was
+  running when it fired, replacing the process-wide draft between another test's write and its
+  assertion. It blocked two builds through `DraftRecoveryTest`; `ConfigManagerTest` reads the
+  same file and was exposed to it too.
+
+  Tests now create state through `PresentationStateTestBase.presentationState()`, which disposes
+  it in `@AfterTest` — 104 sites across 22 files. The previous mitigation, a
+  `Thread.sleep(750 + 250)` in `DraftRecoveryTest`, is gone with the cause.
+
+  **The base class is not the fix; the guard is.** Disposal by convention had already decayed
+  once — the plan that recorded this counted 15 leaking files, and there were 18 by the time
+  anyone fixed it, each added by someone with no way to know the rule existed. So
+  `PresentationStateDisposalTest` fails on any direct construction in the test sources, which is
+  what a new test cannot quietly get around.
 
 ### Known gaps
 - Editor ⇄ slide synchronisation and find-result reveal remain open; both wait on the caret
-  foundation in [ADR-004](./docs/ADR_EDITOR_SYNC_AND_PRESENTATION_HUD.md) Phase 2.
-- The CI workflow has never been executed.
+  foundation in [ADR-004](./docs/adr/004-editor-sync-and-presentation-hud.md) Phase 2.
+- **No CI runs automatically** — hosted runner minutes are not free, so `.github/workflows/ci.yml`
+  is `workflow_dispatch`-only. The project is still verified and released from a developer
+  machine: `scripts/verify.ps1` is the gate (both test suites and the zero-warning build), and
+  both release pipelines run it before packaging. The cost is honest: **nothing checks a push**,
+  so a change that skips the script is unverified until someone runs it or dispatches the
+  workflow. A per-commit trigger waits on a budget or a public repository.
 - **Tables written without outer pipes (`a | b` / `---|---`) are unsupported.** Ordinary GFM, and
   neither the parser nor the highlighter handles it — they agree, and both are wrong, so this is a
   missing feature rather than a divergence.
-- **Test suites leak `PresentationState` coroutine scopes.** A mutation schedules a debounced
-  autosave on the instance's own scope; `dispose()` cancels it, but **19 test files construct a
-  `PresentationState` and only 4 dispose it**. A leaked job outlives its test and writes the
-  process-wide draft file, which is what made `DraftRecoveryTest` fail intermittently — twice
-  during this work, each time passing on re-run.
-
-  `DraftRecoveryTest` now waits out the debounce before clearing, which makes *that* symptom
-  deterministic. **The root cause is untouched**: the other 15 files still leak, nothing enforces
-  disposal, and any future test reading shared state can be hit the same way. The durable fix is
-  disposal discipline, ideally enforced rather than remembered.
+- ~~**Test suites leak `PresentationState` coroutine scopes.**~~ **Fixed — see below (COR-14).**
 
 ## [1.2.0] - 2026-08-05
 
@@ -308,7 +380,7 @@ Test suite: **70 to 221 tests**.
   - Multi-threaded executor with automatic port-fallback across 50 ports and ephemeral fallback.
   - CORS preflight (`OPTIONS`) handling and resilient error boundaries. *(The wildcard CORS headers were removed in 1.2.0 - they were a CSRF vector.)*
   - Added `/api/parking-lot/add` endpoint for remote companion integration.
-  - Documented architectural decisions and protocol evaluations in [ADR-001](./docs/ADR_COMPANION_SERVER_ARCHITECTURE.md).
+  - Documented architectural decisions and protocol evaluations in [ADR-001](./docs/adr/001-companion-server-architecture.md).
 
 ---
 

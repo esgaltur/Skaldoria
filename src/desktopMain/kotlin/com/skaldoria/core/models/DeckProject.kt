@@ -1,5 +1,7 @@
 package com.skaldoria.core.models
 
+import com.skaldoria.markdown.models.SlideTransition
+
 data class SlideFileEntry(
     val relativePath: String,
     val absolutePath: String,
@@ -38,7 +40,7 @@ data class DeckProject(
             val slideCount = if (entry.content.isBlank()) {
                 0
             } else {
-                com.skaldoria.core.parser.MarkdownSlideParser.parse(entry.content).size
+                com.skaldoria.markdown.parser.MarkdownSlideParser.parse(entry.content).size
             }
             repeat(slideCount) { owners.add(fileIndex) }
         }

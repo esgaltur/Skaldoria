@@ -6,7 +6,7 @@ import androidx.compose.runtime.setValue
 import com.skaldoria.core.document.SlideDocument
 import com.skaldoria.core.models.DeckProject
 import com.skaldoria.core.models.SlideFileEntry
-import com.skaldoria.core.parser.MarkdownSlideParser
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 
 /**
  * The deck being edited: its markdown, the slides that markdown parses to, and — in project

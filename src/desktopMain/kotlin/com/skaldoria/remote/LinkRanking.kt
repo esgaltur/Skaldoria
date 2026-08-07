@@ -3,7 +3,7 @@ package com.skaldoria.remote
 /**
  * How a phone is attached to this machine.
  *
- * See [ADR-005](../../../../../../docs/ADR_COMPANION_LINK_ESTABLISHMENT.md): the companion
+ * See [ADR-005](../../../../../../docs/adr/005-companion-link-establishment.md): the companion
  * needs one thing, an IP route to the phone, and does not care which radio carried it. A
  * hotspot, a USB cable and a Bluetooth PAN all present as ordinary network interfaces that the
  * existing server already serves on, because it binds the wildcard address.

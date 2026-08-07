@@ -24,7 +24,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.skaldoria.core.models.PacingStatus
+import com.skaldoria.markdown.models.PacingStatus
 import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.DeckKeyHandler
 import com.skaldoria.ui.components.ParkingLotView
@@ -499,11 +499,24 @@ private fun PresenterPacingRibbon(
                     val idealSlideSec = state.idealElapsedSecondsAtCurrentSlide % 60
 
                     Text(
-                        text = String.format("~%ds/slide • Target at current slide: %02d:%02d", targetSlideSecs, idealSlideMin, idealSlideSec),
+                        // DEL-11: "this slide's budget", not "the deck average" — the two are the
+                        // same only when no slide declares one.
+                        text = String.format("%ds this slide • Target at current slide: %02d:%02d", targetSlideSecs, idealSlideMin, idealSlideSec),
                         color = theme.textMuted,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
+
+                    // DEL-11: the declared budgets do not fit the talk. A planning error, and the
+                    // speaker should meet it here rather than as overtime in front of the room.
+                    if (state.isPacingOverCommitted) {
+                        Text(
+                            text = "⚠ Declared slide budgets exceed the target duration",
+                            color = theme.warning,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
             }
         }

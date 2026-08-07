@@ -21,6 +21,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -31,10 +33,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.skaldoria.core.models.SlideLayoutType
+import com.skaldoria.markdown.models.SlideLayoutType
 import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.components.*
 import com.skaldoria.ui.editor.MarkdownVisualTransformation
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
@@ -617,28 +621,83 @@ private fun MarkdownSourceField(
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var handledRevealToken by remember { mutableStateOf(-1L) }
     var isFocused by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    // Seeded from the current token, not from a sentinel: only an *increment* after this pane
+    // exists is a request, so the editor does not steal focus the moment the studio opens.
+    var handledFocusToken by remember { mutableStateOf(state.editorFocusToken) }
 
+    /**
+     * EDT-7: takes keyboard focus when [PresentationState.closeFind] asks for it.
+     *
+     * **Why this retries instead of simply requesting.** The request is raised by the same
+     * action that removes the find bar from the composition, and Compose clears focus from an
+     * unmounting node during that pass. A single `requestFocus()` therefore lands *before* the
+     * cleanup that discards it, roughly half the time — the first attempt at this fix passed
+     * once and failed on re-run. Waiting a frame and re-asserting until the field reports focus
+     * makes the handover deterministic rather than a race, and the bound keeps a genuinely
+     * unfocusable field (detached requester, pane not composed) from spinning.
+     *
+     * **Not verifiable by the headless render harness, unlike the rest of ADR-004.** Inside an
+     * `ImageComposeScene` there is no platform text-input session, so `requestFocus()` returns
+     * without throwing and the field still never reports focus — measured, not assumed. A
+     * pixel guard on the focused container tint therefore fails here for a reason that has
+     * nothing to do with this code, and a pane-difference guard passes vacuously because
+     * closing the bar reflows the column. What *is* guarded is the state contract below
+     * (`EditorRevealTest`); the drawn caret is a manual check. See RENDERING_STATUS.
+     */
+    LaunchedEffect(state.editorFocusToken) {
+        val token = state.editorFocusToken
+        if (token == handledFocusToken) return@LaunchedEffect
+
+        repeat(FOCUS_HANDOVER_ATTEMPTS) {
+            // Let the frame that removed the find bar finish releasing focus first.
+            withFrameNanos { }
+            if (isFocused) return@repeat
+            // Requesting on a requester that is not attached throws; that is a normal race
+            // while the pane is being composed, not an error worth surfacing.
+            try {
+                focusRequester.requestFocus()
+            } catch (_: Exception) {
+            }
+        }
+
+        // Marked done only once the handover has been attempted to completion, so a cancelled
+        // effect retries rather than counting as delivered — the mistake behind EDT-6.
+        handledFocusToken = token
+    }
     // EDT-5: clamped here, so a slide-file swap to a shorter document cannot construct an
     // out-of-bounds TextFieldValue no matter which of text or selection changed first.
     val value = TextFieldValue(text = text, selection = state.editorSelectionWithin(text.length))
 
-    // EDT-4: keyed on the reveal token *and* the layout, because a reveal published by a
-    // slide-file swap arrives before the new text has been measured. `handledRevealToken`
-    // stops the re-run that a later layout change would otherwise cause from scrolling the
-    // user back to a match they have already moved on from.
-    LaunchedEffect(state.editorRevealToken, layout) {
+    // EDT-6: keyed on the reveal token *alone*, and the layout is awaited inside.
+    //
+    // `layout` was a second key, so that a reveal published before the text had been measured
+    // — a slide-file swap in project mode — would re-run once a measurement existed. It also
+    // made every *later* measurement restart the effect, and advancing the find match is
+    // exactly that: a new `activeMatchIndex` changes the styled `AnnotatedString`, the field
+    // re-lays out, `onTextLayout` publishes a new `TextLayoutResult`, and the key changes.
+    // Compose then cancels the running `animateScrollTo` mid-flight and re-enters — where the
+    // token guard, already satisfied, returns immediately. Pressing "next match" moved the
+    // pane zero pixels. `FindRevealScrollTest` is the reproduction.
+    //
+    // Awaiting the layout keeps the deferred-measurement case working without letting
+    // measurement cancel the scroll it was supposed to enable.
+    LaunchedEffect(state.editorRevealToken) {
         val token = state.editorRevealToken
         if (token == handledRevealToken) return@LaunchedEffect
-        val measured = layout ?: return@LaunchedEffect
+        val measured = snapshotFlow { layout }.filterNotNull().first()
         val target = state.editorRevealTargetWithin(text.length) ?: return@LaunchedEffect
-
-        handledRevealToken = token
 
         val lineTop = measured.getLineTop(measured.getLineForOffset(target.min))
         // A quarter of the viewport of lead-in, so the revealed line has context above it
         // instead of sitting flush against the top edge.
         val leadIn = scrollState.viewportSize * REVEAL_LEAD_IN_FRACTION
         scrollState.animateScrollTo((lineTop - leadIn).toInt().coerceIn(0, scrollState.maxValue))
+
+        // Marked done only once the scroll has actually landed. Setting it before the suspend
+        // meant a cancelled reveal counted as a delivered one, which is what made the defect
+        // above permanent rather than merely flaky.
+        handledRevealToken = token
     }
 
     Box(
@@ -672,6 +731,7 @@ private fun MarkdownSourceField(
             cursorBrush = SolidColor(theme.primary),
             modifier = Modifier
                 .fillMaxSize()
+                .focusRequester(focusRequester)
                 .onFocusChanged { isFocused = it.isFocused }
                 // Unbounded height for the field, scrolled by this modifier rather than by the
                 // field's own internal scroller — which is what makes `getLineTop` above
@@ -681,6 +741,9 @@ private fun MarkdownSourceField(
         )
     }
 }
+
+/** Frames the focus handover will re-assert across before giving up. */
+private const val FOCUS_HANDOVER_ATTEMPTS = 6
 
 /** How far down the viewport a revealed line lands. */
 private const val REVEAL_LEAD_IN_FRACTION = 0.25f

@@ -1,7 +1,7 @@
 package com.skaldoria.remote
 
 import com.skaldoria.core.audience.AudienceSession
-import com.skaldoria.core.models.SlideElement
+import com.skaldoria.markdown.models.SlideElement
 
 /**
  * What the companion server is allowed to see and do.

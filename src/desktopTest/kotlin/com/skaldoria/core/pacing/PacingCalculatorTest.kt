@@ -1,6 +1,6 @@
 package com.skaldoria.core.pacing
 
-import com.skaldoria.core.models.PacingStatus
+import com.skaldoria.markdown.models.PacingStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

@@ -1,6 +1,6 @@
 package com.skaldoria.remote
 
-import com.skaldoria.state.PresentationState
+import com.skaldoria.PresentationStateTestBase
 import java.net.HttpURLConnection
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -20,7 +20,7 @@ import kotlin.test.assertTrue
  * the moment it is declared — the point of making the table data. `RemoteCompanionServerTest`
  * keeps the by-name tests for the specific routes that carry the invariants.
  */
-class RouteTableSecurityTest {
+class RouteTableSecurityTest : PresentationStateTestBase() {
 
     private fun open(url: String, method: String = "GET", token: String? = null): HttpURLConnection =
         (java.net.URI.create(url).toURL().openConnection() as HttpURLConnection).apply {
@@ -31,7 +31,7 @@ class RouteTableSecurityTest {
         }
 
     private fun <T> withServer(block: (String) -> T): T {
-        val state = PresentationState()
+        val state = presentationState()
         RemoteCompanionServer.start(state, preferredPort = 18777)
         return try {
             block("http://127.0.0.1:${RemoteCompanionServer.currentPort}")

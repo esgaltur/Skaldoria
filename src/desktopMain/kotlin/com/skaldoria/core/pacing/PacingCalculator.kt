@@ -1,6 +1,6 @@
 package com.skaldoria.core.pacing
 
-import com.skaldoria.core.models.PacingStatus
+import com.skaldoria.markdown.models.PacingStatus
 
 /**
  * A fully-resolved pacing readout for one moment in a talk.
@@ -17,7 +17,13 @@ data class Pacing(
     val deltaSeconds: Long,
     /** Where the clock *should* read on arriving at the current slide. */
     val idealElapsedSeconds: Long,
-    /** The per-slide budget the target duration implies. */
+    /**
+     * The budget for the slide being presented.
+     *
+     * DEL-11: this used to be one number for the whole deck, because every slide got the
+     * same share. With per-slide budgets it is *this* slide's, which is the number a
+     * speaker can act on. Identical to the old value for a deck that declares no budgets.
+     */
     val secondsPerSlide: Long,
     /** Time left in the allotted talk, floored at zero. */
     val remainingSeconds: Long,
@@ -26,11 +32,43 @@ data class Pacing(
 )
 
 /**
+ * A schedule for a talk: how long each slide is expected to take, in order.
+ *
+ * DEL-11. Slides that declare `<!-- pace: 90s -->` get exactly that; the rest split whatever
+ * the target leaves over. A deck that declares nothing therefore produces the uniform schedule
+ * the model has always used, which is asserted rather than assumed.
+ */
+data class PacingPlan(
+    /** Budget per slide, in source order. */
+    val slideSeconds: List<Long>,
+    /**
+     * True when the declared budgets alone already exceed the target duration.
+     *
+     * Not an error and not silently reconciled: scaling the author's `90s` down to fit would
+     * make the directive mean something other than what it says. The schedule keeps the
+     * declared budgets, unbudgeted slides get nothing left to share, and the plan simply
+     * overruns — which is the truth about that deck, and something the UI can surface.
+     */
+    val isOverCommitted: Boolean
+) {
+    /** Where the clock should read on *arriving* at [slideIndex] — the sum of everything before it. */
+    fun idealElapsedAt(slideIndex: Int): Long =
+        slideSeconds.take(slideIndex.coerceAtLeast(0)).sum()
+
+    /** The budget for [slideIndex], or 0 outside the deck. */
+    fun budgetAt(slideIndex: Int): Long = slideSeconds.getOrElse(slideIndex) { 0L }
+}
+
+/**
  * The speaker-rhythm formula, as a pure function.
  *
  * ```
- * Δt = t_elapsed − (T_target / N_total) · i_current
+ * Δt = t_elapsed − idealElapsed(i)
  * ```
+ *
+ * where `idealElapsed(i)` is the sum of the budgets of the slides before `i`. With a uniform
+ * schedule that reduces to the original `(T_target / N_total) · i_current`, which is what the
+ * README documents and what a deck declaring no budgets still gets.
  *
  * PRF-4: extracted from `PresentationState`, where it was entangled with a live monotonic
  * clock and therefore verifiable only by reading it — despite being a headline feature of
@@ -51,28 +89,65 @@ object PacingCalculator {
     const val OVERTIME_DRIFT_SECONDS = 75L
 
     /**
-     * @param elapsedSeconds time on the talk clock.
-     * @param targetTotalSeconds the allotted talk length, or null when pacing is off.
-     * @param slideIndex zero-based index of the slide being presented.
-     * @param slideCount total slides in the deck.
+     * DEL-11: turns declared budgets into a schedule.
+     *
+     * @param slideBudgets one entry per slide: declared seconds, or null to take a share.
+     */
+    fun plan(targetTotalSeconds: Long, slideBudgets: List<Long?>): PacingPlan {
+        if (slideBudgets.isEmpty()) return PacingPlan(emptyList(), isOverCommitted = false)
+
+        val declaredTotal = slideBudgets.filterNotNull().sum()
+        val unbudgeted = slideBudgets.count { it == null }
+        val leftOver = (targetTotalSeconds - declaredTotal).coerceAtLeast(0L)
+
+        // Floored at 1 for the same reason the uniform divisor was: a share of zero gives every
+        // remaining slide the same ideal elapsed time, so drift stops tracking progress.
+        val share = if (unbudgeted > 0) (leftOver / unbudgeted).coerceAtLeast(1L) else 0L
+
+        return PacingPlan(
+            slideSeconds = slideBudgets.map { it ?: share },
+            isOverCommitted = declaredTotal > targetTotalSeconds
+        )
+    }
+
+    /**
+     * The uniform schedule, kept so every existing call site and the README formula still hold.
+     *
+     * Delegates to [plan] with no declared budgets, so there is one implementation of the
+     * schedule rather than two that can drift apart.
      */
     fun compute(
         elapsedSeconds: Long,
         targetTotalSeconds: Long?,
         slideIndex: Int,
         slideCount: Int
+    ): Pacing = compute(
+        elapsedSeconds = elapsedSeconds,
+        targetTotalSeconds = targetTotalSeconds,
+        slideIndex = slideIndex,
+        plan = if (targetTotalSeconds == null) {
+            PacingPlan(emptyList(), isOverCommitted = false)
+        } else {
+            plan(targetTotalSeconds, List(slideCount.coerceAtLeast(0)) { null })
+        }
+    )
+
+    /**
+     * @param elapsedSeconds time on the talk clock.
+     * @param targetTotalSeconds the allotted talk length, or null when pacing is off.
+     * @param slideIndex zero-based index of the slide being presented.
+     * @param plan the schedule, from [plan].
+     */
+    fun compute(
+        elapsedSeconds: Long,
+        targetTotalSeconds: Long?,
+        slideIndex: Int,
+        plan: PacingPlan
     ): Pacing {
         if (targetTotalSeconds == null) return OFF
 
-        val secondsPerSlide = if (slideCount > 0) {
-            // Floored at 1: a target short enough to divide to zero would give every slide
-            // the same ideal elapsed time, so the drift would stop tracking progress.
-            (targetTotalSeconds / slideCount).coerceAtLeast(1L)
-        } else {
-            0L
-        }
-
-        val idealElapsed = slideIndex * secondsPerSlide
+        val secondsPerSlide = plan.budgetAt(slideIndex)
+        val idealElapsed = plan.idealElapsedAt(slideIndex)
         val delta = elapsedSeconds - idealElapsed
 
         return Pacing(

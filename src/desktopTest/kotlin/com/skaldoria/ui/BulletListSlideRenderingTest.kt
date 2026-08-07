@@ -1,5 +1,6 @@
 package com.skaldoria.ui
 
+import com.skaldoria.RenderEnvironment
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -8,14 +9,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import com.skaldoria.core.models.SlideElement
-import com.skaldoria.core.models.SlideLayoutType
-import com.skaldoria.core.parser.MarkdownSlideParser
+import com.skaldoria.markdown.models.SlideElement
+import com.skaldoria.markdown.models.SlideLayoutType
+import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.ui.components.FitMode
 import com.skaldoria.ui.components.FitToCanvas
 import com.skaldoria.ui.components.SlideSurface
 import java.awt.image.BufferedImage
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -36,6 +38,9 @@ import kotlin.test.assertTrue
  */
 @OptIn(ExperimentalComposeUiApi::class)
 class BulletListSlideRenderingTest {
+
+    @BeforeTest
+    fun requireDisplay() = RenderEnvironment.requireDisplay()
 
     private val theme = BuiltinThemes.SkaldoriaDark
 
