@@ -1,18 +1,7 @@
 package com.skaldoria.ui.screens
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -20,15 +9,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,25 +24,20 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.skaldoria.markdown.models.SlideTransition
 import com.skaldoria.core.presentation.HudVisibility
 import com.skaldoria.core.presentation.SlideNumberEntry
 import com.skaldoria.core.presentation.TransitionResolver
-import com.skaldoria.core.command.AppCommands
-import com.skaldoria.core.command.CommandScope
+import com.skaldoria.markdown.models.SlideTransition
 import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.DeckKeyHandler
-import com.skaldoria.ui.KeyBindings
+import com.skaldoria.ui.components.*
 import kotlinx.coroutines.delay
-import com.skaldoria.ui.components.AppTooltip
-import com.skaldoria.ui.components.CommandPalette
-import com.skaldoria.ui.components.SlideAnnotationOverlay
-import com.skaldoria.ui.components.SlideGridOverviewDialog
-import com.skaldoria.ui.components.SlideSurface
+import kotlin.time.Duration.Companion.milliseconds
 
 /** How long the pointer must rest before an auto-hiding HUD fades out. */
 private const val HUD_IDLE_MILLIS = 2500L
@@ -115,7 +96,7 @@ fun FullscreenDeck(
     LaunchedEffect(pointerActivity, hudVisibility, holdHudOpen) {
         isPointerIdle = false
         if (hudVisibility == HudVisibility.AUTO && !holdHudOpen) {
-            delay(HUD_IDLE_MILLIS)
+            delay(HUD_IDLE_MILLIS.milliseconds)
             isPointerIdle = true
         }
     }
@@ -126,10 +107,19 @@ fun FullscreenDeck(
         SlideGridOverviewDialog(state = state, onDismiss = { state.isGridOverviewOpen = false })
     }
 
+    // THM-05: the OS pointer is drawn by the window system in the user's desktop colour, so a
+    // dark arrow vanishes on a dark deck and a light one on a light deck. Presenting is exactly
+    // where that matters and exactly where the app fills the screen. Null on a platform that
+    // refuses custom cursors, in which case the ordinary arrow is used.
+    val themedPointer = rememberThemedPointerIcon(state.currentTheme)
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(state.currentTheme.background)
+            // Applied before the annotation overlay's own icon so the laser's blank cursor,
+            // which is a descendant, still wins while the laser is on.
+            .then(if (themedPointer != null) Modifier.pointerHoverIcon(themedPointer) else Modifier)
             .focusRequester(focusRequester)
             .focusable()
             // Any pointer event counts as activity, observed on the Initial pass so a child

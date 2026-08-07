@@ -20,7 +20,16 @@ import com.skaldoria.core.layout.SlideCanvasFit
 import com.skaldoria.markdown.models.Slide
 import com.skaldoria.markdown.models.SlideLayoutType
 import com.skaldoria.core.presentation.SlideFooterLabel
+import com.skaldoria.theme.BarStyle
+import com.skaldoria.theme.BuiltinDeckThemes
+import com.skaldoria.theme.DeckTheme
+import com.skaldoria.theme.FrameTitleStyle
 import com.skaldoria.theme.PresentationTheme
+import com.skaldoria.ui.components.chrome.Footline
+import com.skaldoria.ui.components.chrome.FrameTitleBand
+import com.skaldoria.ui.components.chrome.FrameTitleTab
+import com.skaldoria.ui.components.chrome.Headline
+import com.skaldoria.ui.components.chrome.NavDots
 import com.skaldoria.ui.layouts.*
 
 /**
@@ -31,6 +40,9 @@ import com.skaldoria.ui.layouts.*
  */
 private val DESIGN_WIDTH = 1280.dp
 private val DESIGN_HEIGHT = 720.dp
+
+/** Must match the bar height in `chrome/SlideChromeBars.kt`, so a band clears the headline. */
+private val HEADLINE_HEIGHT = 26.dp
 
 /**
  * Maps a slide's classified layout onto the composable that draws it.
@@ -68,6 +80,14 @@ private fun SlideLayoutContent(
     }
 }
 
+/**
+ * Draws a slide with the default chrome.
+ *
+ * THM-02: kept so every existing call site — the editor preview, the deck window, the presenter
+ * console, the render probes — is unchanged. It composes the palette with
+ * [BuiltinDeckThemes.Default], whose chrome reproduces exactly what this function drew before
+ * chrome existed.
+ */
 @Composable
 fun SlideSurface(
     slide: Slide,
@@ -77,7 +97,36 @@ fun SlideSurface(
     showFooter: Boolean = true,
     votes: Map<Int, Int> = emptyMap(),
     onVote: ((Int) -> Unit)? = null
+) = SlideSurface(
+    slide = slide,
+    deckTheme = BuiltinDeckThemes.withDefaultChrome(theme),
+    totalSlides = totalSlides,
+    modifier = modifier,
+    showFooter = showFooter,
+    votes = votes,
+    onVote = onVote
+)
+
+/**
+ * Draws a slide with a full [DeckTheme] — colour, chrome and fonts.
+ *
+ * @param deckTitle shown by footlines that carry it ([BarStyle.TITLE_AND_PAGE]).
+ * @param sectionTitles slide titles for a [BarStyle.SECTION_NAV] headline.
+ */
+@Composable
+fun SlideSurface(
+    slide: Slide,
+    deckTheme: DeckTheme,
+    totalSlides: Int,
+    modifier: Modifier = Modifier,
+    showFooter: Boolean = true,
+    votes: Map<Int, Int> = emptyMap(),
+    onVote: ((Int) -> Unit)? = null,
+    deckTitle: String = "",
+    sectionTitles: List<String> = emptyList()
 ) {
+    val theme = deckTheme.colors
+    val chrome = deckTheme.chrome
     BoxWithConstraints(
         modifier = modifier,
         contentAlignment = Alignment.Center
@@ -122,15 +171,81 @@ fun SlideSurface(
                 //
                 // Fit-to-content has to be applied where content is *intrinsically* sized
                 // (see MermaidDiagramCanvas), not around layouts designed to fill.
+                // THM-02: when the chrome draws the title, the layout must not draw it as
+                // well. Every layout renders `slide.title` itself, so a band produced the
+                // title twice, overlapping — visible only by looking at the render, which is
+                // how it was caught. Blanking the title on the copy handed to the layout keeps
+                // the fix in one place instead of threading a flag through all eleven layouts.
+                val chromeOwnsTitle = chrome.frameTitle == FrameTitleStyle.BAND ||
+                    chrome.frameTitle == FrameTitleStyle.SIDEBAR_TAB
+
                 SlideLayoutContent(
-                    slide = slide,
+                    slide = if (chromeOwnsTitle) slide.copy(title = "") else slide,
                     theme = theme,
                     votes = votes,
                     onVote = onVote
                 )
 
-                // Slide Footer (Number & Progress)
+                // THM-02: chrome is drawn *over* the layout rather than around it, because
+                // every layout sizes its body with `weight(1f)` against the full design
+                // canvas. Putting bars in a Column with it would resize the body and move
+                // every existing deck — the opposite of the compatibility this preset model
+                // is built on. Only the presets that ask for chrome pay for it.
+                // A headline occupies the top edge, so the title band sits below it rather
+                // than under it. Both were aligned TopCenter and overlapped.
+                val titleTopOffset = if (chrome.headline == BarStyle.NONE) 0.dp else HEADLINE_HEIGHT
+
+                when (chrome.frameTitle) {
+                    FrameTitleStyle.BAND -> FrameTitleBand(
+                        deckTheme = deckTheme,
+                        title = slide.title,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = titleTopOffset)
+                    )
+
+                    FrameTitleStyle.SIDEBAR_TAB -> FrameTitleTab(
+                        deckTheme = deckTheme,
+                        title = slide.title,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(top = titleTopOffset + 8.dp)
+                    )
+
+                    FrameTitleStyle.NONE, FrameTitleStyle.PLAIN -> Unit
+                }
+
+                Headline(
+                    deckTheme = deckTheme,
+                    sectionTitles = sectionTitles,
+                    currentIndex = slide.index,
+                    totalSlides = totalSlides,
+                    modifier = Modifier.align(Alignment.TopCenter)
+                )
+
                 if (showFooter) {
+                    Footline(
+                        deckTheme = deckTheme,
+                        leading = deckTitle,
+                        trailing = "${slide.index + 1} / $totalSlides",
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    )
+
+                    if (chrome.showNavDots) {
+                        NavDots(
+                            deckTheme = deckTheme,
+                            currentIndex = slide.index,
+                            totalSlides = totalSlides,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 38.dp)
+                        )
+                    }
+                }
+
+                // The original footer, drawn only by the chrome that declares it, so the
+                // default preset is unchanged rather than reimplemented.
+                if (showFooter && chrome.footline == BarStyle.PAGE_NUMBER) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

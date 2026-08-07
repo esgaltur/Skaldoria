@@ -126,6 +126,7 @@ Entries without a **Rationale** are self-evident and need none.
 | EDT-5 | Editor | Selection is clamped to the new text length before it reaches the field | `EditorRevealTest` |
 | EDT-6 | Editor | A reveal survives the re-layout that revealing itself causes — asserted in a **live** composition | `FindRevealScrollTest` |
 | EDT-7 | Editor | Ending a search hands the caret back to the editor, still on the match | `EditorRevealTest` |
+| WCAG-1 | Contrast | `ensureContrast` reaches its target in whichever lightness direction achieves it | `AdaptiveContrastEnforcerTest` |
 | CLK-1 | Presentation | The key codes an off-the-shelf presenter clicker emits reach a deck command | `PresenterClickerTest` |
 | KEY-1 | Presentation | Every window that hosts the deck answers to the whole `DECK` keyboard surface — asserted by sending keys into a real composition, not by resolving the registry | `FullscreenDeckKeyTest` |
 | PRF-5 | Performance | No `Regex` is constructed inside a per-line or per-frame loop, and no per-keystroke path allocates the whole document to answer a question about part of it | `PerformanceProbe` (measured, not asserted — see [`PERFORMANCE_BASELINE.md`](./PERFORMANCE_BASELINE.md)) |
@@ -667,6 +668,31 @@ throwing and the field still reports `isFocused == false`. That was measured, no
 pixel guard on the focused container tint therefore fails for reasons unrelated to this code,
 and the obvious pane-difference guard passes vacuously because closing the bar reflows the
 column. The drawn caret is a manual check; see `RENDERING_STATUS.md`.
+
+---
+
+### WCAG-1 — Contrast enforcement searches both directions
+
+**Invariant.** `AdaptiveContrastEnforcer.ensureContrast` returns the colour closest to the
+original lightness that reaches the requested ratio, considering both darkening and lightening;
+where the ratio is unreachable it returns the highest contrast available.
+
+**Rationale.** It used to choose a direction from `relativeLuminance(background) > 0.5f` and
+search only that way. Relative luminance is not perceptual lightness: mid-grey `#808080`
+measures **0.216**, so the check called it dark, lightened the foreground, and stopped at
+3.9:1 — while darkening the same colour reaches 5.3:1. The function then returned its best
+effort rather than failing, so every caller on a mid-luminance surface was quietly handed the
+worse of two options and nothing said so. This is the machinery the WCAG 2.1 AA badge in the
+README rests on.
+
+**How it survived.** `ParkingLotAndThemeTest.testAdaptiveContrastEnforcement` covered it and
+passed throughout — on a **pure white** background, where the direction check happens to be
+right. The bug lived entirely in the range the one test did not sample. Found while deriving
+THM-05's pointer colours, where a violet accent on mid-grey came back at 3.32:1.
+
+**Guard.** `AdaptiveContrastEnforcerTest` — the reported case, a sweep across 21 background
+greys comparing against the arithmetic ceiling, plus pins that hue and saturation survive, an
+already-compliant colour is untouched, and the adjustment stays minimal.
 
 ---
 
