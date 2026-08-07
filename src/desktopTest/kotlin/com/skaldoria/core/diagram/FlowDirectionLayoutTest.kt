@@ -1,7 +1,6 @@
 package com.skaldoria.core.diagram
 
 import androidx.compose.ui.unit.IntSize
-import com.skaldoria.ui.components.DiagramEdge
 import com.skaldoria.ui.components.MermaidParser
 import kotlin.test.Test
 import kotlin.test.assertEquals

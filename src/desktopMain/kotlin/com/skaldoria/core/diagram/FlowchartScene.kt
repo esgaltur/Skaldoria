@@ -4,7 +4,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.IntSize
 import com.skaldoria.core.theme.DesignTokens
-import com.skaldoria.ui.components.DiagramEdge
 import kotlin.math.roundToInt
 
 /**
