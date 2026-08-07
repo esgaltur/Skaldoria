@@ -4,7 +4,8 @@
 
 .DESCRIPTION
     1. Runs the local verification gate (scripts/verify.ps1): both test suites and the
-       zero-warning compile. There is no CI, so this is where those rules are enforced.
+       zero-warning compile. Nothing verifies a push automatically — the CI workflow is
+       manual-dispatch only (PLT-01) — so this is where those rules are enforced.
     2. Builds native Windows MSI installer, EXE installer, portable ZIP bundle, and universal runnable JAR.
     3. Calculates SHA-256 cryptographic checksums.
     4. Uploads all release binaries directly to GitHub Releases using 'gh' CLI without needing GitHub Actions CI/CD.
