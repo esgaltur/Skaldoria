@@ -1,5 +1,6 @@
 package com.skaldoria.ui
 
+import com.skaldoria.RenderEnvironment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.unit.Density
@@ -10,6 +11,7 @@ import kotlinx.coroutines.Job
 import java.awt.image.BufferedImage
 import java.io.File
 import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -28,6 +30,9 @@ import kotlin.test.assertTrue
  */
 @OptIn(ExperimentalComposeUiApi::class)
 class FindRevealScrollTest : PresentationStateTestBase() {
+
+    @BeforeTest
+    fun requireDisplay() = RenderEnvironment.requireDisplay()
 
     private val width = 1600
     private val height = 900

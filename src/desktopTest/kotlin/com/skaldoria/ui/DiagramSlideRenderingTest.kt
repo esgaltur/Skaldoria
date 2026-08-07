@@ -1,5 +1,6 @@
 package com.skaldoria.ui
 
+import com.skaldoria.RenderEnvironment
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -16,6 +17,7 @@ import com.skaldoria.ui.components.FitToCanvas
 import com.skaldoria.ui.components.FitMode
 import com.skaldoria.ui.components.SlideSurface
 import java.awt.image.BufferedImage
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -35,6 +37,9 @@ import kotlin.test.assertTrue
  */
 @OptIn(ExperimentalComposeUiApi::class)
 class DiagramSlideRenderingTest {
+
+    @BeforeTest
+    fun requireDisplay() = RenderEnvironment.requireDisplay()
 
     private val theme = BuiltinThemes.SkaldoriaDark
 

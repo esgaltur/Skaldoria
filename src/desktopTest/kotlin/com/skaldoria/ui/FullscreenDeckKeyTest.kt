@@ -1,5 +1,6 @@
 package com.skaldoria.ui
 
+import com.skaldoria.RenderEnvironment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.InternalComposeUiApi
@@ -16,7 +17,7 @@ import com.skaldoria.ui.screens.FullscreenDeck
 import com.skaldoria.ui.screens.PresenterView
 import kotlinx.coroutines.Job
 import kotlin.test.AfterTest
-import kotlin.test.Ignore
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -30,8 +31,10 @@ import kotlin.test.assertNotEquals
  * outcome, not the intermediate variable" trap this project keeps falling into.
  */
 @OptIn(ExperimentalComposeUiApi::class, InternalComposeUiApi::class)
-@Ignore
 class FullscreenDeckKeyTest : PresentationStateTestBase() {
+
+    @BeforeTest
+    fun requireDisplay() = RenderEnvironment.requireDisplay()
 
     private fun deck(state: PresentationState) = ImageComposeScene(
         width = 1280,

@@ -114,6 +114,21 @@ tasks.withType<Test>().configureEach {
         "skaldoria.configDir",
         layout.buildDirectory.dir("test-config").get().asFile.absolutePath
     )
+
+    /**
+     * PLT-08: lets the render guards be stood down from the command line.
+     *
+     * Tests run in a forked JVM, so a `-D` on the Gradle invocation does not reach them — it
+     * configures the daemon and the guards keep rendering, which is exactly the false negative
+     * this forwarding removes. `RenderEnvironment` also detects a genuinely headless machine on
+     * its own; this is the explicit override for the case where a display exists but rendering
+     * still should not be attempted.
+     *
+     *     ./gradlew desktopTest -PskipRenderTests
+     */
+    if (providers.gradleProperty("skipRenderTests").isPresent) {
+        systemProperty("skaldoria.skipRenderTests", "true")
+    }
 }
 
 compose.desktop {

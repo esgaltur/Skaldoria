@@ -228,8 +228,21 @@ internal object MathFenceRule : BlockRule {
  * separator row would otherwise be mistaken for one.
  */
 internal object TableRule : BlockRule {
-    override fun matches(line: String, context: SectionContext) =
-        (line.startsWith("|") && line.endsWith("|")) || (line.contains("|") && line.contains("-|-"))
+    /**
+     * AUT-17: outer pipes are optional in GFM, so structure decides, not decoration.
+     *
+     * A line is a table row when it is fenced by pipes (unambiguous on its own), when it *is*
+     * the delimiter row, when a table is already open and this line still has cells, or when it
+     * carries cells and the **next** line is a delimiter — the header case, and the only reason
+     * [SectionContext.nextLine] exists. Prose containing a stray pipe matches none of these.
+     */
+    override fun matches(line: String, context: SectionContext): Boolean {
+        if (TableRules.isFencedRow(line)) return true
+        if (TableRules.isSeparatorRow(line)) return true
+        if (!TableRules.isRow(line)) return false
+        if (context.hasOpenTable) return true
+        return TableRules.isSeparatorRow(context.nextLine.orEmpty())
+    }
 
     override fun consume(line: String, raw: String, context: SectionContext) {
         context.addTableLine(line)

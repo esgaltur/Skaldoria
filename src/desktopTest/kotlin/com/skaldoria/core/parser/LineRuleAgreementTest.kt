@@ -72,25 +72,42 @@ class LineRuleAgreementTest {
     }
 
     /**
-     * Not a divergence — a **shared gap**, which is why it belongs here rather than in the DEFECT
-     * list. Tables written without outer pipes are ordinary GFM and neither side supports them.
+     * **AUT-17, closed 2026-08-07.** This case previously pinned a *shared gap*: outer pipes are
+     * optional in GFM, and neither side supported their absence — `TableRule` matched only the
+     * separator through its `contains("-|-")` clause, and the highlighter demanded a leading and
+     * trailing pipe. They agreed, and both were wrong, which is why no divergence test caught it.
      *
-     * `TableRule` matches only the separator line, through its `contains("-|-")` clause; the
-     * header and body rows fail both clauses and stay prose, so no table is assembled. The
-     * highlighter independently refuses all three, needing a leading *and* trailing pipe. The two
-     * agree, and both are equally wrong — so fixing this is a feature, not a convergence task.
+     * The assertion is inverted rather than deleted: the pin is what makes the fix visible, and a
+     * shared gap closing is exactly the event this file exists to witness. Both sides now defer
+     * to `TableRules`, so they cannot diverge while doing it.
      */
     @Test
-    fun `a table written without outer pipes is supported by neither side`() {
+    fun `a table written without outer pipes is supported by both sides`() {
         val markdown = "# T\n\na | b\n---|---\n1 | 2\n"
 
         assertTrue(
-            MarkdownSlideParser.parse(markdown).single().elements.none { it is SlideElement.Table },
-            "parser assembles no table"
+            MarkdownSlideParser.parse(markdown).single().elements.any { it is SlideElement.Table },
+            "parser assembles a table"
         )
-        for (line in 2..4) {
-            assertTrue(!isStyled(markdown, lineIndex = line), "line $line is not styled as a table")
-        }
+        assertTrue(isStyled(markdown, lineIndex = 3), "the delimiter row is styled as a table")
+    }
+
+    /**
+     * The header and body of a pipe-less table are **not** styled by the editor, and that is a
+     * known asymmetry rather than an oversight.
+     *
+     * The highlighter works one line at a time with no lookahead; the parser gained a one-line
+     * lookahead (`SectionContext.nextLine`) so it can recognise a header by the delimiter that
+     * follows it. Giving the highlighter the same would mean threading line context through
+     * `buildHighlight`, which is on the per-keystroke path measured in `PERFORMANCE_BASELINE.md`.
+     * Pinned here so the asymmetry stays deliberate instead of being rediscovered as a bug.
+     */
+    @Test
+    fun `the editor styles only the delimiter row of a pipe-less table`() {
+        val markdown = "# T\n\na | b\n---|---\n1 | 2\n"
+
+        assertTrue(!isStyled(markdown, lineIndex = 2), "header row is unstyled — see the KDoc")
+        assertTrue(!isStyled(markdown, lineIndex = 4), "body row is unstyled — see the KDoc")
     }
 
     // ---------------------------------------------------------------------

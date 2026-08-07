@@ -24,7 +24,9 @@ class DocumentedShortcutsTest {
     private val documented = listOf(
         "F5", "Ctrl+K", "Ctrl+F", "Ctrl+H", "Ctrl+O", "Ctrl+S", "Ctrl+E",
         "Left Arrow", "Right Arrow", "Space", "PageUp", "PageDown",
-        "Backspace", "Home", "End", "B", "W", "T", "Esc"
+        "Backspace", "Home", "End", "B", "W", "T", "Esc",
+        // AUT-20
+        "F3", "Shift+F3", "Ctrl+G", "Ctrl+Shift+G"
     )
 
     private fun boundLabels(): Set<String> =

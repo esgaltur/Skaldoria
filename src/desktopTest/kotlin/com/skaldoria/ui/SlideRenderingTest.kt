@@ -1,5 +1,6 @@
 package com.skaldoria.ui
 
+import com.skaldoria.RenderEnvironment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.unit.Density
@@ -8,6 +9,7 @@ import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.ui.components.SlideSurface
 import java.io.File
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -27,6 +29,9 @@ import kotlin.test.assertTrue
  */
 @OptIn(ExperimentalComposeUiApi::class)
 class SlideRenderingTest {
+
+    @BeforeTest
+    fun requireDisplay() = RenderEnvironment.requireDisplay()
 
     private val width = 1280
     private val height = 720
