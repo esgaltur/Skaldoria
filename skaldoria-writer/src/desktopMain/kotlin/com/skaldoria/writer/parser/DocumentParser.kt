@@ -1,6 +1,5 @@
 package com.skaldoria.writer.parser
 
-import com.skaldoria.markdown.parser.FenceInfo
 import com.skaldoria.markdown.parser.FenceRules
 import com.skaldoria.markdown.parser.HeadingRules
 import com.skaldoria.markdown.parser.MathRules
@@ -46,11 +45,9 @@ class DocumentParser {
                 val language = fenceOpening.language
                 val codeContent = StringBuilder()
                 i++
-                var isClosed = false
                 while (i < lines.size) {
                     val currentTrimmed = lines[i].trim()
                     if (FenceRules.closes(currentTrimmed, fenceOpening)) {
-                        isClosed = true
                         i++ // skip closing fence
                         break
                     }
@@ -65,11 +62,9 @@ class DocumentParser {
             if (MathRules.opensBlock(line)) {
                 val mathContent = StringBuilder()
                 i++
-                var isClosed = false
                 while (i < lines.size) {
                     val currentTrimmed = lines[i].trim()
                     if (MathRules.closesBlock(currentTrimmed)) {
-                        isClosed = true
                         i++ // skip closing $$
                         break
                     }

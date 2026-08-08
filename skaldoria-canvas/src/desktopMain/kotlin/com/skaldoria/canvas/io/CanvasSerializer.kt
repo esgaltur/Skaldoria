@@ -55,6 +55,7 @@ object CanvasSerializer {
         return sb.toString()
     }
 
+    @Suppress("UNCHECKED_CAST")
     fun fromJson(json: String): CanvasDocument {
         val root = JsonParser.parse(json) as? JsonObject
             ?: return CanvasDocument()

@@ -4,7 +4,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import com.skaldoria.canvas.model.*
-import java.io.File
 import java.util.UUID
 import kotlin.math.max
 import kotlin.math.min

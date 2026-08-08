@@ -26,16 +26,16 @@ class DiagramStylingTest {
 
     @Test
     fun `hex colours are parsed in every length CSS allows`() {
-        assertEquals(Color(0xFFFF00FF), StyleDeclarationParser.parseColor("#f0f"))
-        assertEquals(Color(0xFFFF00FF), StyleDeclarationParser.parseColor("#FF00FF"))
-        assertEquals(Color(0x80FF00FF), StyleDeclarationParser.parseColor("#FF00FF80"))
+        assertEquals(StyleDeclarationParser.parseColor("#f0f"), Color(0xFFFF00FF))
+        assertEquals(StyleDeclarationParser.parseColor("#FF00FF"), Color(0xFFFF00FF))
+        assertEquals(StyleDeclarationParser.parseColor("#FF00FF80"), Color(0x80FF00FF))
     }
 
     @Test
     fun `named colours that authors actually type are understood`() {
-        assertEquals(Color(0xFFFF0000), StyleDeclarationParser.parseColor("red"))
-        assertEquals(Color(0xFF808080), StyleDeclarationParser.parseColor("grey"))
-        assertEquals(Color(0xFF808080), StyleDeclarationParser.parseColor("GRAY"))
+        assertEquals(StyleDeclarationParser.parseColor("red"), Color(0xFFFF0000))
+        assertEquals(StyleDeclarationParser.parseColor("grey"), Color(0xFF808080))
+        assertEquals(StyleDeclarationParser.parseColor("GRAY"), Color(0xFF808080))
     }
 
     @Test
