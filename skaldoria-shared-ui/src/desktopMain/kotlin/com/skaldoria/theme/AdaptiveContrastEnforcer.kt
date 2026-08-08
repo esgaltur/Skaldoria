@@ -63,7 +63,7 @@ object AdaptiveContrastEnforcer : IContrastEnforcer {
      * is how the two would drift, and this codebase has paid for that with fences, tables and
      * directive keys already.
      */
-    internal fun solveLightness(source: Color, against: Color, target: Float): Color {
+    fun solveLightness(source: Color, against: Color, target: Float): Color {
         val hsl = ColorScience.colorToHsl(source)
         val originalLightness = hsl[2]
 
@@ -97,7 +97,7 @@ object AdaptiveContrastEnforcer : IContrastEnforcer {
     }
 
     /** The lightness of [source]'s hue that contrasts *most* with [against]. */
-    internal fun maximiseContrast(source: Color, against: Color): Color {
+    fun maximiseContrast(source: Color, against: Color): Color {
         val hsl = ColorScience.colorToHsl(source)
         var best = source
         var bestRatio = ColorScience.contrastRatio(source, against)

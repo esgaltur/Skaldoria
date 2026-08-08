@@ -182,7 +182,7 @@ spends in it. It is a single `TextField` with a syntax-highlighting `VisualTrans
 | **AUT-08** | Directive autocomplete | 📋 | M | AUT-05 | The directive language (`<!-- note: -->`, `> note:`, `<!-- poll: -->`, `layout:`, `transition:`, mermaid fences) is rich and entirely undiscoverable while typing. |
 | **AUT-09** | Inline diagnostics | 📋 | L | AUT-08 | Unparseable mermaid, unresolvable image paths and malformed polls currently surface only as rendered output. COR-10 already produces a *reason* for image failures — surface it at the source line. |
 | **AUT-10** | Drag-and-drop slide reordering | 📋 | M | — | Filmstrip today offers ◀ ▶ buttons only; reordering slide 40 to position 2 is 38 clicks. |
-| **AUT-11** | Formatting shortcuts (`Ctrl+B`, `Ctrl+I`, `Ctrl+K` link) | 📋 | S | AUT-05 | Needs selection, hence the dependency. |
+| **AUT-11** | Formatting shortcuts (`Ctrl+B`, `Ctrl+I`, `Ctrl+K` link) | ✅ | S | AUT-05 | **Shipped 2026-08-07.** Now available; `Ctrl+P` replaces `Ctrl+K` for Command Palette. |
 | **AUT-12** | Paste image from clipboard | 📋 | M | — | Write into the deck folder, insert `![](name.png)`. Removes the most tedious step in authoring a visual deck. |
 | **AUT-13** | Editor-only / preview-only / split layout modes | 📋 | S | — | The 1 : 1.3 split is fixed today. |
 | **AUT-14** | Draggable splitter between editor and preview | 📋 | S | — | |

@@ -155,16 +155,21 @@ object AppCommands {
     val COMMAND_PALETTE = AppCommand(
         "studio.palette", "Open Command Palette",
         setOf(CommandScope.STUDIO, CommandScope.DECK),
-        listOf(Shortcut("K", ctrl = true))
+        listOf(Shortcut("P", ctrl = true, shift = true), Shortcut("P", ctrl = true))
     )
     val PRESENT = AppCommand("studio.present", "Launch Fullscreen Presentation", setOf(CommandScope.STUDIO), listOf(Shortcut("F5")))
+
+    val FORMAT_BOLD = AppCommand("studio.formatBold", "Format Bold", setOf(CommandScope.STUDIO), listOf(Shortcut("B", ctrl = true)))
+    val FORMAT_ITALIC = AppCommand("studio.formatItalic", "Format Italic", setOf(CommandScope.STUDIO), listOf(Shortcut("I", ctrl = true)))
+    val FORMAT_LINK = AppCommand("studio.formatLink", "Insert Link", setOf(CommandScope.STUDIO), listOf(Shortcut("K", ctrl = true)))
 
     val ALL: List<AppCommand> = listOf(
         NEXT_SLIDE, PREVIOUS_SLIDE, FIRST_SLIDE, LAST_SLIDE, CYCLE_THEME,
         TOGGLE_HUD, BLACKOUT, WHITEOUT, GRID_OVERVIEW,
         LASER_POINTER, PEN_DRAWING, CLEAR_ANNOTATIONS, UNDO_STROKE, EXIT_FULLSCREEN,
         REDO, UNDO, OPEN, SAVE_AS, SAVE, EXPORT, FIND, REPLACE, FIND_PREVIOUS, FIND_NEXT,
-        FONT_INCREASE, FONT_DECREASE, FONT_RESET, COMMAND_PALETTE, PRESENT
+        FONT_INCREASE, FONT_DECREASE, FONT_RESET, COMMAND_PALETTE, PRESENT,
+        FORMAT_BOLD, FORMAT_ITALIC, FORMAT_LINK
     )
 
     fun inScope(scope: CommandScope): List<AppCommand> = ALL.filter { scope in it.scopes }

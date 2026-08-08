@@ -658,6 +658,16 @@ class PresentationState(
 
     fun updateEditorContent(newContent: String) = deck.updateEditorContent(currentSlideIndex, newContent)
 
+    /** AUT-11: apply markdown formatting to the current selection. */
+    fun formatSelection(prefix: String, suffix: String = prefix) {
+        val text = currentEditorText
+        val range = editorSelectionWithin(text.length)
+        val selectedText = text.substring(range.min, range.max)
+        val newText = text.substring(0, range.min) + prefix + selectedText + suffix + text.substring(range.max)
+        updateEditorContent(newText)
+        editor.moveCaret(TextRange(range.min, range.max + prefix.length + suffix.length))
+    }
+
     /**
      * Opens whatever the user picked — a deck project or a single markdown file.
      *

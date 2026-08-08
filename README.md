@@ -240,7 +240,8 @@ comes from `appVersion` in `build.gradle.kts` — never pass it by hand:
 |:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------|
 | <kbd>F5</kbd>                                                                        | Launch Fullscreen Presentation Mode                                                         |
 | <kbd>P</kbd>                                                                         | Toggle Pen Annotation *(presentation window)*; the Presenter Console opens from the toolbar |
-| <kbd>Ctrl</kbd> + <kbd>K</kbd>                                                       | Open Spotlight Command Palette                                                              |
+| <kbd>Ctrl</kbd> + <kbd>P</kbd>                                                       | Open Spotlight Command Palette                                                              |
+| <kbd>Ctrl</kbd> + <kbd>B</kbd> / <kbd>I</kbd> / <kbd>K</kbd>                         | Format text as **Bold**, _Italic_, or [Link]()                                              |
 | <kbd>Ctrl</kbd> + <kbd>F</kbd>                                                       | Find in Slide Source Editor                                                                 |
 | <kbd>Ctrl</kbd> + <kbd>H</kbd>                                                       | Find & Replace in Slide Source Editor                                                       |
 | <kbd>F3</kbd> / <kbd>Ctrl</kbd> + <kbd>G</kbd>                                       | Next Match — repeats the last search with the find bar closed                               |
