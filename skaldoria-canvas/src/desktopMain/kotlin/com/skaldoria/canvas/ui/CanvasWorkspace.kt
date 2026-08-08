@@ -14,6 +14,10 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isAltPressed
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isMetaPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -55,42 +59,121 @@ fun CanvasWorkspace(
             }
             .onPointerEvent(PointerEventType.Scroll) { event ->
                 val change = event.changes.firstOrNull() ?: return@onPointerEvent
-                val scrollDelta = change.scrollDelta.y
-                val factor = if (scrollDelta < 0) 1.12f else 0.89f
-                state.zoomAt(factor, change.position)
+                val scrollDelta = change.scrollDelta
+                val isCtrl = event.keyboardModifiers.isCtrlPressed || event.keyboardModifiers.isMetaPressed
+                val isShift = event.keyboardModifiers.isShiftPressed
+
+                if (isCtrl) {
+                    // Ctrl + Mouse Wheel = Smooth Zoom at cursor position
+                    val factor = if (scrollDelta.y < 0) 1.10f else 0.90f
+                    state.zoomAt(factor, change.position)
+                } else if (isShift) {
+                    // Shift + Mouse Wheel = Horizontal Pan
+                    val panSpeed = 40f
+                    val deltaX = -scrollDelta.y * panSpeed
+                    state.panBy(Offset(deltaX, 0f))
+                } else {
+                    // Standard Mouse Wheel / Ring = Smooth 2D Canvas Pan
+                    val panSpeed = 40f
+                    val deltaX = -scrollDelta.x * panSpeed
+                    val deltaY = -scrollDelta.y * panSpeed
+                    state.panBy(Offset(deltaX, deltaY))
+                }
                 change.consume()
             }
-            .pointerInput(Unit) {
-                detectTapGestures(
+            .pointerInput(state.activeTool) {
+                detectCanvasGestures(
+                    onMiddleDrag = { delta ->
+                        state.panBy(delta)
+                    },
                     onDoubleTap = { tapPos ->
                         val canvasPos = state.viewport.screenToCanvas(tapPos)
                         state.addNode(canvasPos)
                     },
-                    onTap = {
-                        state.clearSelection()
-                    }
-                )
-            }
-            .pointerInput(Unit) {
-                detectDragGestures(
+                    onTap = { tapPos ->
+                        val clickedEdge = state.findEdgeAt(tapPos)
+                        if (clickedEdge != null) {
+                            state.selectEdge(clickedEdge.id)
+                        } else {
+                            state.clearSelection()
+                        }
+                    },
                     onDragStart = { startPos ->
-                        state.marqueeStart = startPos
-                        state.marqueeCurrent = startPos
+                        when (state.activeTool) {
+                            com.skaldoria.canvas.state.CanvasTool.Select -> {
+                                state.marqueeStart = startPos
+                                state.marqueeCurrent = startPos
+                            }
+                            com.skaldoria.canvas.state.CanvasTool.Pan -> {
+                                // Pan mode
+                            }
+                            com.skaldoria.canvas.state.CanvasTool.Connect -> {
+                                val canvasStart = state.viewport.screenToCanvas(startPos)
+                                val node = state.findNodeAt(canvasStart)
+                                if (node != null) {
+                                    state.connectingSourceNodeId = node.id
+                                    state.connectingSourcePort = com.skaldoria.canvas.model.EdgePort.Auto
+                                    state.connectingTargetPosition = startPos
+                                }
+                            }
+                        }
                     },
                     onDrag = { change, dragAmount ->
-                        change.consume()
-                        // If middle button or spacebar -> Pan canvas
-                        if (change.pressed) {
-                            state.panBy(dragAmount)
+                        when (state.activeTool) {
+                            com.skaldoria.canvas.state.CanvasTool.Pan -> {
+                                state.panBy(dragAmount)
+                            }
+                            com.skaldoria.canvas.state.CanvasTool.Select -> {
+                                state.marqueeCurrent = (state.marqueeCurrent ?: state.marqueeStart ?: change.position) + dragAmount
+                            }
+                            com.skaldoria.canvas.state.CanvasTool.Connect -> {
+                                if (state.connectingSourceNodeId != null) {
+                                    state.connectingTargetPosition = (state.connectingTargetPosition ?: change.position) + dragAmount
+                                } else {
+                                    state.panBy(dragAmount)
+                                }
+                            }
                         }
                     },
                     onDragEnd = {
+                        if (state.activeTool == com.skaldoria.canvas.state.CanvasTool.Select) {
+                            val mStart = state.marqueeStart
+                            val mCurrent = state.marqueeCurrent
+                            if (mStart != null && mCurrent != null && (mStart - mCurrent).getDistance() > 8f) {
+                                val screenRect = Rect(
+                                    minOf(mStart.x, mCurrent.x),
+                                    minOf(mStart.y, mCurrent.y),
+                                    maxOf(mStart.x, mCurrent.x),
+                                    maxOf(mStart.y, mCurrent.y)
+                                )
+                                state.applyMarqueeSelection(screenRect)
+                            }
+                        } else if (state.activeTool == com.skaldoria.canvas.state.CanvasTool.Connect) {
+                            val targetScreenPos = state.connectingTargetPosition
+                            val sourceId = state.connectingSourceNodeId
+                            if (targetScreenPos != null && sourceId != null) {
+                                val targetCanvasPos = state.viewport.screenToCanvas(targetScreenPos)
+                                val targetNode = state.findNodeAt(targetCanvasPos)
+                                if (targetNode != null && targetNode.id != sourceId) {
+                                    state.addEdge(
+                                        fromId = sourceId,
+                                        toId = targetNode.id,
+                                        fromPort = com.skaldoria.canvas.model.EdgePort.Auto,
+                                        toPort = com.skaldoria.canvas.model.EdgePort.Auto
+                                    )
+                                }
+                            }
+                        }
                         state.marqueeStart = null
                         state.marqueeCurrent = null
+                        state.connectingSourceNodeId = null
+                        state.connectingTargetPosition = null
                     },
                     onDragCancel = {
                         state.marqueeStart = null
                         state.marqueeCurrent = null
+                        state.connectingSourceNodeId = null
+                        state.connectingTargetPosition = null
                     }
                 )
             }
@@ -125,7 +208,7 @@ fun CanvasWorkspace(
         // Layer 4: Marquee Selection Rectangle
         val mStart = state.marqueeStart
         val mCurrent = state.marqueeCurrent
-        if (mStart != null && mCurrent != null && (mStart - mCurrent).getDistance() > 10f) {
+        if (mStart != null && mCurrent != null && (mStart - mCurrent).getDistance() > 6f) {
             val marqueeRect = Rect(
                 minOf(mStart.x, mCurrent.x),
                 minOf(mStart.y, mCurrent.y),
@@ -148,7 +231,20 @@ fun CanvasWorkspace(
             }
         }
 
-        // Layer 5: Top Floating Glassmorphism Toolbar
+        // Layer 5: Selected Edge Floating Inspector HUD
+        val selectedEdge = state.edges.find { it.id == state.selectedEdgeId }
+        if (selectedEdge != null) {
+            CanvasEdgeInspector(
+                edge = selectedEdge,
+                state = state,
+                theme = theme,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 24.dp)
+            )
+        }
+
+        // Layer 6: Top Floating Glassmorphism Toolbar
         CanvasToolbar(
             state = state,
             currentTheme = theme,
@@ -177,7 +273,7 @@ fun CanvasWorkspace(
                 .padding(top = 16.dp)
         )
 
-        // Layer 6: Bottom-Right Minimap Radar
+        // Layer 7: Bottom-Right Minimap Radar
         if (showMinimap) {
             CanvasMinimap(
                 state = state,

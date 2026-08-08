@@ -33,6 +33,11 @@ import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.PresentationTheme
 import com.skaldoria.ui.components.*
 
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
+
 /**
  * Interactive spatial whiteboard card supporting rich Markdown, live code blocks,
  * LaTeX formulas, Mermaid diagrams, resizing, color customization, and edge port linking.
@@ -48,10 +53,8 @@ fun CanvasNodeCard(
     val isEditing = state.editingNodeId == node.id
     val zoom = state.viewport.zoom
 
-    // Screen-space position and size
+    // Screen-space position
     val screenPos = state.viewport.canvasToScreen(Offset(node.x, node.y))
-    val screenWidth = (node.width * zoom).coerceAtLeast(140f)
-    val screenHeight = (node.height * zoom).coerceAtLeast(90f)
 
     var showColorMenu by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
@@ -75,8 +78,13 @@ fun CanvasNodeCard(
 
     Box(
         modifier = modifier
-            .offset(x = screenPos.x.dp, y = screenPos.y.dp)
-            .size(width = screenWidth.dp, height = screenHeight.dp)
+            .offset { IntOffset(screenPos.x.roundToInt(), screenPos.y.roundToInt()) }
+            .size(node.width.dp, node.height.dp)
+            .graphicsLayer {
+                scaleX = zoom
+                scaleY = zoom
+                transformOrigin = TransformOrigin(0f, 0f)
+            }
             .shadow(
                 elevation = if (isSelected) 12.dp else 4.dp,
                 shape = cardShape,
@@ -85,13 +93,23 @@ fun CanvasNodeCard(
             .clip(cardShape)
             .background(cardBg)
             .border(borderStroke, cardShape)
-            .pointerInput(node.id) {
-                detectDragGestures(
-                    onDragStart = {
+            .pointerInput(node.id, zoom) {
+                detectCanvasGestures(
+                    onMiddleDrag = { delta ->
+                        state.panBy(delta)
+                    },
+                    onTap = {
                         state.selectNode(node.id, multiSelect = false)
                     },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
+                    onDoubleTap = {
+                        state.editingNodeId = node.id
+                    },
+                    onDragStart = {
+                        if (!state.selectedNodeIds.contains(node.id)) {
+                            state.selectNode(node.id, multiSelect = false)
+                        }
+                    },
+                    onDrag = { _, dragAmount ->
                         val deltaCanvas = Offset(dragAmount.x / zoom, dragAmount.y / zoom)
                         state.moveSelectedNodes(deltaCanvas)
                     }
@@ -135,10 +153,7 @@ fun CanvasNodeCard(
                 } else {
                     CardPreviewMode(
                         markdown = node.markdown,
-                        theme = theme,
-                        onDoubleClick = {
-                            state.editingNodeId = node.id
-                        }
+                        theme = theme
                     )
                 }
             }
@@ -327,20 +342,14 @@ private fun CardEditMode(
 @Composable
 private fun CardPreviewMode(
     markdown: String,
-    theme: PresentationTheme,
-    onDoubleClick: () -> Unit
+    theme: PresentationTheme
 ) {
     val slides = remember(markdown) {
         MarkdownSlideParser.parse(markdown)
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                detectTapGestures(onDoubleTap = { onDoubleClick() })
-            }
-            .verticalScroll(rememberScrollState())
+        modifier = Modifier.fillMaxSize()
     ) {
         if (markdown.isBlank()) {
             Text(
@@ -503,9 +512,10 @@ private fun BoxScope.PortHandle(
                         val portCanvas = node.portPosition(port)
                         state.connectingTargetPosition = state.viewport.canvasToScreen(portCanvas)
                     },
-                    onDrag = { change, _ ->
+                    onDrag = { change, dragAmount ->
                         change.consume()
-                        state.connectingTargetPosition = change.position + state.viewport.canvasToScreen(node.portPosition(port))
+                        val current = state.connectingTargetPosition ?: state.viewport.canvasToScreen(node.portPosition(port))
+                        state.connectingTargetPosition = current + dragAmount
                     },
                     onDragEnd = {
                         val targetScreenPos = state.connectingTargetPosition
