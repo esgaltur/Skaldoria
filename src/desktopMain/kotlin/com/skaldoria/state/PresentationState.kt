@@ -662,10 +662,44 @@ class PresentationState(
     fun formatSelection(prefix: String, suffix: String = prefix) {
         val text = currentEditorText
         val range = editorSelectionWithin(text.length)
-        val selectedText = text.substring(range.min, range.max)
-        val newText = text.substring(0, range.min) + prefix + selectedText + suffix + text.substring(range.max)
-        updateEditorContent(newText)
-        editor.moveCaret(TextRange(range.min, range.max + prefix.length + suffix.length))
+        val start = range.min
+        val end = range.max
+
+        val markersOutsideSelection =
+            start >= prefix.length &&
+                end + suffix.length <= text.length &&
+                text.substring(start - prefix.length, start) == prefix &&
+                text.substring(end, end + suffix.length) == suffix
+
+        if (markersOutsideSelection) {
+            updateEditorContent(
+                text.removeRange(end, end + suffix.length)
+                    .removeRange(start - prefix.length, start)
+            )
+            editor.moveCaret(TextRange(start - prefix.length, end - prefix.length))
+            return
+        }
+
+        val markersInsideSelection =
+            end - start >= prefix.length + suffix.length &&
+                text.substring(start, start + prefix.length) == prefix &&
+                text.substring(end - suffix.length, end) == suffix
+
+        if (markersInsideSelection) {
+            updateEditorContent(
+                text.removeRange(end - suffix.length, end)
+                    .removeRange(start, start + prefix.length)
+            )
+            editor.moveCaret(TextRange(start, end - prefix.length - suffix.length))
+            return
+        }
+
+        val selectedText = text.substring(start, end)
+        updateEditorContent(text.substring(0, start) + prefix + selectedText + suffix + text.substring(end))
+        editor.moveCaret(
+            if (start == end) TextRange(start + prefix.length)
+            else TextRange(start + prefix.length, end + prefix.length)
+        )
     }
 
     /**

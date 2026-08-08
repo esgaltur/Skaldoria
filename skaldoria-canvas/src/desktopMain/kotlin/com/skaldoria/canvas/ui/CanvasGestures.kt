@@ -22,16 +22,19 @@ suspend fun PointerInputScope.detectCanvasGestures(
     onDragEnd: (() -> Unit)? = null,
     onDragCancel: (() -> Unit)? = null,
     onMiddleDrag: ((dragAmount: Offset) -> Unit)? = null,
-    dragSlop: Float = 4f
+    dragSlop: Float = 4f,
+    consumeDown: Boolean = false
 ) {
     var lastTapTime = 0L
     var lastTapPosition = Offset.Zero
 
     awaitEachGesture {
-        val down = awaitFirstDown(requireUnconsumed = false)
+        val down = awaitFirstDown(requireUnconsumed = true)
+        if (consumeDown) down.consume()
         val downTime = System.currentTimeMillis()
         val downPos = down.position
         var isDragging = false
+        var isMiddleDragging = false
         var accumulatedDrag = Offset.Zero
 
         val isDoubleTapCandidate = onDoubleTap != null &&
@@ -42,12 +45,16 @@ suspend fun PointerInputScope.detectCanvasGestures(
 
         while (true) {
             val event = awaitPointerEvent()
-            val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+            val change = event.changes.firstOrNull { it.id == pointerId }
+            if (change == null) {
+                if (isDragging) onDragCancel?.invoke()
+                break
+            }
 
             if (change.changedToUpIgnoreConsumed()) {
                 change.consume()
                 if (isDragging) {
-                    onDragEnd?.invoke()
+                    if (!isMiddleDragging) onDragEnd?.invoke()
                 } else {
                     if (isDoubleTapCandidate) {
                         onDoubleTap?.invoke(downPos)
@@ -67,12 +74,13 @@ suspend fun PointerInputScope.detectCanvasGestures(
 
             if (!isDragging && accumulatedDrag.getDistance() >= dragSlop) {
                 isDragging = true
-                onDragStart?.invoke(downPos)
+                isMiddleDragging = event.buttons.isTertiaryPressed && onMiddleDrag != null
+                if (!isMiddleDragging) onDragStart?.invoke(downPos)
             }
 
             if (isDragging) {
                 change.consume()
-                if (event.buttons.isTertiaryPressed && onMiddleDrag != null) {
+                if (isMiddleDragging && onMiddleDrag != null) {
                     onMiddleDrag.invoke(delta)
                 } else {
                     onDrag?.invoke(change, delta)

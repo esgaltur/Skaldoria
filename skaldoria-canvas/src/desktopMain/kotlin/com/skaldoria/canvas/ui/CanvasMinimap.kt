@@ -15,6 +15,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.skaldoria.canvas.state.CanvasState
 import com.skaldoria.theme.PresentationTheme
@@ -35,8 +36,11 @@ fun CanvasMinimap(
     if (state.nodes.isEmpty()) return
 
     val minimapShape = RoundedCornerShape(8.dp)
-    val minimapWidth = 180f
-    val minimapHeight = 120f
+    val minimapWidthDp = 180.dp
+    val minimapHeightDp = 120.dp
+    val density = LocalDensity.current
+    val minimapWidth = with(density) { minimapWidthDp.toPx() }
+    val minimapHeight = with(density) { minimapHeightDp.toPx() }
 
     // Calculate canvas bounding box
     var minX = state.nodes.minOf { it.x } - 200f
@@ -76,7 +80,7 @@ fun CanvasMinimap(
 
     Box(
         modifier = modifier
-            .size(minimapWidth.dp, minimapHeight.dp)
+            .size(minimapWidthDp, minimapHeightDp)
             .shadow(8.dp, minimapShape)
             .clip(minimapShape)
             .background(theme.surface.copy(alpha = 0.85f))

@@ -12,9 +12,8 @@
 # is not what this verifies.
 #
 # This runs exactly what verify.ps1 runs, in the same order, and nothing else:
-#   1. `desktopTest` and `:skaldoria-markdown:test` — both modules.
-#   2. `compileKotlinDesktop compileTestKotlinDesktop -PwarningsAsErrors` — the zero-warning NFR
-#      (CONTRIBUTING.md section 6), over production *and* test code.
+#   1. Every module test suite.
+#   2. Every module's production and test sources with `-PwarningsAsErrors`.
 name: CI
 
 on:
@@ -75,17 +74,17 @@ jobs:
       # already true here with no `DISPLAY`; `-PskipRenderTests` states the same thing
       # explicitly, so the report says the guards were stood down on purpose rather than by
       # accident of environment.
-      - name: Run both test suites
+      - name: Run all test suites
         if: github.event.inputs.render_tests != 'xvfb'
-        run: ./gradlew desktopTest :skaldoria-markdown:test --no-daemon -PskipRenderTests
+        run: ./gradlew desktopTest :skaldoria-markdown:test :skaldoria-shared-ui:desktopTest :skaldoria-writer:desktopTest :skaldoria-canvas:desktopTest --no-daemon -PskipRenderTests
 
-      - name: Run both test suites (with a virtual display)
+      - name: Run all test suites (with a virtual display)
         if: github.event.inputs.render_tests == 'xvfb'
-        run: xvfb-run --auto-servernum ./gradlew desktopTest :skaldoria-markdown:test --no-daemon
+        run: xvfb-run --auto-servernum ./gradlew desktopTest :skaldoria-markdown:test :skaldoria-shared-ui:desktopTest :skaldoria-writer:desktopTest :skaldoria-canvas:desktopTest --no-daemon
 
       # Fix the cause, do not suppress it (CONTRIBUTING.md section 10).
       - name: Compile with warnings as errors
-        run: ./gradlew compileKotlinDesktop compileTestKotlinDesktop -PwarningsAsErrors --no-daemon
+        run: ./gradlew compileKotlinDesktop compileTestKotlinDesktop :skaldoria-shared-ui:compileKotlinDesktop :skaldoria-shared-ui:compileTestKotlinDesktop :skaldoria-writer:compileKotlinDesktop :skaldoria-writer:compileTestKotlinDesktop :skaldoria-canvas:compileKotlinDesktop :skaldoria-canvas:compileTestKotlinDesktop -PwarningsAsErrors --no-daemon
 
       # Without this a red run says only "desktopTest FAILED"; the HTML/XML reports say which
       # case, and they are gone with the runner.
@@ -99,5 +98,11 @@ jobs:
             build/test-results/
             skaldoria-markdown/build/reports/tests/
             skaldoria-markdown/build/test-results/
+            skaldoria-shared-ui/build/reports/tests/
+            skaldoria-shared-ui/build/test-results/
+            skaldoria-writer/build/reports/tests/
+            skaldoria-writer/build/test-results/
+            skaldoria-canvas/build/reports/tests/
+            skaldoria-canvas/build/test-results/
           if-no-files-found: ignore
           retention-days: 7

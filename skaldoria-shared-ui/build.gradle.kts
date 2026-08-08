@@ -5,10 +5,14 @@ plugins {
 }
 
 group = "com.skaldoria"
-version = "1.0.0"
+version = rootProject.version
 
 kotlin {
     jvm("desktop")
+
+    compilerOptions {
+        allWarningsAsErrors.set(providers.gradleProperty("warningsAsErrors").isPresent)
+    }
 
     sourceSets {
         getByName("desktopMain") {

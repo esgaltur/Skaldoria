@@ -5,6 +5,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import com.skaldoria.canvas.model.*
 import java.util.UUID
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 
@@ -44,16 +45,21 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
     // History for Undo / Redo
     private val undoStack = mutableListOf<CanvasDocument>()
     private val redoStack = mutableListOf<CanvasDocument>()
+    private var nodeTransformStart: CanvasDocument? = null
 
     val nodes: List<CanvasNode> get() = document.nodes
     val edges: List<CanvasEdge> get() = document.edges
     val viewport: CanvasViewport get() = document.viewport
 
     private fun pushHistory() {
-        undoStack.add(document)
+        recordHistory(document)
+        isDirty = true
+    }
+
+    private fun recordHistory(snapshot: CanvasDocument) {
+        undoStack.add(snapshot)
         if (undoStack.size > 50) undoStack.removeAt(0)
         redoStack.clear()
-        isDirty = true
     }
 
     fun undo() {
@@ -97,6 +103,23 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         document = document.copy(
             viewport = CanvasViewport(panX = newPanX, panY = newPanY, zoom = newZoom)
         )
+    }
+
+    fun zoomFromWheel(scrollDeltaY: Float, focalPoint: Offset) {
+        if (scrollDeltaY == 0f) return
+        val factor = exp(-scrollDeltaY * 0.12f).coerceIn(0.8f, 1.25f)
+        zoomAt(factor, focalPoint)
+    }
+
+    fun panFromWheel(scrollDelta: Offset, horizontal: Boolean) {
+        val panSpeed = 40f
+        val primaryDelta = if (scrollDelta.y != 0f) scrollDelta.y else scrollDelta.x
+        val pan = if (horizontal) {
+            Offset(-primaryDelta * panSpeed, 0f)
+        } else {
+            Offset(-scrollDelta.x * panSpeed, -scrollDelta.y * panSpeed)
+        }
+        panBy(pan)
     }
 
     fun resetViewport() {
@@ -197,6 +220,19 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         isDirty = true
     }
 
+    fun beginNodeTransform() {
+        if (nodeTransformStart == null) nodeTransformStart = document
+    }
+
+    fun endNodeTransform() {
+        val start = nodeTransformStart ?: return
+        nodeTransformStart = null
+        if (start != document) {
+            recordHistory(start)
+            isDirty = true
+        }
+    }
+
     fun resizeNode(nodeId: String, deltaWidth: Float, deltaHeight: Float) {
         val node = nodes.find { it.id == nodeId } ?: return
         val newW = max(CanvasNode.MIN_WIDTH, node.width + deltaWidth)
@@ -205,13 +241,6 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
             nodes = nodes.map { if (it.id == nodeId) it.copy(width = newW, height = newH) else it }
         )
         isDirty = true
-    }
-
-    fun bringNodeToFront(nodeId: String) {
-        val highestZ = (nodes.maxOfOrNull { it.zIndex } ?: 0) + 1
-        document = document.copy(
-            nodes = nodes.map { if (it.id == nodeId) it.copy(zIndex = highestZ) else it }
-        )
     }
 
     fun deleteSelected() {
@@ -331,7 +360,6 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
             selectedNodeIds = setOf(nodeId)
         }
         selectedEdgeId = null
-        bringNodeToFront(nodeId)
     }
 
     fun selectEdge(edgeId: String) {
@@ -382,6 +410,7 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         selectedNodeIds = emptySet()
         selectedEdgeId = null
         editingNodeId = null
+        nodeTransformStart = null
         undoStack.clear()
         redoStack.clear()
     }

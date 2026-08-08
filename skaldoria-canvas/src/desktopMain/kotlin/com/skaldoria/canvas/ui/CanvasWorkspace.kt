@@ -2,8 +2,6 @@ package com.skaldoria.canvas.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,7 +12,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.isAltPressed
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
@@ -25,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.skaldoria.canvas.io.CanvasExporter
 import com.skaldoria.canvas.io.CanvasSerializer
 import com.skaldoria.canvas.model.CanvasDocument
+import com.skaldoria.canvas.model.CanvasNode
 import com.skaldoria.canvas.state.CanvasState
 import com.skaldoria.theme.PresentationTheme
 import java.io.File
@@ -57,29 +56,19 @@ fun CanvasWorkspace(
             .onSizeChanged {
                 canvasSize = Size(it.width.toFloat(), it.height.toFloat())
             }
-            .onPointerEvent(PointerEventType.Scroll) { event ->
+            .onPointerEvent(PointerEventType.Scroll, PointerEventPass.Initial) { event ->
                 val change = event.changes.firstOrNull() ?: return@onPointerEvent
                 val scrollDelta = change.scrollDelta
-                val isCtrl = event.keyboardModifiers.isCtrlPressed || event.keyboardModifiers.isMetaPressed
+                val isZoom = event.keyboardModifiers.isCtrlPressed ||
+                    event.keyboardModifiers.isMetaPressed
                 val isShift = event.keyboardModifiers.isShiftPressed
 
-                if (isCtrl) {
-                    // Ctrl + Mouse Wheel = Smooth Zoom at cursor position
-                    val factor = if (scrollDelta.y < 0) 1.10f else 0.90f
-                    state.zoomAt(factor, change.position)
-                } else if (isShift) {
-                    // Shift + Mouse Wheel = Horizontal Pan
-                    val panSpeed = 40f
-                    val deltaX = -scrollDelta.y * panSpeed
-                    state.panBy(Offset(deltaX, 0f))
+                if (isZoom) {
+                    state.zoomFromWheel(scrollDelta.y, change.position)
                 } else {
-                    // Standard Mouse Wheel / Ring = Smooth 2D Canvas Pan
-                    val panSpeed = 40f
-                    val deltaX = -scrollDelta.x * panSpeed
-                    val deltaY = -scrollDelta.y * panSpeed
-                    state.panBy(Offset(deltaX, deltaY))
+                    state.panFromWheel(scrollDelta, horizontal = isShift)
                 }
-                change.consume()
+                event.changes.forEach { it.consume() }
             }
             .pointerInput(state.activeTool) {
                 detectCanvasGestures(
@@ -174,7 +163,8 @@ fun CanvasWorkspace(
                         state.marqueeCurrent = null
                         state.connectingSourceNodeId = null
                         state.connectingTargetPosition = null
-                    }
+                    },
+                    consumeDown = true
                 )
             }
     ) {
@@ -195,15 +185,17 @@ fun CanvasWorkspace(
             state.getVisibleNodes(canvasSize.width, canvasSize.height)
         }
 
-        visibleNodes.forEach { node ->
-            key(node.id) {
-                CanvasNodeCard(
-                    node = node,
-                    state = state,
-                    theme = theme
-                )
+        visibleNodes
+            .sortedWith(compareBy<CanvasNode> { it.id in state.selectedNodeIds }.thenBy { it.zIndex })
+            .forEach { node ->
+                key(node.id) {
+                    CanvasNodeCard(
+                        node = node,
+                        state = state,
+                        theme = theme
+                    )
+                }
             }
-        }
 
         // Layer 4: Marquee Selection Rectangle
         val mStart = state.marqueeStart

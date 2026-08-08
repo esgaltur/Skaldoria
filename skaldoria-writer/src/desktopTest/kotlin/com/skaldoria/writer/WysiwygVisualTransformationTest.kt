@@ -121,4 +121,27 @@ class WysiwygVisualTransformationTest {
         val transformed = transformer.filter(text)
         assertFalse(transformed.text.text.contains("~~"), "Expected strikethrough markers to be hidden")
     }
+
+    @Test
+    fun `visual mode folds mixed inline markers on one line`() {
+        val transformer = WysiwygVisualTransformation(testTheme, cursorIndex = 100, isVisualMode = true)
+        val transformed = transformer.filter(
+            AnnotatedString("Use **bold**, _italic_, `code`, and ~~deleted~~ text")
+        )
+
+        assertEquals("Use bold, italic, code, and deleted text", transformed.text.text)
+        assertTrue(transformed.text.spanStyles.any { it.item.fontWeight == FontWeight.Bold })
+        assertTrue(transformed.text.spanStyles.any { it.item.fontStyle == FontStyle.Italic })
+        assertTrue(transformed.text.spanStyles.any { it.item.fontFamily == FontFamily.Monospace })
+    }
+
+    @Test
+    fun `visual mode folds inline markers inside headings`() {
+        val transformer = WysiwygVisualTransformation(testTheme, cursorIndex = 100, isVisualMode = true)
+        val transformed = transformer.filter(AnnotatedString("## A **bold** heading"))
+
+        assertEquals("A bold heading", transformed.text.text)
+        assertTrue(transformed.text.spanStyles.any { it.item.fontSize == 24.sp })
+        assertTrue(transformed.text.spanStyles.any { it.item.fontWeight == FontWeight.Bold })
+    }
 }

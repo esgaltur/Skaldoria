@@ -176,4 +176,23 @@ class CanvasStateTest {
         state.redo()
         assertEquals(2, state.nodes.size)
     }
+
+    @Test
+    fun testNodeTransformIsOneUndoableOperation() {
+        val state = CanvasState(CanvasDocument())
+        val node = state.addNode(Offset(10f, 20f))
+
+        state.beginNodeTransform()
+        state.moveSelectedNodes(Offset(5f, 10f))
+        state.moveSelectedNodes(Offset(15f, 20f))
+        state.endNodeTransform()
+
+        assertEquals(30f, state.nodes.single().x)
+        assertEquals(50f, state.nodes.single().y)
+
+        state.undo()
+
+        assertEquals(node.x, state.nodes.single().x)
+        assertEquals(node.y, state.nodes.single().y)
+    }
 }

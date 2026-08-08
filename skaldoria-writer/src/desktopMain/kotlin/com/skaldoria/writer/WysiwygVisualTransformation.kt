@@ -162,6 +162,61 @@ class WysiwygVisualTransformation(
             }
         }
 
+        fun appendFoldedInline(lineEnd: Int, alpha: Float) {
+            while (origIdx < lineEnd) {
+                val marker = when {
+                    originalText.startsWith("**", origIdx) -> "**"
+                    originalText.startsWith("~~", origIdx) -> "~~"
+                    originalText[origIdx] == '`' -> "`"
+                    originalText[origIdx] == '*' || originalText[origIdx] == '_' ->
+                        originalText[origIdx].toString()
+                    else -> null
+                }
+                val closingIndex = marker?.let {
+                    originalText.indexOf(it, origIdx + it.length)
+                        .takeIf { close -> close in (origIdx + it.length) until lineEnd }
+                }
+
+                if (marker == null || closingIndex == null) {
+                    val plainStart = transIdx
+                    appendVisible(originalText[origIdx].toString())
+                    if (isFocusMode && alpha < 1f) {
+                        builder.addStyle(
+                            SpanStyle(color = theme.text.copy(alpha = alpha)),
+                            plainStart,
+                            transIdx
+                        )
+                    }
+                    continue
+                }
+
+                appendHidden(marker.length)
+                val contentStart = transIdx
+                appendVisible(originalText.substring(origIdx, closingIndex))
+                val style = when (marker) {
+                    "**" -> SpanStyle(
+                        fontWeight = FontWeight.Bold,
+                        color = theme.text.copy(alpha = alpha)
+                    )
+                    "~~" -> SpanStyle(
+                        textDecoration = TextDecoration.LineThrough,
+                        color = theme.text.copy(alpha = alpha)
+                    )
+                    "`" -> SpanStyle(
+                        fontFamily = FontFamily.Monospace,
+                        color = theme.accent.copy(alpha = alpha),
+                        background = theme.surface
+                    )
+                    else -> SpanStyle(
+                        fontStyle = FontStyle.Italic,
+                        color = theme.text.copy(alpha = alpha)
+                    )
+                }
+                builder.addStyle(style, contentStart, transIdx)
+                appendHidden(marker.length)
+            }
+        }
+
         val lines = originalText.split('\n')
         var lineStart = 0
 
@@ -187,129 +242,34 @@ class WysiwygVisualTransformation(
                     builder.addStyle(SpanStyle(color = theme.text.copy(alpha = 1f)), tStart, transIdx)
                 }
             } else {
-                // HIDDEN SYNTAX MODE (WYSIWYG folding when cursor is elsewhere)
-                val tStart = transIdx
                 val trimmedLine = line.trimStart()
+                val indentationLength = line.length - trimmedLine.length
+                val heading = when {
+                    trimmedLine.startsWith("### ") -> 3 to 20.sp
+                    trimmedLine.startsWith("## ") -> 2 to 24.sp
+                    trimmedLine.startsWith("# ") -> 1 to 32.sp
+                    else -> null
+                }
 
-                if (trimmedLine.startsWith("# ")) {
-                    val hashCount = line.length - line.trimStart().length + 2
-                    appendHidden(hashCount)
-                    appendVisible(line.substring(hashCount))
+                if (indentationLength > 0) {
+                    appendVisible(line.take(indentationLength))
+                }
+                val contentStart = transIdx
+                if (heading != null) {
+                    appendHidden(heading.first + 1)
+                }
+                appendFoldedInline(lineEnd, alpha)
+
+                if (heading != null) {
                     builder.addStyle(
-                        SpanStyle(color = theme.accent.copy(alpha = alpha), fontWeight = FontWeight.Bold, fontSize = 32.sp),
-                        tStart, transIdx
+                        SpanStyle(
+                            color = theme.accent.copy(alpha = alpha),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = heading.second
+                        ),
+                        contentStart,
+                        transIdx
                     )
-                } else if (trimmedLine.startsWith("## ")) {
-                    val hashCount = line.length - line.trimStart().length + 3
-                    appendHidden(hashCount)
-                    appendVisible(line.substring(hashCount))
-                    builder.addStyle(
-                        SpanStyle(color = theme.accent.copy(alpha = alpha), fontWeight = FontWeight.Bold, fontSize = 24.sp),
-                        tStart, transIdx
-                    )
-                } else if (trimmedLine.startsWith("### ")) {
-                    val hashCount = line.length - line.trimStart().length + 4
-                    appendHidden(hashCount)
-                    appendVisible(line.substring(hashCount))
-                    builder.addStyle(
-                        SpanStyle(color = theme.accent.copy(alpha = alpha), fontWeight = FontWeight.Bold, fontSize = 20.sp),
-                        tStart, transIdx
-                    )
-                } else if (line.contains("**")) {
-                    var i = 0
-                    while (i < line.length) {
-                        if (i < line.length - 1 && line[i] == '*' && line[i + 1] == '*') {
-                            val closeIdx = line.indexOf("**", i + 2)
-                            if (closeIdx != -1) {
-                                appendHidden(2) // hide opening **
-                                val boldStart = transIdx
-                                appendVisible(line.substring(i + 2, closeIdx))
-                                builder.addStyle(SpanStyle(fontWeight = FontWeight.Bold, color = theme.text.copy(alpha = alpha)), boldStart, transIdx)
-                                appendHidden(2) // hide closing **
-                                i = closeIdx + 2
-                            } else {
-                                appendVisible(line[i].toString())
-                                i++
-                            }
-                        } else {
-                            appendVisible(line[i].toString())
-                            i++
-                        }
-                    }
-                } else if (line.contains('*') || line.contains('_')) {
-                    var j = 0
-                    while (j < line.length) {
-                        val ch = line[j]
-                        if ((ch == '*' || ch == '_') && (j + 1 >= line.length || line[j + 1] != ch)) {
-                            val closeIdx = line.indexOf(ch, j + 1)
-                            if (closeIdx > j + 1) {
-                                appendHidden(1) // hide opening marker
-                                val italicStart = transIdx
-                                appendVisible(line.substring(j + 1, closeIdx))
-                                builder.addStyle(SpanStyle(fontStyle = FontStyle.Italic, color = theme.text.copy(alpha = alpha)), italicStart, transIdx)
-                                appendHidden(1) // hide closing marker
-                                j = closeIdx + 1
-                                continue
-                            }
-                        }
-                        appendVisible(line[j].toString())
-                        j++
-                    }
-                } else if (line.contains('`')) {
-                    var j = 0
-                    while (j < line.length) {
-                        if (line[j] == '`') {
-                            val closeIdx = line.indexOf('`', j + 1)
-                            if (closeIdx > j) {
-                                appendHidden(1) // hide opening backtick
-                                val codeStart = transIdx
-                                appendVisible(line.substring(j + 1, closeIdx))
-                                builder.addStyle(
-                                    SpanStyle(
-                                        fontFamily = FontFamily.Monospace,
-                                        color = theme.accent,
-                                        background = theme.surface
-                                    ),
-                                    codeStart, transIdx
-                                )
-                                appendHidden(1) // hide closing backtick
-                                j = closeIdx + 1
-                                continue
-                            }
-                        }
-                        appendVisible(line[j].toString())
-                        j++
-                    }
-                } else if (line.contains("~~")) {
-                    var j = 0
-                    while (j < line.length) {
-                        if (j < line.length - 1 && line[j] == '~' && line[j + 1] == '~') {
-                            val closeIdx = line.indexOf("~~", j + 2)
-                            if (closeIdx > j + 2) {
-                                appendHidden(2) // hide opening ~~
-                                val strikeStart = transIdx
-                                appendVisible(line.substring(j + 2, closeIdx))
-                                builder.addStyle(
-                                    SpanStyle(
-                                        textDecoration = TextDecoration.LineThrough,
-                                        color = theme.text.copy(alpha = alpha)
-                                    ),
-                                    strikeStart, transIdx
-                                )
-                                appendHidden(2) // hide closing ~~
-                                j = closeIdx + 2
-                                continue
-                            }
-                        }
-                        appendVisible(line[j].toString())
-                        j++
-                    }
-                } else {
-                    val normalStart = transIdx
-                    appendVisible(line)
-                    if (isFocusMode && !hasCursor) {
-                        builder.addStyle(SpanStyle(color = theme.text.copy(alpha = alpha)), normalStart, transIdx)
-                    }
                 }
             }
 
