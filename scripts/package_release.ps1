@@ -116,7 +116,7 @@ if (-not $SkipTests) {
 Write-Host "`n[2/5] Building native standalone application and universal JAR..." -ForegroundColor Yellow
 Push-Location $ProjectRoot
 try {
-    & .\gradlew.bat createDistributable packageUberJarForCurrentOS --no-daemon
+    & .\gradlew.bat createDistributable packageUberJarForCurrentOS :skaldoria-writer:createDistributable :skaldoria-writer:packageUberJarForCurrentOS --no-daemon
     if ($LASTEXITCODE -ne 0) {
         Write-Error 'Gradle build failed!'
         exit $LASTEXITCODE
@@ -136,6 +136,14 @@ if (Test-Path $appDir) {
     Compress-Archive -Path "$appDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
 }
 
+$writerAppDir = Join-Path $ProjectRoot 'skaldoria-writer\build\compose\binaries\main\app\SkaldoriaWriter'
+if (Test-Path $writerAppDir) {
+    $writerZipName = "SkaldoriaWriter-v$Version-windows-x64-portable.zip"
+    $writerZipPath = Join-Path $distDir $writerZipName
+    Write-Host "  -> Creating Writer portable archive: $writerZipName..." -ForegroundColor DarkCyan
+    Compress-Archive -Path "$writerAppDir\*" -DestinationPath $writerZipPath -CompressionLevel Optimal
+}
+
 # Copy MSI installer if generated
 $msiDir = Join-Path $ProjectRoot 'build\compose\binaries\main\msi'
 if (Test-Path $msiDir) {
@@ -143,6 +151,14 @@ if (Test-Path $msiDir) {
         $dest = Join-Path $distDir "Skaldoria-v$Version-windows-x64.msi"
         Copy-Item $_.FullName -Destination $dest -Force
         Write-Host "  -> Collected MSI Installer: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+    }
+}
+$writerMsiDir = Join-Path $ProjectRoot 'skaldoria-writer\build\compose\binaries\main\msi'
+if (Test-Path $writerMsiDir) {
+    Get-ChildItem -Path $writerMsiDir -Filter '*.msi' | ForEach-Object {
+        $dest = Join-Path $distDir "SkaldoriaWriter-v$Version-windows-x64.msi"
+        Copy-Item $_.FullName -Destination $dest -Force
+        Write-Host "  -> Collected Writer MSI Installer: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
     }
 }
 
@@ -155,6 +171,14 @@ if (Test-Path $exeDir) {
         Write-Host "  -> Collected EXE Setup: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
     }
 }
+$writerExeDir = Join-Path $ProjectRoot 'skaldoria-writer\build\compose\binaries\main\exe'
+if (Test-Path $writerExeDir) {
+    Get-ChildItem -Path $writerExeDir -Filter '*.exe' | ForEach-Object {
+        $dest = Join-Path $distDir "SkaldoriaWriter-v$Version-windows-x64-setup.exe"
+        Copy-Item $_.FullName -Destination $dest -Force
+        Write-Host "  -> Collected Writer EXE Setup: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+    }
+}
 
 # Copy Universal Uber JAR
 $uberJarDir = Join-Path $ProjectRoot 'build\compose\jars'
@@ -163,6 +187,14 @@ if (Test-Path $uberJarDir) {
         $dest = Join-Path $distDir "Skaldoria-v$Version-universal.jar"
         Copy-Item $_.FullName -Destination $dest -Force
         Write-Host "  -> Collected Universal Runnable JAR: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+    }
+}
+$writerUberJarDir = Join-Path $ProjectRoot 'skaldoria-writer\build\compose\jars'
+if (Test-Path $writerUberJarDir) {
+    Get-ChildItem -Path $writerUberJarDir -Filter '*.jar' | ForEach-Object {
+        $dest = Join-Path $distDir "SkaldoriaWriter-v$Version-universal.jar"
+        Copy-Item $_.FullName -Destination $dest -Force
+        Write-Host "  -> Collected Writer Universal Runnable JAR: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
     }
 }
 

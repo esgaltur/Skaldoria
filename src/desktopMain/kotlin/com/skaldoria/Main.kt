@@ -113,6 +113,9 @@ fun main() = application {
                 AppCommands.SAVE -> state.saveFile()
                 AppCommands.EXPORT -> com.skaldoria.export.DeckExporter.exportPdf(state) {}
                 AppCommands.COMMAND_PALETTE -> state.isCommandPaletteOpen = !state.isCommandPaletteOpen
+                AppCommands.FORMAT_BOLD -> state.formatSelection("**")
+                AppCommands.FORMAT_ITALIC -> state.formatSelection("_")
+                AppCommands.FORMAT_LINK -> state.formatSelection("[", "]()")
                 AppCommands.FIND -> state.toggleFind(withReplace = false)
                 AppCommands.REPLACE -> state.toggleFind(withReplace = true)
                 // AUT-20: repeat the search with the bar shut. Coherent only since EDT-7 —

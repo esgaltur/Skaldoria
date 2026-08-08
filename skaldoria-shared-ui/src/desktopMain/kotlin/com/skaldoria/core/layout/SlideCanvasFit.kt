@@ -14,7 +14,7 @@ import kotlin.math.min
  *  1. [fitDesignCanvas] — place a fixed 16:9 design canvas inside the real window.
  *  2. [contentScale]    — shrink content that overflows that design canvas.
  */
-internal object SlideCanvasFit {
+object SlideCanvasFit {
 
     /** Result of fitting the fixed design canvas into the available window area. */
     data class Surface(

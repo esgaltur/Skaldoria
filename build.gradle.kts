@@ -99,6 +99,7 @@ kotlin {
             dependencies {
                 // The Markdown engine, Compose-free by construction. See skaldoria-markdown/build.gradle.kts.
                 implementation(project(":skaldoria-markdown"))
+                implementation(project(":skaldoria-shared-ui"))
 
                 implementation(compose.desktop.currentOs)
                 implementation(libs.compose.material3)
