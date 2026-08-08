@@ -1,0 +1,538 @@
+package com.skaldoria.canvas.ui
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.skaldoria.canvas.model.*
+import com.skaldoria.canvas.state.CanvasState
+import com.skaldoria.markdown.models.Slide
+import com.skaldoria.markdown.models.SlideElement
+import com.skaldoria.markdown.parser.MarkdownSlideParser
+import com.skaldoria.theme.PresentationTheme
+import com.skaldoria.ui.components.*
+
+/**
+ * Interactive spatial whiteboard card supporting rich Markdown, live code blocks,
+ * LaTeX formulas, Mermaid diagrams, resizing, color customization, and edge port linking.
+ */
+@Composable
+fun CanvasNodeCard(
+    node: CanvasNode,
+    state: CanvasState,
+    theme: PresentationTheme,
+    modifier: Modifier = Modifier
+) {
+    val isSelected = state.selectedNodeIds.contains(node.id)
+    val isEditing = state.editingNodeId == node.id
+    val zoom = state.viewport.zoom
+
+    // Screen-space position and size
+    val screenPos = state.viewport.canvasToScreen(Offset(node.x, node.y))
+    val screenWidth = (node.width * zoom).coerceAtLeast(140f)
+    val screenHeight = (node.height * zoom).coerceAtLeast(90f)
+
+    var showColorMenu by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(isEditing) {
+        if (isEditing) {
+            try {
+                focusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
+    val cardShape = RoundedCornerShape(10.dp)
+    val cardBg = node.color.surface(theme.isDark)
+    val accentColor = node.color.accent(theme.isDark)
+
+    val borderStroke = when {
+        isSelected -> BorderStroke(2.dp, theme.primary)
+        else -> BorderStroke(1.dp, theme.cardBorder.copy(alpha = 0.6f))
+    }
+
+    Box(
+        modifier = modifier
+            .offset(x = screenPos.x.dp, y = screenPos.y.dp)
+            .size(width = screenWidth.dp, height = screenHeight.dp)
+            .shadow(
+                elevation = if (isSelected) 12.dp else 4.dp,
+                shape = cardShape,
+                spotColor = if (isSelected) theme.primary.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.25f)
+            )
+            .clip(cardShape)
+            .background(cardBg)
+            .border(borderStroke, cardShape)
+            .pointerInput(node.id) {
+                detectDragGestures(
+                    onDragStart = {
+                        state.selectNode(node.id, multiSelect = false)
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        val deltaCanvas = Offset(dragAmount.x / zoom, dragAmount.y / zoom)
+                        state.moveSelectedNodes(deltaCanvas)
+                    }
+                )
+            }
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header Bar
+            CardHeader(
+                node = node,
+                state = state,
+                theme = theme,
+                accentColor = accentColor,
+                isEditing = isEditing,
+                onToggleEdit = {
+                    state.editingNodeId = if (isEditing) null else node.id
+                },
+                onOpenColorMenu = { showColorMenu = true },
+                onDelete = { state.deleteSelected() }
+            )
+
+            HorizontalDivider(
+                color = theme.cardBorder.copy(alpha = 0.4f),
+                thickness = 1.dp
+            )
+
+            // Content Area
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(8.dp)
+            ) {
+                if (isEditing) {
+                    CardEditMode(
+                        markdown = node.markdown,
+                        onMarkdownChange = { state.updateNodeMarkdown(node.id, it) },
+                        theme = theme,
+                        focusRequester = focusRequester
+                    )
+                } else {
+                    CardPreviewMode(
+                        markdown = node.markdown,
+                        theme = theme,
+                        onDoubleClick = {
+                            state.editingNodeId = node.id
+                        }
+                    )
+                }
+            }
+        }
+
+        // Color Picker Dropdown Menu
+        DropdownMenu(
+            expanded = showColorMenu,
+            onDismissRequest = { showColorMenu = false }
+        ) {
+            NodeColor.entries.forEach { colorOption ->
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clip(CircleShape)
+                                    .background(colorOption.accent(theme.isDark))
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(colorOption.label)
+                        }
+                    },
+                    onClick = {
+                        state.updateNodeColor(node.id, colorOption)
+                        showColorMenu = false
+                    }
+                )
+            }
+        }
+
+        // Connection Port Handles (Top, Right, Bottom, Left)
+        PortHandle(
+            port = EdgePort.Top,
+            alignment = Alignment.TopCenter,
+            node = node,
+            state = state,
+            theme = theme
+        )
+        PortHandle(
+            port = EdgePort.Right,
+            alignment = Alignment.CenterEnd,
+            node = node,
+            state = state,
+            theme = theme
+        )
+        PortHandle(
+            port = EdgePort.Bottom,
+            alignment = Alignment.BottomCenter,
+            node = node,
+            state = state,
+            theme = theme
+        )
+        PortHandle(
+            port = EdgePort.Left,
+            alignment = Alignment.CenterStart,
+            node = node,
+            state = state,
+            theme = theme
+        )
+
+        // Bottom-Right Corner Resize Handle
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .size(16.dp)
+                .pointerInput(node.id) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        state.resizeNode(node.id, dragAmount.x / zoom, dragAmount.y / zoom)
+                    }
+                }
+        ) {
+            Icon(
+                imageVector = Icons.Default.FilterList,
+                contentDescription = "Resize",
+                tint = theme.textMuted.copy(alpha = 0.5f),
+                modifier = Modifier.size(12.dp).align(Alignment.BottomEnd)
+            )
+        }
+    }
+}
+
+@Composable
+private fun CardHeader(
+    node: CanvasNode,
+    state: CanvasState,
+    theme: PresentationTheme,
+    accentColor: Color,
+    isEditing: Boolean,
+    onToggleEdit: () -> Unit,
+    onOpenColorMenu: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val title = remember(node.markdown) {
+        val firstLine = node.markdown.lines().firstOrNull { it.isNotBlank() } ?: "Card"
+        firstLine.removePrefix("#").removePrefix("#").removePrefix("#").trim().take(24)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(28.dp)
+            .background(theme.surfaceVariant.copy(alpha = 0.4f))
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(accentColor)
+                    .clickable { onOpenColorMenu() }
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = title,
+                style = TextStyle(
+                    color = theme.textSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                ),
+                maxLines = 1
+            )
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = onToggleEdit,
+                modifier = Modifier.size(20.dp)
+            ) {
+                Icon(
+                    imageVector = if (isEditing) Icons.Default.Check else Icons.Default.Edit,
+                    contentDescription = if (isEditing) "Done" else "Edit",
+                    tint = if (isEditing) theme.primary else theme.textMuted,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(20.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Delete",
+                    tint = theme.textMuted,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardEditMode(
+    markdown: String,
+    onMarkdownChange: (String) -> Unit,
+    theme: PresentationTheme,
+    focusRequester: FocusRequester
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        BasicTextField(
+            value = markdown,
+            onValueChange = onMarkdownChange,
+            modifier = Modifier
+                .fillMaxSize()
+                .focusRequester(focusRequester),
+            textStyle = TextStyle(
+                color = theme.textPrimary,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                lineHeight = 16.sp
+            ),
+            cursorBrush = SolidColor(theme.primary)
+        )
+    }
+}
+
+@Composable
+private fun CardPreviewMode(
+    markdown: String,
+    theme: PresentationTheme,
+    onDoubleClick: () -> Unit
+) {
+    val slides = remember(markdown) {
+        MarkdownSlideParser.parse(markdown)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(onDoubleTap = { onDoubleClick() })
+            }
+            .verticalScroll(rememberScrollState())
+    ) {
+        if (markdown.isBlank()) {
+            Text(
+                text = "Double-click to write Markdown...",
+                style = TextStyle(color = theme.textMuted, fontSize = 12.sp)
+            )
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                slides.forEach { slide ->
+                    if (slide.title.isNotBlank()) {
+                        Text(
+                            text = slide.title,
+                            style = TextStyle(
+                                color = theme.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
+                    if (!slide.subtitle.isNullOrBlank()) {
+                        Text(
+                            text = slide.subtitle!!,
+                            style = TextStyle(
+                                color = theme.textSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        )
+                    }
+
+                    slide.elements.forEach { elem ->
+                        RenderSlideElement(elem = elem, theme = theme)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RenderSlideElement(elem: SlideElement, theme: PresentationTheme) {
+    when (elem) {
+        is SlideElement.Text -> {
+            Text(
+                text = inlineMarkdown(elem.content, theme),
+                style = TextStyle(
+                    color = theme.textPrimary,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
+            )
+        }
+        is SlideElement.BulletList -> {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                elem.items.forEach { item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            text = if (elem.isOrdered) "1. " else "• ",
+                            style = TextStyle(color = theme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        )
+                        Text(
+                            text = inlineMarkdown(item, theme),
+                            style = TextStyle(
+                                color = theme.textPrimary,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        is SlideElement.Quote -> {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        border = BorderStroke(2.dp, theme.accent.copy(alpha = 0.7f)),
+                        shape = RoundedCornerShape(2.dp)
+                    )
+                    .background(theme.surfaceVariant.copy(alpha = 0.3f))
+                    .padding(4.dp)
+            ) {
+                Text(
+                    text = inlineMarkdown(elem.quote, theme),
+                    style = TextStyle(color = theme.textPrimary, fontSize = 11.sp)
+                )
+            }
+        }
+        is SlideElement.CodeBlock -> {
+            CodeBlockView(
+                code = elem.code,
+                language = elem.language,
+                highlightedLines = elem.highlightedLines,
+                theme = theme,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        is SlideElement.MermaidDiagram -> {
+            MermaidDiagramCanvas(
+                code = elem.code,
+                theme = theme,
+                modifier = Modifier.fillMaxWidth().height(160.dp)
+            )
+        }
+        is SlideElement.MathFormula -> {
+            MathFormulaRenderer(
+                formula = elem.formula,
+                theme = theme,
+                isBlock = elem.isBlock,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            )
+        }
+        else -> {
+            // Additional elements fallback
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.PortHandle(
+    port: EdgePort,
+    alignment: Alignment,
+    node: CanvasNode,
+    state: CanvasState,
+    theme: PresentationTheme
+) {
+    val isConnectingThis = state.connectingSourceNodeId == node.id && state.connectingSourcePort == port
+
+    Box(
+        modifier = Modifier
+            .align(alignment)
+            .size(14.dp)
+            .offset(
+                x = when (port) {
+                    EdgePort.Right -> 7.dp
+                    EdgePort.Left -> (-7).dp
+                    else -> 0.dp
+                },
+                y = when (port) {
+                    EdgePort.Bottom -> 7.dp
+                    EdgePort.Top -> (-7).dp
+                    else -> 0.dp
+                }
+            )
+            .clip(CircleShape)
+            .background(if (isConnectingThis) theme.primary else theme.cardBorder)
+            .border(1.5.dp, if (isConnectingThis) Color.White else theme.surface, CircleShape)
+            .pointerInput(node.id, port) {
+                detectDragGestures(
+                    onDragStart = {
+                        state.connectingSourceNodeId = node.id
+                        state.connectingSourcePort = port
+                        val portCanvas = node.portPosition(port)
+                        state.connectingTargetPosition = state.viewport.canvasToScreen(portCanvas)
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        state.connectingTargetPosition = change.position + state.viewport.canvasToScreen(node.portPosition(port))
+                    },
+                    onDragEnd = {
+                        val targetScreenPos = state.connectingTargetPosition
+                        if (targetScreenPos != null) {
+                            val targetCanvasPos = state.viewport.screenToCanvas(targetScreenPos)
+                            val targetNode = state.nodes.find {
+                                it.id != node.id && it.bounds.contains(targetCanvasPos)
+                            }
+                            if (targetNode != null) {
+                                state.addEdge(
+                                    fromId = node.id,
+                                    toId = targetNode.id,
+                                    fromPort = port,
+                                    toPort = EdgePort.Auto
+                                )
+                            }
+                        }
+                        state.connectingSourceNodeId = null
+                        state.connectingTargetPosition = null
+                    },
+                    onDragCancel = {
+                        state.connectingSourceNodeId = null
+                        state.connectingTargetPosition = null
+                    }
+                )
+            }
+    )
+}

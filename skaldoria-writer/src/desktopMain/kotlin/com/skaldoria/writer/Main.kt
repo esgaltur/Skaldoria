@@ -1,23 +1,19 @@
 package com.skaldoria.writer
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-
-import androidx.compose.ui.res.painterResource
+import com.skaldoria.shared.ui.util.loadClasspathPainter
 
 fun main() = application {
+    val appIcon = remember { loadClasspathPainter("icons/writer.png") }
+
     Window(
         onCloseRequest = ::exitApplication,
         title = "Skaldoria Writer",
-        icon = painterResource("icons/writer.png"),
+        icon = appIcon,
         state = rememberWindowState(width = 900.dp, height = 700.dp)
     ) {
         WriterEditor()
