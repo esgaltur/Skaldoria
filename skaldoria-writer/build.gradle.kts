@@ -5,10 +5,14 @@ plugins {
 }
 
 group = "com.skaldoria.writer"
-version = "1.0.0"
+version = rootProject.version
 
 kotlin {
     jvm("desktop")
+
+    compilerOptions {
+        allWarningsAsErrors.set(providers.gradleProperty("warningsAsErrors").isPresent)
+    }
 
     sourceSets {
         getByName("desktopMain") {
@@ -47,7 +51,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Pkg
             )
             packageName = "SkaldoriaWriter"
-            packageVersion = "1.0.0"
+            packageVersion = rootProject.version.toString()
             description = "Skaldoria Writer - Distraction Free Markdown Editor"
             vendor = "Skaldoria"
 

@@ -61,10 +61,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 enum class ViewMode { Edit, Split, Preview }
+enum class EditingMode { Visual, Source }
 
 @Composable
 fun WriterEditor() {
     var viewMode by remember { mutableStateOf(ViewMode.Edit) }
+    var editingMode by remember { mutableStateOf(EditingMode.Visual) }
     var isFocusMode by remember { mutableStateOf(false) }
     var isSidebarOpen by remember { mutableStateOf(true) }
     var currentThemeIndex by remember { mutableStateOf(0) }
@@ -135,7 +137,7 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
     Row(Modifier.fillMaxSize().background(theme.bg)) {
         // Document Outline Sidebar (Animated)
         AnimatedVisibility(
-            visible = isSidebarOpen,
+            visible = isSidebarOpen && !isFocusMode,
             enter = slideInHorizontally(tween(300)) + fadeIn(),
             exit = slideOutHorizontally(tween(300)) + fadeOut()
         ) {
@@ -168,12 +170,13 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
         // Main Content Area
         Column(Modifier.weight(1f).fillMaxHeight()) {
             // Top Toolbar
-            Surface(
-                modifier = Modifier.fillMaxWidth().height(60.dp),
-                color = theme.bg,
-                shadowElevation = if (isSidebarOpen) 0.dp else 4.dp // Only shadow if sidebar is closed to separate
-            ) {
-                Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            if (!isFocusMode) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                    color = theme.bg,
+                    shadowElevation = if (isSidebarOpen) 0.dp else 4.dp
+                ) {
+                    Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { isSidebarOpen = !isSidebarOpen }) {
                             Icon(if (isSidebarOpen) Icons.Default.Close else Icons.Default.Menu, contentDescription = "Toggle Sidebar", tint = theme.accent)
@@ -210,7 +213,23 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(2.dp)) {
                                 ViewModeButton("Edit", viewMode == ViewMode.Edit, theme) { viewMode = ViewMode.Edit }
                                 ViewModeButton("Split", viewMode == ViewMode.Split, theme) { viewMode = ViewMode.Split }
-                                ViewModeButton("Preview", viewMode == ViewMode.Preview, theme) { viewMode = ViewMode.Preview }
+                                ViewModeButton("Preview", viewMode == ViewMode.Preview, theme) {
+                                    isFocusMode = false
+                                    viewMode = ViewMode.Preview
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.width(8.dp))
+
+                        Surface(shape = RoundedCornerShape(50), color = theme.surface) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(2.dp)) {
+                                ViewModeButton("Visual", editingMode == EditingMode.Visual, theme) {
+                                    editingMode = EditingMode.Visual
+                                }
+                                ViewModeButton("Source", editingMode == EditingMode.Source, theme) {
+                                    editingMode = EditingMode.Source
+                                }
                             }
                         }
 
@@ -219,16 +238,20 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
                         Text("Focus", color = theme.subtext, style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold), modifier = Modifier.padding(end = 8.dp))
                         Switch(
                             checked = isFocusMode,
-                            onCheckedChange = { isFocusMode = it },
+                            onCheckedChange = { enabled ->
+                                if (viewMode != ViewMode.Preview) isFocusMode = enabled
+                            },
+                            enabled = viewMode != ViewMode.Preview,
                             colors = SwitchDefaults.colors(checkedThumbColor = theme.accent, checkedTrackColor = theme.surface),
                             modifier = Modifier.scale(0.8f)
                         )
                     }
                 }
             }
+            }
 
             // Floating Toolbar Component (Only show if editing)
-            if (viewMode != ViewMode.Preview) {
+            if (viewMode != ViewMode.Preview && !isFocusMode) {
                 Box(Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.TopCenter) {
                     Surface(
                         color = theme.surface,
@@ -297,8 +320,18 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
                 if (viewMode == ViewMode.Edit || viewMode == ViewMode.Split) {
                     Box(Modifier.weight(1f).fillMaxHeight().verticalScroll(scrollState), contentAlignment = Alignment.TopCenter) {
                         Box(Modifier.widthIn(max = 850.dp).padding(horizontal = 40.dp, vertical = 24.dp)) {
-                            val visualTransformation = remember(theme, textState.selection, isFocusMode, viewMode) {
-                                WysiwygVisualTransformation(theme, textState.selection.start, false, isFocusMode)
+                            val visualTransformation = remember(
+                                theme,
+                                textState.selection,
+                                editingMode,
+                                isFocusMode
+                            ) {
+                                WysiwygVisualTransformation(
+                                    theme = theme,
+                                    cursorIndex = textState.selection.start,
+                                    isVisualMode = editingMode == EditingMode.Visual,
+                                    isFocusMode = isFocusMode
+                                )
                             }
 
                             Box(Modifier.fillMaxSize()) {
@@ -327,6 +360,13 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
                                                 Key.O -> { openFileDialog(); true }
                                                 else -> false
                                             }
+                                        } else if (
+                                            isFocusMode &&
+                                            event.type == KeyEventType.KeyDown &&
+                                            event.key == Key.Escape
+                                        ) {
+                                            isFocusMode = false
+                                            true
                                         } else false
                                     },
                                     textStyle = TextStyle(

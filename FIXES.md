@@ -57,8 +57,8 @@ As specified in [AGENTS.md](file:///C:/Users/Root/Workspace/WebStormProjects/Mar
   - Pruned inner nested pointer interceptors that were previously swallowing pointer events on preview text.
 - [`CanvasWorkspace.kt`](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/skaldoria-canvas/src/desktopMain/kotlin/com/skaldoria/canvas/ui/CanvasWorkspace.kt):
   - Integrated `detectCanvasGestures` for workspace background, handling marquee selection, pan tool, edge selection, and double-click card creation.
-  - Fixed Mouse Wheel Scroll: Standard mouse wheel / ring scrolling now smoothly pans the canvas in 2D (vertical pan by default, Shift+Wheel for horizontal pan, Middle-Mouse-Button drag for immediate pan).
-  - Configured `Ctrl + Mouse Wheel` for smooth focal zoom at the mouse pointer position (aligning with Figma/Miro/Obsidian standard interaction models).
+  - Fixed Mouse Wheel Scroll: the canvas consumes wheel input before an outer scroll container can react.
+  - Configured wheel for vertical canvas pan, `Shift + Wheel` for horizontal pan, `Ctrl/Cmd + Wheel` for pointer-centered zoom, and middle-mouse drag for free panning.
 - [`Main.kt`](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/skaldoria-canvas/src/desktopMain/kotlin/com/skaldoria/canvas/Main.kt):
   - Wired shortcut keys `V`, `C`, `H`, `Delete`/`Backspace` (edge or selected node deletion), `Ctrl+A`, `Ctrl+Z`, `Ctrl+Y`, and `Escape`.
 

@@ -11,38 +11,19 @@ import kotlin.test.assertTrue
 class CanvasNavigationTest {
 
     @Test
-    fun testMouseWheelVerticalPan() {
+    fun testMouseWheelPansCanvasVertically() {
         val state = CanvasState(CanvasDocument())
-        assertEquals(0f, state.viewport.panX)
-        assertEquals(0f, state.viewport.panY)
 
-        val panSpeed = 40f
-        // User scrolls mouse wheel down (scrollDelta.y = 1.0f)
-        val scrollDeltaY = 1.0f
-        val deltaY = -scrollDeltaY * panSpeed
-        state.panBy(Offset(0f, deltaY))
+        state.panFromWheel(Offset(0f, 1f), horizontal = false)
 
         assertEquals(0f, state.viewport.panX)
         assertEquals(-40f, state.viewport.panY)
-
-        // User scrolls mouse wheel up (scrollDelta.y = -2.0f)
-        val scrollDeltaYUp = -2.0f
-        val deltaYUp = -scrollDeltaYUp * panSpeed
-        state.panBy(Offset(0f, deltaYUp))
-
-        assertEquals(0f, state.viewport.panX)
-        assertEquals(40f, state.viewport.panY)
     }
 
     @Test
     fun testShiftMouseWheelHorizontalPan() {
         val state = CanvasState(CanvasDocument())
-        val panSpeed = 40f
-
-        // User holds Shift and scrolls mouse wheel down (scrollDelta.y = 1.0f)
-        val scrollDelta = 1.0f
-        val deltaX = -scrollDelta * panSpeed
-        state.panBy(Offset(deltaX, 0f))
+        state.panFromWheel(Offset(0f, 1f), horizontal = true)
 
         assertEquals(-40f, state.viewport.panX)
         assertEquals(0f, state.viewport.panY)
@@ -66,8 +47,8 @@ class CanvasNavigationTest {
         val worldBefore = state.viewport.screenToCanvas(mousePos)
 
         // Zoom in by factor 1.25
-        state.zoomAt(1.25f, mousePos)
-        assertEquals(1.25f, state.viewport.zoom)
+        state.zoomFromWheel(-1f, mousePos)
+        assertTrue(state.viewport.zoom > 1f)
 
         // World position under cursor after zoom must remain identical
         val worldAfter = state.viewport.screenToCanvas(mousePos)

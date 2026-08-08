@@ -1,8 +1,6 @@
 package com.skaldoria.canvas.ui
 
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +33,7 @@ import com.skaldoria.ui.components.*
 
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 
@@ -52,6 +51,7 @@ fun CanvasNodeCard(
     val isSelected = state.selectedNodeIds.contains(node.id)
     val isEditing = state.editingNodeId == node.id
     val zoom = state.viewport.zoom
+    val density = LocalDensity.current
 
     // Screen-space position
     val screenPos = state.viewport.canvasToScreen(Offset(node.x, node.y))
@@ -61,9 +61,7 @@ fun CanvasNodeCard(
 
     LaunchedEffect(isEditing) {
         if (isEditing) {
-            try {
-                focusRequester.requestFocus()
-            } catch (_: Exception) {}
+            focusRequester.requestFocus()
         }
     }
 
@@ -79,12 +77,19 @@ fun CanvasNodeCard(
     Box(
         modifier = modifier
             .offset { IntOffset(screenPos.x.roundToInt(), screenPos.y.roundToInt()) }
-            .size(node.width.dp, node.height.dp)
-            .graphicsLayer {
-                scaleX = zoom
-                scaleY = zoom
-                transformOrigin = TransformOrigin(0f, 0f)
-            }
+            // The outer box's real layout size is the actual on-screen footprint (already
+            // zoom-scaled). Previously this box was laid out at the *unscaled* node size and
+            // only made to look bigger/smaller via a graphicsLayer scale — which meant pointer
+            // input on this box (and its drag/resize math, which separately divides deltas by
+            // `zoom`) received coordinates in an ambiguous, doubly-transformed space. That made
+            // node dragging/resizing desync from the mouse at any zoom level other than 1.0.
+            // Baking zoom directly into the layout size keeps this box's pointer coordinate
+            // space equal to real screen pixels, so the single `/ zoom` conversions below are
+            // correct and unambiguous.
+            .size(
+                width = with(density) { (node.width * zoom).toDp() },
+                height = with(density) { (node.height * zoom).toDp() }
+            )
             .shadow(
                 elevation = if (isSelected) 12.dp else 4.dp,
                 shape = cardShape,
@@ -93,68 +98,91 @@ fun CanvasNodeCard(
             .clip(cardShape)
             .background(cardBg)
             .border(borderStroke, cardShape)
-            .pointerInput(node.id, zoom) {
-                detectCanvasGestures(
-                    onMiddleDrag = { delta ->
-                        state.panBy(delta)
-                    },
-                    onTap = {
-                        state.selectNode(node.id, multiSelect = false)
-                    },
-                    onDoubleTap = {
-                        state.editingNodeId = node.id
-                    },
-                    onDragStart = {
-                        if (!state.selectedNodeIds.contains(node.id)) {
+            .pointerInput(node.id, zoom, isEditing) {
+                if (!isEditing) {
+                    detectCanvasGestures(
+                        onMiddleDrag = { delta ->
+                            state.panBy(delta)
+                        },
+                        onTap = {
                             state.selectNode(node.id, multiSelect = false)
-                        }
-                    },
-                    onDrag = { _, dragAmount ->
-                        val deltaCanvas = Offset(dragAmount.x / zoom, dragAmount.y / zoom)
-                        state.moveSelectedNodes(deltaCanvas)
-                    }
-                )
+                        },
+                        onDoubleTap = {
+                            state.editingNodeId = node.id
+                        },
+                        onDragStart = {
+                            if (!state.selectedNodeIds.contains(node.id)) {
+                                state.selectNode(node.id, multiSelect = false)
+                            }
+                            state.beginNodeTransform()
+                        },
+                        onDrag = { _, dragAmount ->
+                            val deltaCanvas = Offset(dragAmount.x / zoom, dragAmount.y / zoom)
+                            state.moveSelectedNodes(deltaCanvas)
+                        },
+                        onDragEnd = state::endNodeTransform,
+                        onDragCancel = state::endNodeTransform,
+                        consumeDown = true
+                    )
+                }
             }
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Header Bar
-            CardHeader(
-                node = node,
-                state = state,
-                theme = theme,
-                accentColor = accentColor,
-                isEditing = isEditing,
-                onToggleEdit = {
-                    state.editingNodeId = if (isEditing) null else node.id
-                },
-                onOpenColorMenu = { showColorMenu = true },
-                onDelete = { state.deleteSelected() }
-            )
+        // Content is laid out at the node's true (unscaled) size and then visually scaled to
+        // fill the already zoom-sized outer box. This keeps the visual result identical to
+        // before while confining the zoom transform to rendering only — pointer input stays on
+        // the outer box, entirely in real screen-pixel space.
+        Box(
+            modifier = Modifier
+                .size(
+                    width = with(density) { node.width.toDp() },
+                    height = with(density) { node.height.toDp() }
+                )
+                .graphicsLayer {
+                    scaleX = zoom
+                    scaleY = zoom
+                    transformOrigin = TransformOrigin(0f, 0f)
+                }
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Header Bar
+                CardHeader(
+                    node = node,
+                    state = state,
+                    theme = theme,
+                    accentColor = accentColor,
+                    isEditing = isEditing,
+                    onToggleEdit = {
+                        state.editingNodeId = if (isEditing) null else node.id
+                    },
+                    onOpenColorMenu = { showColorMenu = true },
+                    onDelete = { state.deleteSelected() }
+                )
 
-            HorizontalDivider(
-                color = theme.cardBorder.copy(alpha = 0.4f),
-                thickness = 1.dp
-            )
+                HorizontalDivider(
+                    color = theme.cardBorder.copy(alpha = 0.4f),
+                    thickness = 1.dp
+                )
 
-            // Content Area
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(8.dp)
-            ) {
-                if (isEditing) {
-                    CardEditMode(
-                        markdown = node.markdown,
-                        onMarkdownChange = { state.updateNodeMarkdown(node.id, it) },
-                        theme = theme,
-                        focusRequester = focusRequester
-                    )
-                } else {
-                    CardPreviewMode(
-                        markdown = node.markdown,
-                        theme = theme
-                    )
+                // Content Area
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(8.dp)
+                ) {
+                    if (isEditing) {
+                        CardEditMode(
+                            markdown = node.markdown,
+                            onMarkdownChange = { state.updateNodeMarkdown(node.id, it) },
+                            theme = theme,
+                            focusRequester = focusRequester
+                        )
+                    } else {
+                        CardPreviewMode(
+                            markdown = node.markdown,
+                            theme = theme
+                        )
+                    }
                 }
             }
         }
@@ -221,11 +249,17 @@ fun CanvasNodeCard(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .size(16.dp)
-                .pointerInput(node.id) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        state.resizeNode(node.id, dragAmount.x / zoom, dragAmount.y / zoom)
-                    }
+                .pointerInput(node.id, zoom) {
+                    detectCanvasGestures(
+                        onDragStart = { state.beginNodeTransform() },
+                        onDragEnd = state::endNodeTransform,
+                        onDragCancel = state::endNodeTransform,
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            state.resizeNode(node.id, dragAmount.x / zoom, dragAmount.y / zoom)
+                        },
+                        consumeDown = true
+                    )
                 }
         ) {
             Icon(
@@ -505,7 +539,7 @@ private fun BoxScope.PortHandle(
             .background(if (isConnectingThis) theme.primary else theme.cardBorder)
             .border(1.5.dp, if (isConnectingThis) Color.White else theme.surface, CircleShape)
             .pointerInput(node.id, port) {
-                detectDragGestures(
+                detectCanvasGestures(
                     onDragStart = {
                         state.connectingSourceNodeId = node.id
                         state.connectingSourcePort = port
@@ -539,7 +573,8 @@ private fun BoxScope.PortHandle(
                     onDragCancel = {
                         state.connectingSourceNodeId = null
                         state.connectingTargetPosition = null
-                    }
+                    },
+                    consumeDown = true
                 )
             }
     )

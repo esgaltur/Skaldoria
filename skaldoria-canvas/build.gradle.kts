@@ -5,10 +5,14 @@ plugins {
 }
 
 group = "com.skaldoria.canvas"
-version = "1.0.0"
+version = rootProject.version
 
 kotlin {
     jvm("desktop")
+
+    compilerOptions {
+        allWarningsAsErrors.set(providers.gradleProperty("warningsAsErrors").isPresent)
+    }
 
     sourceSets {
         getByName("desktopMain") {
@@ -29,6 +33,9 @@ kotlin {
         getByName("desktopTest") {
             dependencies {
                 implementation(kotlin("test"))
+                @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+                implementation(compose.uiTest)
+                implementation(compose.desktop.currentOs)
             }
         }
     }
@@ -47,7 +54,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Pkg
             )
             packageName = "SkaldoriaCanvas"
-            packageVersion = "1.0.0"
+            packageVersion = rootProject.version.toString()
             description = "Skaldoria Canvas - Spatial Markdown Whiteboard & Presentation Compiler"
             vendor = "Skaldoria"
 

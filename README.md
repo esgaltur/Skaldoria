@@ -200,8 +200,8 @@ cd skaldoria
 ./gradlew desktopTest :skaldoria-markdown:test
 ```
 
-Verification and releases run on a developer machine. One command runs both test suites and the
-zero-warning build:
+Verification and releases run on a developer machine. One command runs every module test suite and
+the zero-warning build:
 
 ```powershell
 .\scripts\verify.ps1

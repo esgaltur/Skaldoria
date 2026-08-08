@@ -6,7 +6,7 @@
     1. Runs the local verification gate (scripts/verify.ps1): both test suites and the
        zero-warning compile. Nothing verifies a push automatically — the CI workflow is
        manual-dispatch only (PLT-01) — so this is where those rules are enforced.
-    2. Builds native Windows MSI installer, EXE installer, portable ZIP bundle, and universal runnable JAR.
+    2. Builds Studio, Writer, and Canvas native distributions and universal runnable JARs.
     3. Calculates SHA-256 cryptographic checksums.
     4. Uploads all release binaries directly to GitHub Releases using 'gh' CLI without needing GitHub Actions CI/CD.
 
@@ -116,7 +116,7 @@ if (-not $SkipTests) {
 Write-Host "`n[2/5] Building native standalone application and universal JAR..." -ForegroundColor Yellow
 Push-Location $ProjectRoot
 try {
-    & .\gradlew.bat createDistributable packageUberJarForCurrentOS :skaldoria-writer:createDistributable :skaldoria-writer:packageUberJarForCurrentOS --no-daemon
+    & .\gradlew.bat createDistributable packageUberJarForCurrentOS :skaldoria-writer:createDistributable :skaldoria-writer:packageUberJarForCurrentOS :skaldoria-canvas:createDistributable :skaldoria-canvas:packageUberJarForCurrentOS --no-daemon
     if ($LASTEXITCODE -ne 0) {
         Write-Error 'Gradle build failed!'
         exit $LASTEXITCODE
@@ -144,6 +144,14 @@ if (Test-Path $writerAppDir) {
     Compress-Archive -Path "$writerAppDir\*" -DestinationPath $writerZipPath -CompressionLevel Optimal
 }
 
+$canvasAppDir = Join-Path $ProjectRoot 'skaldoria-canvas\build\compose\binaries\main\app\SkaldoriaCanvas'
+if (Test-Path $canvasAppDir) {
+    $canvasZipName = "SkaldoriaCanvas-v$Version-windows-x64-portable.zip"
+    $canvasZipPath = Join-Path $distDir $canvasZipName
+    Write-Host "  -> Creating Canvas portable archive: $canvasZipName..." -ForegroundColor DarkCyan
+    Compress-Archive -Path "$canvasAppDir\*" -DestinationPath $canvasZipPath -CompressionLevel Optimal
+}
+
 # Copy MSI installer if generated
 $msiDir = Join-Path $ProjectRoot 'build\compose\binaries\main\msi'
 if (Test-Path $msiDir) {
@@ -159,6 +167,14 @@ if (Test-Path $writerMsiDir) {
         $dest = Join-Path $distDir "SkaldoriaWriter-v$Version-windows-x64.msi"
         Copy-Item $_.FullName -Destination $dest -Force
         Write-Host "  -> Collected Writer MSI Installer: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+    }
+    $canvasMsiDir = Join-Path $ProjectRoot 'skaldoria-canvas\build\compose\binaries\main\msi'
+    if (Test-Path $canvasMsiDir) {
+        Get-ChildItem -Path $canvasMsiDir -Filter '*.msi' | ForEach-Object {
+            $dest = Join-Path $distDir "SkaldoriaCanvas-v$Version-windows-x64.msi"
+            Copy-Item $_.FullName -Destination $dest -Force
+            Write-Host "  -> Collected Canvas MSI Installer: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+        }
     }
 }
 
@@ -178,6 +194,14 @@ if (Test-Path $writerExeDir) {
         Copy-Item $_.FullName -Destination $dest -Force
         Write-Host "  -> Collected Writer EXE Setup: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
     }
+    $canvasExeDir = Join-Path $ProjectRoot 'skaldoria-canvas\build\compose\binaries\main\exe'
+    if (Test-Path $canvasExeDir) {
+        Get-ChildItem -Path $canvasExeDir -Filter '*.exe' | ForEach-Object {
+            $dest = Join-Path $distDir "SkaldoriaCanvas-v$Version-windows-x64-setup.exe"
+            Copy-Item $_.FullName -Destination $dest -Force
+            Write-Host "  -> Collected Canvas EXE Setup: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+        }
+    }
 }
 
 # Copy Universal Uber JAR
@@ -195,6 +219,14 @@ if (Test-Path $writerUberJarDir) {
         $dest = Join-Path $distDir "SkaldoriaWriter-v$Version-universal.jar"
         Copy-Item $_.FullName -Destination $dest -Force
         Write-Host "  -> Collected Writer Universal Runnable JAR: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+    }
+    $canvasUberJarDir = Join-Path $ProjectRoot 'skaldoria-canvas\build\compose\jars'
+    if (Test-Path $canvasUberJarDir) {
+        Get-ChildItem -Path $canvasUberJarDir -Filter '*.jar' | ForEach-Object {
+            $dest = Join-Path $distDir "SkaldoriaCanvas-v$Version-windows-x64.jar"
+            Copy-Item $_.FullName -Destination $dest -Force
+            Write-Host "  -> Collected Canvas Windows Runnable JAR: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+        }
     }
 }
 

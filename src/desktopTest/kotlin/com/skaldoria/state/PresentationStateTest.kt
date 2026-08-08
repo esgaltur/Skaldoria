@@ -3,6 +3,7 @@ package com.skaldoria.state
 import com.skaldoria.PresentationStateTestBase
 import com.skaldoria.core.models.AnnotationStroke
 import com.skaldoria.theme.BuiltinThemes
+import androidx.compose.ui.text.TextRange
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -76,6 +77,31 @@ class PresentationStateTest : PresentationStateTestBase() {
 
         state.resetEditorFontSize()
         assertEquals(14, state.editorFontSize)
+    }
+
+    @Test
+    fun testFormattingAtCaretPlacesCaretInsideMarkers() {
+        val state = presentationState(initialMarkdown = "Hello")
+        state.onEditorSelectionChanged(TextRange(5))
+
+        state.formatSelection("**")
+
+        assertEquals("Hello****", state.currentEditorText)
+        assertEquals(TextRange(7), state.editorSelection)
+    }
+
+    @Test
+    fun testFormattingSelectionTogglesMarkers() {
+        val state = presentationState(initialMarkdown = "Hello world")
+        state.onEditorSelectionChanged(TextRange(6, 11))
+
+        state.formatSelection("**")
+        assertEquals("Hello **world**", state.currentEditorText)
+        assertEquals(TextRange(8, 13), state.editorSelection)
+
+        state.formatSelection("**")
+        assertEquals("Hello world", state.currentEditorText)
+        assertEquals(TextRange(6, 11), state.editorSelection)
     }
 
     @Test
