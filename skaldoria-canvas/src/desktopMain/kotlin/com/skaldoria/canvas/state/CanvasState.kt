@@ -145,7 +145,9 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
     fun addNode(
         canvasPos: Offset,
         markdown: String = "## New Card\n\nEnter markdown here...",
-        color: NodeColor = NodeColor.Default
+        color: NodeColor = NodeColor.Default,
+        width: Float = CanvasNode.DEFAULT_WIDTH,
+        height: Float = CanvasNode.DEFAULT_HEIGHT
     ): CanvasNode {
         pushHistory()
         val nextZ = (nodes.maxOfOrNull { it.zIndex } ?: 0) + 1
@@ -153,8 +155,8 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
             id = UUID.randomUUID().toString(),
             x = canvasPos.x,
             y = canvasPos.y,
-            width = CanvasNode.DEFAULT_WIDTH,
-            height = CanvasNode.DEFAULT_HEIGHT,
+            width = width,
+            height = height,
             markdown = markdown,
             color = color,
             zIndex = nextZ
@@ -259,10 +261,61 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         return newEdge
     }
 
+    fun updateEdgeLabel(edgeId: String, newLabel: String) {
+        val edge = edges.find { it.id == edgeId } ?: return
+        if (edge.label == newLabel) return
+        pushHistory()
+        document = document.copy(
+            edges = edges.map { if (it.id == edgeId) it.copy(label = newLabel) else it }
+        )
+    }
+
+    fun updateEdgeStyle(edgeId: String, newStyle: EdgeStyle) {
+        val edge = edges.find { it.id == edgeId } ?: return
+        if (edge.style == newStyle) return
+        pushHistory()
+        document = document.copy(
+            edges = edges.map { if (it.id == edgeId) it.copy(style = newStyle) else it }
+        )
+    }
+
+    fun updateEdgeColor(edgeId: String, newColor: NodeColor?) {
+        val edge = edges.find { it.id == edgeId } ?: return
+        if (edge.color == newColor) return
+        pushHistory()
+        document = document.copy(
+            edges = edges.map { if (it.id == edgeId) it.copy(color = newColor) else it }
+        )
+    }
+
     fun deleteEdge(edgeId: String) {
         pushHistory()
         document = document.copy(edges = edges.filterNot { it.id == edgeId })
         if (selectedEdgeId == edgeId) selectedEdgeId = null
+    }
+
+    // --- Hit-Testing Operations ---
+
+    fun findEdgeAt(screenPoint: Offset, threshold: Float = 14f): CanvasEdge? {
+        val nodeMap = nodes.associateBy { it.id }
+        for (edge in edges.reversed()) {
+            val fromNode = nodeMap[edge.fromNodeId] ?: continue
+            val toNode = nodeMap[edge.toNodeId] ?: continue
+            val (startCanvas, endCanvas) = CanvasGeometry.resolvePorts(
+                fromNode, toNode, edge.fromPort, edge.toPort
+            )
+            val startScreen = viewport.canvasToScreen(startCanvas)
+            val endScreen = viewport.canvasToScreen(endCanvas)
+            if (CanvasGeometry.isPointNearBezier(screenPoint, startScreen, endScreen, threshold)) {
+                return edge
+            }
+        }
+        return null
+    }
+
+    fun findNodeAt(canvasPoint: Offset): CanvasNode? {
+        return nodes.filter { it.bounds.contains(canvasPoint) }
+            .maxByOrNull { it.zIndex }
     }
 
     // --- Selection Operations ---
@@ -298,8 +351,16 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         editingNodeId = null
     }
 
-    fun applyMarqueeSelection(rect: Rect) {
-        val intersectingIds = nodes.filter { it.bounds.overlaps(rect) }.map { it.id }.toSet()
+    fun applyMarqueeSelection(screenRect: Rect) {
+        val canvasTopLeft = viewport.screenToCanvas(screenRect.topLeft)
+        val canvasBottomRight = viewport.screenToCanvas(screenRect.bottomRight)
+        val canvasRect = Rect(
+            minOf(canvasTopLeft.x, canvasBottomRight.x),
+            minOf(canvasTopLeft.y, canvasBottomRight.y),
+            maxOf(canvasTopLeft.x, canvasBottomRight.x),
+            maxOf(canvasTopLeft.y, canvasBottomRight.y)
+        )
+        val intersectingIds = nodes.filter { it.bounds.overlaps(canvasRect) }.map { it.id }.toSet()
         selectedNodeIds = intersectingIds
         selectedEdgeId = null
     }

@@ -88,6 +88,33 @@ fun CanvasToolbar(
 
             VerticalDivider(color = currentTheme.cardBorder, modifier = Modifier.height(20.dp))
 
+            // Interactive Tool Modes
+            ToolbarIconButton(
+                icon = Icons.Default.NearMe,
+                tooltip = "Select Tool (V) — Click & Marquee select",
+                tint = if (state.activeTool == com.skaldoria.canvas.state.CanvasTool.Select) currentTheme.primary else currentTheme.textSecondary,
+                isDark = currentTheme.isDark,
+                onClick = { state.activeTool = com.skaldoria.canvas.state.CanvasTool.Select }
+            )
+
+            ToolbarIconButton(
+                icon = Icons.Default.Timeline,
+                tooltip = "Connect Tool (C) — Drag between cards to link",
+                tint = if (state.activeTool == com.skaldoria.canvas.state.CanvasTool.Connect) currentTheme.primary else currentTheme.textSecondary,
+                isDark = currentTheme.isDark,
+                onClick = { state.activeTool = com.skaldoria.canvas.state.CanvasTool.Connect }
+            )
+
+            ToolbarIconButton(
+                icon = Icons.Default.PanTool,
+                tooltip = "Pan Tool (H / Space) — Drag to move around infinite canvas",
+                tint = if (state.activeTool == com.skaldoria.canvas.state.CanvasTool.Pan) currentTheme.primary else currentTheme.textSecondary,
+                isDark = currentTheme.isDark,
+                onClick = { state.activeTool = com.skaldoria.canvas.state.CanvasTool.Pan }
+            )
+
+            VerticalDivider(color = currentTheme.cardBorder, modifier = Modifier.height(20.dp))
+
             // File Operations
             ToolbarIconButton(
                 icon = Icons.Default.Add,

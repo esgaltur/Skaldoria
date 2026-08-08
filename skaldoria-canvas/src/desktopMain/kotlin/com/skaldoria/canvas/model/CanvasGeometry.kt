@@ -146,6 +146,49 @@ object CanvasGeometry {
     }
 
     /**
+     * Determines whether a point is close to the cubic Bezier curve connecting [start] and [end].
+     */
+    fun isPointNearBezier(point: Offset, start: Offset, end: Offset, threshold: Float = 14f): Boolean {
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        val dist = hypot(dx, dy)
+        val curvature = min(dist * 0.5f, 150f).coerceAtLeast(30f)
+
+        val cp1 = if (abs(dx) > abs(dy)) {
+            Offset(start.x + (if (dx >= 0) curvature else -curvature), start.y)
+        } else {
+            Offset(start.x, start.y + (if (dy >= 0) curvature else -curvature))
+        }
+
+        val cp2 = if (abs(dx) > abs(dy)) {
+            Offset(end.x - (if (dx >= 0) curvature else -curvature), end.y)
+        } else {
+            Offset(end.x, end.y - (if (dy >= 0) curvature else -curvature))
+        }
+
+        val steps = 20
+        var prev = start
+        for (step in 1..steps) {
+            val t = step / steps.toFloat()
+            val u = 1f - t
+            val tt = t * t
+            val uu = u * u
+            val uuu = uu * u
+            val ttt = tt * t
+
+            val x = uuu * start.x + 3 * uu * t * cp1.x + 3 * u * tt * cp2.x + ttt * end.x
+            val y = uuu * start.y + 3 * uu * t * cp1.y + 3 * u * tt * cp2.y + ttt * end.y
+            val current = Offset(x, y)
+
+            if (isPointNearSegment(point, prev, current, threshold)) {
+                return true
+            }
+            prev = current
+        }
+        return false
+    }
+
+    /**
      * Determines if a node's bounding rectangle intersects with the visible viewport rectangle (with padding).
      */
     fun isNodeVisible(node: CanvasNode, viewportRect: Rect, margin: Float = 100f): Boolean {

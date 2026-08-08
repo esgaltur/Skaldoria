@@ -137,4 +137,65 @@ data class CanvasDocument(
     val nodes: List<CanvasNode> = emptyList(),
     val edges: List<CanvasEdge> = emptyList(),
     val viewport: CanvasViewport = CanvasViewport()
-)
+) {
+    companion object {
+        fun starter(): CanvasDocument {
+            val node1 = CanvasNode(
+                id = "welcome-card",
+                x = 80f,
+                y = 100f,
+                width = 340f,
+                height = 240f,
+                markdown = "# 🌌 Skaldoria Canvas\n\n- **Spatial Whiteboard** for ideas\n- **Double-click** anywhere to add cards\n- **Drag port dots** to connect nodes\n- Shortcuts: **V** (Select), **C** (Connect), **H** (Pan)",
+                color = NodeColor.Indigo,
+                zIndex = 1
+            )
+            val node2 = CanvasNode(
+                id = "markdown-card",
+                x = 500f,
+                y = 100f,
+                width = 360f,
+                height = 260f,
+                markdown = "## ⚡ Rich Markdown & Math\n\nLive LaTeX formulas rendered directly:\n$$\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$$\n\n```kotlin\nval canvas = CanvasWorkspace()\n```",
+                color = NodeColor.Emerald,
+                zIndex = 2
+            )
+            val node3 = CanvasNode(
+                id = "deck-card",
+                x = 940f,
+                y = 100f,
+                width = 340f,
+                height = 220f,
+                markdown = "## 🚀 Presentation Ready\n\nExport your whiteboard into an interactive **Presentation Deck** or Markdown document with one click!",
+                color = NodeColor.Amber,
+                zIndex = 3
+            )
+            val edge1 = CanvasEdge(
+                id = "edge-1",
+                fromNodeId = node1.id,
+                toNodeId = node2.id,
+                fromPort = EdgePort.Right,
+                toPort = EdgePort.Left,
+                label = "Powers",
+                style = EdgeStyle.Solid,
+                color = NodeColor.Indigo
+            )
+            val edge2 = CanvasEdge(
+                id = "edge-2",
+                fromNodeId = node2.id,
+                toNodeId = node3.id,
+                fromPort = EdgePort.Right,
+                toPort = EdgePort.Left,
+                label = "Compiles to",
+                style = EdgeStyle.Dashed,
+                color = NodeColor.Amber
+            )
+            return CanvasDocument(
+                title = "Welcome to Skaldoria Canvas",
+                nodes = listOf(node1, node2, node3),
+                edges = listOf(edge1, edge2),
+                viewport = CanvasViewport(panX = 30f, panY = 30f, zoom = 1f)
+            )
+        }
+    }
+}

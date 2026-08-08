@@ -35,8 +35,13 @@ fun main() = application {
                 when {
                     keyEvent.key == Key.Delete || keyEvent.key == Key.Backspace -> {
                         if (state.editingNodeId == null) {
-                            state.deleteSelected()
-                            true
+                            if (state.selectedEdgeId != null) {
+                                state.deleteEdge(state.selectedEdgeId!!)
+                                true
+                            } else if (state.selectedNodeIds.isNotEmpty()) {
+                                state.deleteSelected()
+                                true
+                            } else false
                         } else false
                     }
                     keyEvent.isCtrlPressed && keyEvent.key == Key.Z -> {
@@ -52,6 +57,18 @@ fun main() = application {
                             state.selectAll()
                             true
                         } else false
+                    }
+                    keyEvent.key == Key.V && !keyEvent.isCtrlPressed && state.editingNodeId == null -> {
+                        state.activeTool = com.skaldoria.canvas.state.CanvasTool.Select
+                        true
+                    }
+                    keyEvent.key == Key.C && !keyEvent.isCtrlPressed && state.editingNodeId == null -> {
+                        state.activeTool = com.skaldoria.canvas.state.CanvasTool.Connect
+                        true
+                    }
+                    keyEvent.key == Key.H && !keyEvent.isCtrlPressed && state.editingNodeId == null -> {
+                        state.activeTool = com.skaldoria.canvas.state.CanvasTool.Pan
+                        true
                     }
                     keyEvent.key == Key.Escape -> {
                         state.clearSelection()

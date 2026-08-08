@@ -35,6 +35,29 @@ class CanvasGeometryTest {
     }
 
     @Test
+    fun testExplicitPortResolution() {
+        val n1 = CanvasNode(id = "1", x = 0f, y = 0f, width = 100f, height = 100f)
+        val n2 = CanvasNode(id = "2", x = 200f, y = 200f, width = 100f, height = 100f)
+
+        val (start, end) = CanvasGeometry.resolvePorts(n1, n2, EdgePort.Top, EdgePort.Bottom)
+        assertEquals(Offset(50f, 0f), start)
+        assertEquals(Offset(250f, 300f), end)
+    }
+
+    @Test
+    fun testBezierCurveHitTesting() {
+        val start = Offset(100f, 100f)
+        val end = Offset(500f, 100f)
+
+        // Point directly near the middle of the horizontal curve
+        assertTrue(CanvasGeometry.isPointNearBezier(Offset(300f, 100f), start, end, threshold = 15f))
+        // Point near start
+        assertTrue(CanvasGeometry.isPointNearBezier(Offset(110f, 102f), start, end, threshold = 15f))
+        // Point far off
+        assertFalse(CanvasGeometry.isPointNearBezier(Offset(300f, 400f), start, end, threshold = 15f))
+    }
+
+    @Test
     fun testViewportCulling() {
         val n1 = CanvasNode(id = "1", x = 100f, y = 100f, width = 200f, height = 100f)
         val n2 = CanvasNode(id = "2", x = 5000f, y = 5000f, width = 200f, height = 100f)
@@ -54,5 +77,12 @@ class CanvasGeometryTest {
         assertEquals(target, arrowhead[0])
         assertTrue(arrowhead[1].x < target.x)
         assertTrue(arrowhead[2].x < target.x)
+    }
+
+    @Test
+    fun testCalculateMidpoint() {
+        val mid = CanvasGeometry.calculateMidpoint(Offset(100f, 200f), Offset(300f, 400f))
+        assertEquals(200f, mid.x)
+        assertEquals(300f, mid.y)
     }
 }
