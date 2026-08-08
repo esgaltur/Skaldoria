@@ -45,11 +45,6 @@ import com.skaldoria.core.diagram.SequenceDiagram
 import com.skaldoria.core.diagram.SequenceDiagramParser
 import com.skaldoria.theme.AdaptiveContrastEnforcer
 import com.skaldoria.theme.PresentationTheme
-import com.skaldoria.ui.components.MermaidParser.ARROW_TOKEN
-import com.skaldoria.ui.components.MermaidParser.NODE_BRACKETS
-import com.skaldoria.ui.components.MermaidParser.NODE_TOKEN
-import com.skaldoria.ui.components.MermaidParser.parseEdgeChain
-import com.skaldoria.ui.components.MermaidParser.shapeOf
 
 /**
  * Parses Mermaid flowchart and sequence definitions into structured renderable models.

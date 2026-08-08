@@ -1,18 +1,18 @@
 package com.skaldoria.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material3.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -29,6 +29,9 @@ import com.skaldoria.theme.PresentationTheme
  * Visual mathematical formula and LaTeX equation renderer in Compose Desktop.
  * Renders publishing-quality mathematical formulas with proper fractions, Greek symbols,
  * superscripts, subscripts, and operators.
+ *
+ * Supports both block/display equation mode ([isBlock] = true) with card chrome and LaTeX toggle,
+ * and compact inline equation mode ([isBlock] = false).
  */
 @Composable
 fun MathFormulaRenderer(
@@ -40,28 +43,27 @@ fun MathFormulaRenderer(
     var showRawLatex by remember { mutableStateOf(false) }
     val cleanedFormula = remember(formula) { formula.trim().removeSurrounding("$$").removeSurrounding("$").trim() }
 
-    // ADR-002 step 3: the frame lives in DiagramCard, shared with MermaidDiagramCanvas.
-    // The header was 42.dp here and 44.dp there; unifying on the token is the point of
-    // having one, and 2px is the whole visual delta (checked against render-all/11_math.png).
-    DiagramCard(
-        title = "MATHEMATICAL SPECIFICATION",
-        icon = Icons.Default.Calculate,
-        iconDescription = "Math Equation",
-        theme = theme,
-        modifier = modifier,
-        trailing = {
-            IconButton(
-                onClick = { showRawLatex = !showRawLatex },
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Code,
-                    contentDescription = "Toggle Raw LaTeX",
-                    tint = if (showRawLatex) theme.primary else theme.textMuted
-                )
+    if (isBlock) {
+        // ADR-002: Block display formulas use the shared DiagramCard chrome
+        DiagramCard(
+            title = "MATHEMATICAL SPECIFICATION",
+            icon = Icons.Default.Calculate,
+            iconDescription = "Math Equation",
+            theme = theme,
+            modifier = modifier,
+            trailing = {
+                IconButton(
+                    onClick = { showRawLatex = !showRawLatex },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Code,
+                        contentDescription = "Toggle Raw LaTeX",
+                        tint = if (showRawLatex) theme.primary else theme.textMuted
+                    )
+                }
             }
-        }
-    ) {
+        ) {
             if (showRawLatex) {
                 // Theme-adaptive Raw LaTeX Code Box
                 Box(
@@ -86,9 +88,24 @@ fun MathFormulaRenderer(
                         .padding(vertical = 32.dp, horizontal = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    RenderLatexExpression(cleanedFormula, theme)
+                    RenderLatexExpression(cleanedFormula, theme, isBlock = true)
                 }
             }
+        }
+    } else {
+        // Compact inline math badge
+        Surface(
+            modifier = modifier,
+            color = if (theme.isDark) theme.surface.copy(alpha = 0.85f) else theme.surfaceVariant.copy(alpha = 0.45f),
+            shape = RoundedCornerShape(6.dp)
+        ) {
+            Box(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                RenderLatexExpression(cleanedFormula, theme, isBlock = false)
+            }
+        }
     }
 }
 
@@ -98,9 +115,14 @@ fun MathFormulaRenderer(
 @Composable
 private fun RenderLatexExpression(
     rawFormula: String,
-    theme: PresentationTheme
+    theme: PresentationTheme,
+    isBlock: Boolean = true
 ) {
     val fracInfo = findFraction(rawFormula)
+    val baseSize = if (isBlock) 28 else 18
+    val linearSize = if (isBlock) 32 else 20
+    val numDenSize = if (isBlock) 22 else 14
+    val parenSize = if (isBlock) 44.sp else 24.sp
 
     if (fracInfo != null) {
         val before = rawFormula.substring(0, fracInfo.startIndex).trim()
@@ -110,16 +132,16 @@ private fun RenderLatexExpression(
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(if (isBlock) 6.dp else 4.dp)
         ) {
             if (before.isNotBlank()) {
-                LatexTextSegment(before, theme, fontSize = 28)
+                LatexTextSegment(before, theme, fontSize = baseSize)
             }
 
             if (fracInfo.isEnclosedInParens) {
                 Text(
                     text = "(",
-                    fontSize = 44.sp,
+                    fontSize = parenSize,
                     fontWeight = FontWeight.Light,
                     fontFamily = FontFamily.Serif,
                     color = theme.textSecondary,
@@ -132,22 +154,22 @@ private fun RenderLatexExpression(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.padding(horizontal = 4.dp)
             ) {
-                LatexTextSegment(num, theme, fontSize = 22)
-                Spacer(Modifier.height(3.dp))
+                LatexTextSegment(num, theme, fontSize = numDenSize)
+                Spacer(Modifier.height(if (isBlock) 3.dp else 2.dp))
                 Box(
                     modifier = Modifier
-                        .width(maxOf(num.length, den.length).times(14).coerceAtLeast(36).dp)
-                        .height(2.5.dp)
+                        .width(maxOf(num.length, den.length).times(if (isBlock) 14 else 9).coerceAtLeast(if (isBlock) 36 else 22).dp)
+                        .height(if (isBlock) 2.5.dp else 1.5.dp)
                         .background(theme.primary)
                 )
-                Spacer(Modifier.height(3.dp))
-                LatexTextSegment(den, theme, fontSize = 22)
+                Spacer(Modifier.height(if (isBlock) 3.dp else 2.dp))
+                LatexTextSegment(den, theme, fontSize = numDenSize)
             }
 
             if (fracInfo.isEnclosedInParens) {
                 Text(
                     text = ")",
-                    fontSize = 44.sp,
+                    fontSize = parenSize,
                     fontWeight = FontWeight.Light,
                     fontFamily = FontFamily.Serif,
                     color = theme.textSecondary,
@@ -156,12 +178,12 @@ private fun RenderLatexExpression(
             }
 
             if (after.isNotBlank()) {
-                LatexTextSegment(after, theme, fontSize = 28)
+                LatexTextSegment(after, theme, fontSize = baseSize)
             }
         }
     } else {
         // Linear Math Expression with formatting
-        LatexTextSegment(rawFormula, theme, fontSize = 32)
+        LatexTextSegment(rawFormula, theme, fontSize = linearSize)
     }
 }
 

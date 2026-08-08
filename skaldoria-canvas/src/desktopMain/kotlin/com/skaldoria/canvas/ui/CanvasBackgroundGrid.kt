@@ -8,7 +8,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import com.skaldoria.canvas.model.CanvasViewport
 import com.skaldoria.theme.PresentationTheme
-import kotlin.math.floor
 
 /**
  * High-performance hardware-accelerated 2D infinite grid background.

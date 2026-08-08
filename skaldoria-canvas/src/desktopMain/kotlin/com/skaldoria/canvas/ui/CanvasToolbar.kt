@@ -1,9 +1,7 @@
 package com.skaldoria.canvas.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,7 +22,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skaldoria.canvas.state.CanvasState
-import com.skaldoria.canvas.state.CanvasTool
 import com.skaldoria.shared.ui.components.EditorTooltip
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.theme.PresentationTheme
@@ -104,7 +101,7 @@ fun CanvasToolbar(
             )
 
             ToolbarIconButton(
-                icon = Icons.Default.NoteAdd,
+                icon = Icons.AutoMirrored.Filled.NoteAdd,
                 tooltip = "New Canvas",
                 tint = currentTheme.textSecondary,
                 isDark = currentTheme.isDark,

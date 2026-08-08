@@ -1,79 +1,64 @@
 package com.skaldoria.writer
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.TooltipArea
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.input.key.*
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.FormatBold
-import androidx.compose.material.icons.filled.FormatItalic
-import androidx.compose.material.icons.filled.FormatStrikethrough
-import androidx.compose.material.icons.filled.FormatQuote
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Save
-import com.skaldoria.shared.ui.theme.SkaldoriaTheme
-import com.skaldoria.shared.ui.theme.Themes
-import com.skaldoria.shared.ui.components.EditorTooltip
-import com.skaldoria.shared.ui.formatting.MarkdownFormatter
-import com.skaldoria.writer.parser.DocumentParser
-import com.skaldoria.writer.parser.Heading
-import com.skaldoria.writer.parser.Document
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.FormatBold
+import androidx.compose.material.icons.filled.FormatItalic
+import androidx.compose.material.icons.filled.FormatQuote
+import androidx.compose.material.icons.filled.FormatStrikethrough
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.skaldoria.shared.ui.components.EditorTooltip
+import com.skaldoria.shared.ui.formatting.MarkdownFormatter
+import com.skaldoria.shared.ui.theme.SkaldoriaTheme
+import com.skaldoria.shared.ui.theme.Themes
+import com.skaldoria.theme.PresentationTheme
+import com.skaldoria.ui.components.CodeBlockView
+import com.skaldoria.ui.components.MathFormulaRenderer
+import com.skaldoria.ui.components.MermaidDiagramCanvas
+import com.skaldoria.ui.components.inlineMarkdown
+import com.skaldoria.writer.parser.*
+import com.skaldoria.writer.parser.Text as AstText
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
-
-import com.skaldoria.theme.PresentationTheme
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.ui.text.font.FontStyle
-import com.skaldoria.ui.components.CodeBlockView
-import com.skaldoria.ui.components.MathFormulaRenderer
-import com.skaldoria.ui.components.MermaidParser
-import com.skaldoria.ui.components.MermaidDiagramCanvas
-import com.skaldoria.ui.components.inlineMarkdown
-import com.skaldoria.writer.parser.CodeBlock
-import com.skaldoria.writer.parser.Paragraph
-import com.skaldoria.writer.parser.ThematicBreak
-import com.skaldoria.writer.parser.Blockquote
-import com.skaldoria.writer.parser.MathBlock
-import com.skaldoria.writer.parser.BulletList
-import com.skaldoria.writer.parser.Text as AstText
 
 enum class ViewMode { Edit, Split, Preview }
 
@@ -84,7 +69,7 @@ fun WriterEditor() {
     var isSidebarOpen by remember { mutableStateOf(true) }
     var currentThemeIndex by remember { mutableStateOf(0) }
     val theme = Themes.all[currentThemeIndex]
-    
+
     var textState by remember {
         mutableStateOf(
             TextFieldValue(
@@ -162,7 +147,7 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
                 Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
                     Text("DOCUMENT OUTLINE", color = theme.subtext, style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp))
                     Spacer(Modifier.height(16.dp))
-                    
+
                     if (headings.isEmpty()) {
                          Text("No headings found.", color = theme.subtext.copy(alpha=0.5f), fontSize = 14.sp)
                     } else {
@@ -219,7 +204,7 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
                             }
                         }
                         Spacer(Modifier.width(16.dp))
-                        
+
                         // View Mode Selector
                         Surface(shape = RoundedCornerShape(50), color = theme.surface) {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(2.dp)) {
@@ -228,7 +213,7 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
                                 ViewModeButton("Preview", viewMode == ViewMode.Preview, theme) { viewMode = ViewMode.Preview }
                             }
                         }
-                        
+
                         Spacer(Modifier.width(16.dp))
 
                         Text("Focus", color = theme.subtext, style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold), modifier = Modifier.padding(end = 8.dp))
@@ -245,12 +230,12 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
             // Floating Toolbar Component (Only show if editing)
             if (viewMode != ViewMode.Preview) {
                 Box(Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.TopCenter) {
-                Surface(
-                    color = theme.surface,
-                    shape = RoundedCornerShape(50),
-                    shadowElevation = 12.dp,
-                    modifier = Modifier.padding(end = 24.dp).shadow(2.dp, RoundedCornerShape(50))
-                ) {
+                    Surface(
+                        color = theme.surface,
+                        shape = RoundedCornerShape(50),
+                        shadowElevation = 12.dp,
+                        modifier = Modifier.padding(end = 24.dp).shadow(2.dp, RoundedCornerShape(50))
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
                             EditorTooltip("Bold (Ctrl+B)", theme) {
                                 IconButton(onClick = { textState = MarkdownFormatter.toggleBold(textState) }) { 
@@ -272,20 +257,20 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
                                     Icon(Icons.Default.Code, contentDescription = "Code", tint = theme.accent) 
                                 }
                             }
-                            
+
                             // Divider
                             Box(Modifier.width(1.dp).height(24.dp).background(theme.subtext.copy(alpha=0.3f)).padding(horizontal = 4.dp))
-                            
+
                             EditorTooltip("Heading 1", theme) {
                                 TextButton(onClick = { textState = MarkdownFormatter.toggleHeader1(textState) }) { Text("H1", color = theme.accent, fontWeight = FontWeight.Bold) }
                             }
                             EditorTooltip("Heading 2", theme) {
                                 TextButton(onClick = { textState = MarkdownFormatter.toggleHeader2(textState) }) { Text("H2", color = theme.accent, fontWeight = FontWeight.Bold) }
                             }
-                            
+
                             // Divider
                             Box(Modifier.width(1.dp).height(24.dp).background(theme.subtext.copy(alpha=0.3f)).padding(horizontal = 4.dp))
-                            
+
                             EditorTooltip("Blockquote", theme) {
                                 IconButton(onClick = { textState = MarkdownFormatter.toggleQuote(textState) }) { 
                                     Icon(Icons.Default.FormatQuote, contentDescription = "Quote", tint = theme.accent) 
@@ -303,7 +288,7 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
                             }
                         }
                     }
-            }
+                }
             }
 
             // Editor & Preview Workspace
@@ -313,47 +298,46 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
                     Box(Modifier.weight(1f).fillMaxHeight().verticalScroll(scrollState), contentAlignment = Alignment.TopCenter) {
                         Box(Modifier.widthIn(max = 850.dp).padding(horizontal = 40.dp, vertical = 24.dp)) {
                             val visualTransformation = remember(theme, textState.selection, isFocusMode, viewMode) {
-                                // Always show source code (no WYSIWYG hiding) in the editor pane
                                 WysiwygVisualTransformation(theme, textState.selection.start, false, isFocusMode)
                             }
 
-                        Box(Modifier.fillMaxSize()) {
-                            if (textState.text.isEmpty()) {
-                                Text(
-                                    text = "Start writing your masterpiece...",
-                                    style = TextStyle(
-                                        color = theme.subtext.copy(alpha = 0.5f),
-                                        fontSize = 18.sp,
-                                        lineHeight = 32.sp,
-                                        fontWeight = FontWeight.Light
+                            Box(Modifier.fillMaxSize()) {
+                                if (textState.text.isEmpty()) {
+                                    Text(
+                                        text = "Start writing your masterpiece...",
+                                        style = TextStyle(
+                                            color = theme.subtext.copy(alpha = 0.5f),
+                                            fontSize = 18.sp,
+                                            lineHeight = 32.sp,
+                                            fontWeight = FontWeight.Light
+                                        ),
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    )
+                                }
+
+                                BasicTextField(
+                                    value = textState,
+                                    onValueChange = { textState = it },
+                                    modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
+                                        if (event.isCtrlPressed && event.type == KeyEventType.KeyDown) {
+                                            when (event.key) {
+                                                Key.B -> { textState = MarkdownFormatter.toggleBold(textState); true }
+                                                Key.I -> { textState = MarkdownFormatter.toggleItalic(textState); true }
+                                                Key.S -> { saveFileDialog(); true }
+                                                Key.O -> { openFileDialog(); true }
+                                                else -> false
+                                            }
+                                        } else false
+                                    },
+                                    textStyle = TextStyle(
+                                        color = theme.text,
+                                        fontSize = 17.sp,
+                                        lineHeight = androidx.compose.ui.unit.TextUnit.Unspecified
                                     ),
-                                    modifier = Modifier.padding(top = 2.dp)
+                                    cursorBrush = SolidColor(theme.accent),
+                                    visualTransformation = visualTransformation
                                 )
                             }
-                            
-                            BasicTextField(
-                                value = textState,
-                                onValueChange = { textState = it },
-                                modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
-                                    if (event.isCtrlPressed && event.type == KeyEventType.KeyDown) {
-                                        when (event.key) {
-                                            Key.B -> { textState = MarkdownFormatter.toggleBold(textState); true }
-                                            Key.I -> { textState = MarkdownFormatter.toggleItalic(textState); true }
-                                            Key.S -> { saveFileDialog(); true }
-                                            Key.O -> { openFileDialog(); true }
-                                            else -> false
-                                        }
-                                    } else false
-                                },
-                                textStyle = TextStyle(
-                                    color = theme.text,
-                                    fontSize = 17.sp,
-                                    lineHeight = androidx.compose.ui.unit.TextUnit.Unspecified
-                                ),
-                                cursorBrush = androidx.compose.ui.graphics.SolidColor(theme.accent),
-                                visualTransformation = visualTransformation
-                            )
-                        }
                         }
                     }
                 }
@@ -399,7 +383,7 @@ Use the arrow keys to move your cursor up to the header. Watch how the markdown 
 fun ViewModeButton(text: String, isSelected: Boolean, theme: SkaldoriaTheme, onClick: () -> Unit) {
     val bgColor = if (isSelected) theme.accent.copy(alpha = 0.2f) else Color.Transparent
     val textColor = if (isSelected) theme.accent else theme.subtext
-    
+
     Box(
         modifier = Modifier
             .background(bgColor, RoundedCornerShape(50))
@@ -446,7 +430,7 @@ fun PreviewPanel(text: String, theme: SkaldoriaTheme) {
     Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 24.dp)) {
         Text("LIVE PREVIEW", color = theme.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         Spacer(Modifier.height(24.dp))
-        
+
         for (block in document.blocks) {
             when (block) {
                 is Heading -> {
@@ -546,14 +530,14 @@ fun PreviewPanel(text: String, theme: SkaldoriaTheme) {
     }
 }
 
-private fun flattenInline(nodes: List<com.skaldoria.writer.parser.InlineNode>): String {
+private fun flattenInline(nodes: List<InlineNode>): String {
     return nodes.joinToString("") { node ->
         when (node) {
             is AstText -> node.content
-            is com.skaldoria.writer.parser.Bold -> "**${flattenInline(node.children)}**"
-            is com.skaldoria.writer.parser.Italic -> "*${flattenInline(node.children)}*"
-            is com.skaldoria.writer.parser.Code -> "`${node.content}`"
-            is com.skaldoria.writer.parser.Strikethrough -> "~~${flattenInline(node.children)}~~"
+            is Bold -> "**${flattenInline(node.children)}**"
+            is Italic -> "*${flattenInline(node.children)}*"
+            is Code -> "`${node.content}`"
+            is Strikethrough -> "~~${flattenInline(node.children)}~~"
         }
     }
 }

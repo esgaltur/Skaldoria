@@ -1,6 +1,5 @@
 package com.skaldoria.canvas.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -29,7 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skaldoria.canvas.model.*
 import com.skaldoria.canvas.state.CanvasState
-import com.skaldoria.markdown.models.Slide
 import com.skaldoria.markdown.models.SlideElement
 import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.PresentationTheme
