@@ -144,4 +144,43 @@ class WysiwygVisualTransformationTest {
         assertTrue(transformed.text.spanStyles.any { it.item.fontSize == 24.sp })
         assertTrue(transformed.text.spanStyles.any { it.item.fontWeight == FontWeight.Bold })
     }
+
+    @Test
+    fun `cursor line reveals syntax while other lines stay folded`() {
+        val source = "## Hidden **heading**\nEdit *this* line"
+        val cursorOnSecondLine = source.indexOf("this")
+        val transformed = WysiwygVisualTransformation(
+            testTheme,
+            cursorIndex = cursorOnSecondLine,
+            isVisualMode = true
+        ).filter(AnnotatedString(source))
+
+        assertEquals("Hidden heading\nEdit *this* line", transformed.text.text)
+    }
+
+    @Test
+    fun `offset mapping is bounded and monotonic for mixed folded syntax`() {
+        val source = "## A **bold** and `code` title\n\nPlain *italic* text"
+        val transformed = WysiwygVisualTransformation(
+            testTheme,
+            cursorIndex = source.length,
+            isVisualMode = true
+        ).filter(AnnotatedString(source))
+
+        var previous = 0
+        for (offset in 0..source.length) {
+            val mapped = transformed.offsetMapping.originalToTransformed(offset)
+            assertTrue(mapped in 0..transformed.text.length)
+            assertTrue(mapped >= previous, "original mapping moved backwards at $offset")
+            previous = mapped
+        }
+
+        previous = 0
+        for (offset in 0..transformed.text.length) {
+            val mapped = transformed.offsetMapping.transformedToOriginal(offset)
+            assertTrue(mapped in 0..source.length)
+            assertTrue(mapped >= previous, "transformed mapping moved backwards at $offset")
+            previous = mapped
+        }
+    }
 }
