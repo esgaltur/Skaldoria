@@ -5,6 +5,7 @@ rootProject.name = "Skaldoria"
  * on the classpath. See `docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase A.
  */
 include(":skaldoria-markdown")
+include(":skaldoria-presentation")
 include(":skaldoria-writer")
 include(":skaldoria-shared-ui")
 include(":skaldoria-canvas")

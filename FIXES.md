@@ -88,12 +88,12 @@ As specified in [AGENTS.md](file:///C:/Users/Root/Workspace/WebStormProjects/Mar
 
 ---
 
-### Root Presentation App (`:`)
-- [`ElementImageRenderer.kt`](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/src/desktopMain/kotlin/com/skaldoria/export/ElementImageRenderer.kt):
+### `:skaldoria-presentation`
+- [`ElementImageRenderer.kt`](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/skaldoria-presentation/src/desktopMain/kotlin/com/skaldoria/export/ElementImageRenderer.kt):
   - Wired `isBlock = isBlock` into `MathFormulaRenderer`.
-- [`BulletListSlide.kt`](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/src/desktopMain/kotlin/com/skaldoria/ui/layouts/BulletListSlide.kt):
+- [`BulletListSlide.kt`](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/skaldoria-presentation/src/desktopMain/kotlin/com/skaldoria/ui/layouts/BulletListSlide.kt):
   - Wired `isBlock = elem.isBlock` into `MathFormulaRenderer`.
-- [`MathFormulaSlide.kt`](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/src/desktopMain/kotlin/com/skaldoria/ui/layouts/MathFormulaSlide.kt):
+- [`MathFormulaSlide.kt`](file:///C:/Users/Root/Workspace/WebStormProjects/MarkdownPres/skaldoria-presentation/src/desktopMain/kotlin/com/skaldoria/ui/layouts/MathFormulaSlide.kt):
   - Wired `isBlock = elem.isBlock` into `MathFormulaRenderer`.
 
 ---
@@ -105,4 +105,4 @@ All multiplatform modules and desktop test suites pass with 100% success:
 - `:skaldoria-shared-ui:desktopTest`
 - `:skaldoria-canvas:desktopTest`
 - `:skaldoria-writer:desktopTest`
-- `:desktopTest`
+- `:skaldoria-presentation:desktopTest`

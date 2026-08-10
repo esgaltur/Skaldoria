@@ -274,7 +274,7 @@ recorded rather than papered over**; it will bite again.
 
 ### Original scope, for reference
 
-From [`EDITOR_SCALING_ANALYSIS.md`](./EDITOR_SCALING_ANALYSIS.md). Independent of everything above.
+From [`EDITOR_SCALING_ANALYSIS.md`](../../skaldoria-presentation/docs/EDITOR_SCALING_ANALYSIS.md). Independent of everything above.
 
 - [ ] **Memoize the highlighter** on `(text, theme, searchMatches, activeMatchIndex)`. Caret moves
       and selection drags currently re-highlight the entire document for byte-identical output.
@@ -563,7 +563,7 @@ JUnit rule, so a new test cannot forget.
 > Verified in the order CONTRIBUTING §4 requires — the guard failed against the old suite first,
 > naming all 22 offenders, before any of them were converted.
 >
-> Registered as **COR-14** in [`QUALITY_BASELINE.md`](./QUALITY_BASELINE.md).
+> Registered as **COR-14** in [`QUALITY_BASELINE.md`](../../skaldoria-presentation/docs/QUALITY_BASELINE.md).
 
 ### 2. Tables without outer pipes are unsupported
 

@@ -212,6 +212,6 @@ Each step leaves the app fully working and is guarded by the existing test suite
 ---
 
 ### References
-- `docs/RENDERING_STATUS.md` — verified rendering status and the bug history this ADR generalises.
+- [`RENDERING_STATUS.md`](../../../skaldoria-presentation/docs/RENDERING_STATUS.md) — verified rendering status and the bug history this ADR generalises.
 - `core/diagram/FlowchartLayoutEngine.kt`, `core/layout/SlideCanvasFit.kt` — the existing pure/tested pattern being extended.
 - `ui/components/FlowchartGraphView.kt`, `ui/components/SequenceDiagramView.kt` — current homes of the inline geometry to be relocated.

@@ -6,7 +6,7 @@ What the hot paths actually cost, measured rather than reasoned about. The numbe
 from `PerformanceProbe` on an 886-line, 60-slide deck — the size of a real conference talk.
 
 ```
-./gradlew desktopTest --tests "*PerformanceProbe*" -i
+./gradlew :skaldoria-presentation:desktopTest --tests "*PerformanceProbe*" -i
 ```
 
 > **Why a probe and not an assertion.** A threshold tuned on one machine becomes a CI flake on

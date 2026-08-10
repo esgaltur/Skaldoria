@@ -8,8 +8,8 @@
 Regenerate with:
 
 ```
-./gradlew desktopTest --tests "*RenderAllProbe*"     # sweep -> build/render-all/
-./gradlew desktopTest --tests "*SlideRenderingTest*" # guard  -> build/render-check/
+./gradlew :skaldoria-presentation:desktopTest --tests "*RenderAllProbe*"     # sweep -> build/render-all/
+./gradlew :skaldoria-presentation:desktopTest --tests "*SlideRenderingTest*" # guard  -> build/render-check/
 ```
 
 > **Read this first.** Everything below marked ✅ was confirmed by *looking at the rendered

@@ -25,7 +25,7 @@ All contributions to Skaldoria must strictly follow **SOLID principles**, **Clea
 ### 4. Clean Code & Comprehensive Unit Testing
 - Write descriptive function and variable names without abbreviations.
 - Keep composable functions short, modular, and reusable.
-- Accompany every parser, theme, or state logic change with unit tests under `src/desktopTest/kotlin`.
+- Accompany every presentation parser, theme, or state change with tests under `skaldoria-presentation/src/desktopTest/kotlin`.
 - **A regression test must fail before the fix.** Verify it by reintroducing the bug, or the test
   is decoration. This is not theoretical: a guard that passes both before and after has been
   written here before.
@@ -40,7 +40,7 @@ a correct-looking layout tree with zero-height children.
 For any change to drawing or layout code:
 
 ```bash
-./gradlew desktopTest --tests "*RenderAllProbe*"   # sweep -> build/render-all/*.png
+./gradlew :skaldoria-presentation:desktopTest --tests "*RenderAllProbe*"   # sweep -> build/render-all/*.png
 ```
 
 Open the PNGs and look at them. `SlideRenderingTest` renders headlessly via `ImageComposeScene`
@@ -190,17 +190,17 @@ screen. The workflow's `render_tests` input takes `xvfb` if you want them to act
 ```bash
 # What verify.ps1 runs, if you prefer the raw commands:
 
-# 1. Full automated test suite (both modules)
-./gradlew desktopTest :skaldoria-markdown:test
+# 1. Presentation and Markdown engine tests (scripts/verify.ps1 runs every module)
+./gradlew :skaldoria-presentation:desktopTest :skaldoria-markdown:test
 
 # 2. The zero-warning NFR (section 6). Production and test code must both compile clean.
-./gradlew compileKotlinDesktop compileTestKotlinDesktop -PwarningsAsErrors
+./gradlew :skaldoria-presentation:compileKotlinDesktop :skaldoria-presentation:compileTestKotlinDesktop -PwarningsAsErrors
 
 # Launch development desktop instance
-./gradlew run
+./gradlew :skaldoria-presentation:run
 
 # Verify native packaging
-./gradlew createDistributable
+./gradlew :skaldoria-presentation:createDistributable
 
 # The version the build will stamp on artefacts — read this, never retype it
 ./gradlew -q printVersion
@@ -232,7 +232,7 @@ The render guards drive real Compose frames through `ImageComposeScene`, which n
 Skia can target. On a machine with no display they cannot run:
 
 ```bash
-./gradlew desktopTest -PskipRenderTests
+./gradlew :skaldoria-presentation:desktopTest -PskipRenderTests
 ```
 
 They are then reported as **skipped**, never as passed, so the suite total visibly drops rather
@@ -243,12 +243,12 @@ display exists but rendering still should not be attempted.
 **Do not reach for `@Ignore` when a render test fails on a headless box.** That was tried, and it
 disabled 8 keyboard tests on every machine — including the ones where they run fine — to work
 around one environment. A platform problem gets a platform-conditional skip. See `PLT-08` in
-[`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md).
+[`skaldoria-presentation/docs/FEATURE_INDEX.md`](./skaldoria-presentation/docs/FEATURE_INDEX.md).
 
 ---
 
 ## 📋 Pull Request Process
 1. Create a feature branch: `git checkout -b feature/amazing-feature`
 2. Commit your changes with clear semantic commit messages: `git commit -m "feat: Add amazing feature"`
-3. Ensure all tests pass: `./gradlew desktopTest`
+3. Ensure all presentation tests pass: `./gradlew :skaldoria-presentation:desktopTest`
 4. Submit a Pull Request with a clear description of the problem solved and relevant screenshots/video.

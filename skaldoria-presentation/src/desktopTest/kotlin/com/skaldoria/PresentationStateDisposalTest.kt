@@ -69,7 +69,8 @@ class PresentationStateDisposalTest {
         }
 
     private companion object {
-        const val TEST_SOURCE_ROOT = "src/desktopTest/kotlin/com/skaldoria"
+        // Tests run from the repository root so they can consume root-level examples.
+        const val TEST_SOURCE_ROOT = "skaldoria-presentation/src/desktopTest/kotlin/com/skaldoria"
 
         /**
          * Split so this file is not its own offender. `PresentationStateTestBase(` in a

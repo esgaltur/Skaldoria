@@ -8,7 +8,7 @@
 > has accumulated into a small number of very large types, what that costs today in concrete
 > and measurable terms, and the smallest structural change that removes each cost.
 >
-> It follows the precedent of [ADR-002](./002-diagram-geometry-architecture.md): prefer the
+> It follows the precedent of [ADR-002](../../../skaldoria-shared-ui/docs/adr/002-diagram-geometry-architecture.md): prefer the
 > single maintainable solution over a patch, but size the abstraction to the domain and stop
 > there. Several recommendations below are deliberately *"do not introduce a pattern here"* —
 > the language or the existing design already provides the guarantee, and adding a pattern on
@@ -472,7 +472,7 @@ Steps 1–4 are worth doing regardless of whether the rest is ever scheduled.
 
 ### References
 - [`ADR-001: Companion Server Architecture`](./001-companion-server-architecture.md) — why the server is hand-rolled; unchanged by this ADR.
-- [`ADR-002: Diagram Geometry Architecture`](./002-diagram-geometry-architecture.md) — the pure-core boundary this ADR extends.
+- [`ADR-002: Diagram Geometry Architecture`](../../../skaldoria-shared-ui/docs/adr/002-diagram-geometry-architecture.md) — the pure-core boundary this ADR extends.
 - [`QUALITY_BASELINE.md`](../QUALITY_BASELINE.md) — the invariants and identifiers that must survive every extraction.
 - `theme/AdaptiveContrastEnforcer.kt`, `theme/ThemePaletteValidator.kt` — the existing in-repo precedent for interface-backed singletons.
 - `core/layout/SlideCanvasFit.kt`, `core/diagram/FlowchartLayoutEngine.kt` — the "pure logic in `core/`, tested" pattern being applied to state and parsing.
