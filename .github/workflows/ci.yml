@@ -76,15 +76,15 @@ jobs:
       # accident of environment.
       - name: Run all test suites
         if: github.event.inputs.render_tests != 'xvfb'
-        run: ./gradlew desktopTest :skaldoria-markdown:test :skaldoria-shared-ui:desktopTest :skaldoria-writer:desktopTest :skaldoria-canvas:desktopTest --no-daemon -PskipRenderTests
+        run: ./gradlew :skaldoria-presentation:desktopTest :skaldoria-markdown:test :skaldoria-shared-ui:desktopTest :skaldoria-writer:desktopTest :skaldoria-canvas:desktopTest --no-daemon -PskipRenderTests
 
       - name: Run all test suites (with a virtual display)
         if: github.event.inputs.render_tests == 'xvfb'
-        run: xvfb-run --auto-servernum ./gradlew desktopTest :skaldoria-markdown:test :skaldoria-shared-ui:desktopTest :skaldoria-writer:desktopTest :skaldoria-canvas:desktopTest --no-daemon
+        run: xvfb-run --auto-servernum ./gradlew :skaldoria-presentation:desktopTest :skaldoria-markdown:test :skaldoria-shared-ui:desktopTest :skaldoria-writer:desktopTest :skaldoria-canvas:desktopTest --no-daemon
 
       # Fix the cause, do not suppress it (CONTRIBUTING.md section 10).
       - name: Compile with warnings as errors
-        run: ./gradlew compileKotlinDesktop compileTestKotlinDesktop :skaldoria-shared-ui:compileKotlinDesktop :skaldoria-shared-ui:compileTestKotlinDesktop :skaldoria-writer:compileKotlinDesktop :skaldoria-writer:compileTestKotlinDesktop :skaldoria-canvas:compileKotlinDesktop :skaldoria-canvas:compileTestKotlinDesktop -PwarningsAsErrors --no-daemon
+        run: ./gradlew :skaldoria-presentation:compileKotlinDesktop :skaldoria-presentation:compileTestKotlinDesktop :skaldoria-shared-ui:compileKotlinDesktop :skaldoria-shared-ui:compileTestKotlinDesktop :skaldoria-writer:compileKotlinDesktop :skaldoria-writer:compileTestKotlinDesktop :skaldoria-canvas:compileKotlinDesktop :skaldoria-canvas:compileTestKotlinDesktop -PwarningsAsErrors --no-daemon
 
       # Without this a red run says only "desktopTest FAILED"; the HTML/XML reports say which
       # case, and they are gone with the runner.
@@ -94,8 +94,8 @@ jobs:
         with:
           name: test-reports
           path: |
-            build/reports/tests/
-            build/test-results/
+            skaldoria-presentation/build/reports/tests/
+            skaldoria-presentation/build/test-results/
             skaldoria-markdown/build/reports/tests/
             skaldoria-markdown/build/test-results/
             skaldoria-shared-ui/build/reports/tests/

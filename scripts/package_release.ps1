@@ -116,7 +116,7 @@ if (-not $SkipTests) {
 Write-Host "`n[2/5] Building native standalone application and universal JAR..." -ForegroundColor Yellow
 Push-Location $ProjectRoot
 try {
-    & .\gradlew.bat createDistributable packageUberJarForCurrentOS :skaldoria-writer:createDistributable :skaldoria-writer:packageUberJarForCurrentOS :skaldoria-canvas:createDistributable :skaldoria-canvas:packageUberJarForCurrentOS --no-daemon
+    & .\gradlew.bat :skaldoria-presentation:createDistributable :skaldoria-presentation:packageUberJarForCurrentOS :skaldoria-writer:createDistributable :skaldoria-writer:packageUberJarForCurrentOS :skaldoria-canvas:createDistributable :skaldoria-canvas:packageUberJarForCurrentOS --no-daemon
     if ($LASTEXITCODE -ne 0) {
         Write-Error 'Gradle build failed!'
         exit $LASTEXITCODE
@@ -128,7 +128,7 @@ try {
 # Step 3: Package MSI / EXE / ZIP Artifacts
 Write-Host "`n[3/5] Bundling installer packages..." -ForegroundColor Yellow
 
-$appDir = Join-Path $ProjectRoot 'build\compose\binaries\main\app\Skaldoria'
+$appDir = Join-Path $ProjectRoot 'skaldoria-presentation\build\compose\binaries\main\app\Skaldoria'
 if (Test-Path $appDir) {
     $zipName = "Skaldoria-v$Version-windows-x64-portable.zip"
     $zipPath = Join-Path $distDir $zipName
@@ -153,7 +153,7 @@ if (Test-Path $canvasAppDir) {
 }
 
 # Copy MSI installer if generated
-$msiDir = Join-Path $ProjectRoot 'build\compose\binaries\main\msi'
+$msiDir = Join-Path $ProjectRoot 'skaldoria-presentation\build\compose\binaries\main\msi'
 if (Test-Path $msiDir) {
     Get-ChildItem -Path $msiDir -Filter '*.msi' | ForEach-Object {
         $dest = Join-Path $distDir "Skaldoria-v$Version-windows-x64.msi"
@@ -179,7 +179,7 @@ if (Test-Path $writerMsiDir) {
 }
 
 # Copy EXE installer if generated
-$exeDir = Join-Path $ProjectRoot 'build\compose\binaries\main\exe'
+$exeDir = Join-Path $ProjectRoot 'skaldoria-presentation\build\compose\binaries\main\exe'
 if (Test-Path $exeDir) {
     Get-ChildItem -Path $exeDir -Filter '*.exe' | ForEach-Object {
         $dest = Join-Path $distDir "Skaldoria-v$Version-windows-x64-setup.exe"
@@ -205,7 +205,7 @@ if (Test-Path $writerExeDir) {
 }
 
 # Copy Universal Uber JAR
-$uberJarDir = Join-Path $ProjectRoot 'build\compose\jars'
+$uberJarDir = Join-Path $ProjectRoot 'skaldoria-presentation\build\compose\jars'
 if (Test-Path $uberJarDir) {
     Get-ChildItem -Path $uberJarDir -Filter '*.jar' | ForEach-Object {
         $dest = Join-Path $distDir "Skaldoria-v$Version-universal.jar"

@@ -3,7 +3,7 @@
 **Version:** 1.7.0 · **Last reviewed:** 2026-08-07 · **Suite:** 624 tests, 0 failures
 
 This document is the reference for the invariants this codebase holds, established during a
-systematic pre-release review of `src/desktopMain`. Every entry has a stable identifier, and
+systematic pre-release review of `skaldoria-presentation/src/desktopMain`. Every entry has a stable identifier, and
 those identifiers appear in code comments beside the logic they constrain.
 
 **Read this when:** a comment cites an identifier such as `SEC-2` or `MMD-6`; you are changing
@@ -700,7 +700,7 @@ already-compliant colour is untouched, and the adjustment stays minimal.
 
 **Invariant.** Every `PresentationState` a test creates is disposed before the next test starts.
 Tests obtain one from `PresentationStateTestBase.presentationState()`, which tracks it and
-disposes it in `@AfterTest`; constructing one directly anywhere in `src/desktopTest` is a failure.
+disposes it in `@AfterTest`; constructing one directly anywhere in `skaldoria-presentation/src/desktopTest` is a failure.
 
 **Rationale.** COR-11 stopped the suite writing to the developer's home. It did not stop the suite
 writing to *itself*. A mutation schedules a debounced draft save (`DRAFT_SAVE_DEBOUNCE_MS`, 750 ms)
@@ -747,13 +747,13 @@ which were overstated. Revisit if push (WebSockets/SSE) replaces polling.
 
 **Geometry is separated from drawing.** Diagram layout produces a `FlowchartScene` of pure
 rectangles and offsets; renderers walk it. See
-[ADR-002](./adr/002-diagram-geometry-architecture.md). This is what allows subgraph invariants to be
+[ADR-002](../../skaldoria-shared-ui/docs/adr/002-diagram-geometry-architecture.md). This is what allows subgraph invariants to be
 asserted without rendering.
 
 **Compact text inputs are not Material text fields.** `CompactTextField` exists because Material 3
 enforces `MinHeight = 56.dp` and 16.dp vertical content padding; constraining one below its content
 height crops rather than compresses. The same applies to buttons via `contentPadding`. See
-[CONTRIBUTING](../CONTRIBUTING.md).
+[CONTRIBUTING](../../CONTRIBUTING.md).
 
 ---
 
@@ -788,4 +788,4 @@ decks, so a change to slide splitting or classification is visible rather than s
 | Editing | Moving a slide between files requires one slide per file. |
 | Export | ~~Exported HTML loads KaTeX and Mermaid from a CDN.~~ **Resolved (OUT-01):** both are rendered at export time and embedded, so an exported deck needs no network. Maths and diagrams are now images rather than selectable text. |
 | Media | Video is not supported; only raster images. |
-| Build | `./gradlew --warning-mode all` reports one Gradle deprecation (`archives configuration`) originating in the Kotlin Multiplatform plugin. Present through Kotlin 2.3.10; requires an upstream fix. See [CONTRIBUTING](../CONTRIBUTING.md). |
+| Build | `./gradlew --warning-mode all` reports one Gradle deprecation (`archives configuration`) originating in the Kotlin Multiplatform plugin. Present through Kotlin 2.3.10; requires an upstream fix. See [CONTRIBUTING](../../CONTRIBUTING.md). |

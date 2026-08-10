@@ -58,55 +58,56 @@ if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     echo "     Run this on a machine with a display to exercise them (see docs/RENDERING_STATUS.md)."
     RENDER_FLAG="-PskipRenderTests"
 fi
-./gradlew desktopTest :skaldoria-markdown:test --no-daemon ${RENDER_FLAG}
+./gradlew :skaldoria-presentation:desktopTest :skaldoria-markdown:test --no-daemon ${RENDER_FLAG}
 echo "  -> All tests passed successfully!"
 
 # The zero-warning NFR (CONTRIBUTING.md section 6). Nothing enforces it automatically — the CI
 # workflow is manual-dispatch only (PLT-01) — so the release run is where it actually holds; the
 # Windows pipeline does the same through scripts/verify.ps1.
 echo "  -> Compiling with warnings as errors..."
-./gradlew compileKotlinDesktop compileTestKotlinDesktop -PwarningsAsErrors --no-daemon
+./gradlew :skaldoria-presentation:compileKotlinDesktop :skaldoria-presentation:compileTestKotlinDesktop -PwarningsAsErrors --no-daemon
 echo "  -> Zero warnings."
 
 # 3. Build Linux Distributable & Universal JAR
 echo -e "\n[2/5] 🔨 Building native Linux standalone distributable & universal JAR..."
-./gradlew createDistributable packageUberJarForCurrentOS --no-daemon
+./gradlew :skaldoria-presentation:createDistributable :skaldoria-presentation:packageUberJarForCurrentOS --no-daemon
 
 # Attempt to build .deb and .rpm if tools are installed
 if command -v dpkg-deb >/dev/null 2>&1 || command -v fakeroot >/dev/null 2>&1; then
     echo "  -> Building Debian (.deb) package..."
-    ./gradlew packageDeb --no-daemon || true
+    ./gradlew :skaldoria-presentation:packageDeb --no-daemon || true
 fi
 
 if command -v rpmbuild >/dev/null 2>&1; then
     echo "  -> Building RedHat (.rpm) package..."
-    ./gradlew packageRpm --no-daemon || true
+    ./gradlew :skaldoria-presentation:packageRpm --no-daemon || true
 fi
 
 # 4. Bundle Portable Tarball and Collect Artifacts
 echo -e "\n[3/5] 📦 Bundling Linux packages..."
 
-APP_DIR="build/compose/binaries/main/app/Skaldoria"
+PRESENTATION_BUILD="skaldoria-presentation/build"
+APP_DIR="${PRESENTATION_BUILD}/compose/binaries/main/app/Skaldoria"
 if [ -d "${APP_DIR}" ]; then
     TAR_NAME="Skaldoria-v${VERSION}-linux-x64-portable.tar.gz"
     echo "  -> Creating portable archive: ${TAR_NAME}..."
     tar -czf "dist/${TAR_NAME}" -C "${APP_DIR}" .
 fi
 
-if [ -d "build/compose/binaries/main/deb" ]; then
-    for deb in build/compose/binaries/main/deb/*.deb; do
+if [ -d "${PRESENTATION_BUILD}/compose/binaries/main/deb" ]; then
+    for deb in "${PRESENTATION_BUILD}"/compose/binaries/main/deb/*.deb; do
         [ -f "$deb" ] && cp "$deb" "dist/Skaldoria-v${VERSION}-linux-amd64.deb" && echo "  -> Collected DEB: Skaldoria-v${VERSION}-linux-amd64.deb"
     done
 fi
 
-if [ -d "build/compose/binaries/main/rpm" ]; then
-    for rpm in build/compose/binaries/main/rpm/*.rpm; do
+if [ -d "${PRESENTATION_BUILD}/compose/binaries/main/rpm" ]; then
+    for rpm in "${PRESENTATION_BUILD}"/compose/binaries/main/rpm/*.rpm; do
         [ -f "$rpm" ] && cp "$rpm" "dist/Skaldoria-v${VERSION}-linux-x86_64.rpm" && echo "  -> Collected RPM: Skaldoria-v${VERSION}-linux-x86_64.rpm"
     done
 fi
 
-if [ -d "build/compose/jars" ]; then
-    for jar in build/compose/jars/*.jar; do
+if [ -d "${PRESENTATION_BUILD}/compose/jars" ]; then
+    for jar in "${PRESENTATION_BUILD}"/compose/jars/*.jar; do
         [ -f "$jar" ] && cp "$jar" "dist/Skaldoria-v${VERSION}-universal.jar" && echo "  -> Collected Universal JAR: Skaldoria-v${VERSION}-universal.jar"
     done
 fi

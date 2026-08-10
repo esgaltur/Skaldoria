@@ -13,7 +13,7 @@ The idea raised: *"can we add themes like LaTeX Beamer (Warsaw, Madrid, ...)?"*
 
 A **theme** is a flat **color-token palette** only:
 
-- `PresentationTheme` (`src/desktopMain/kotlin/com/skaldoria/theme/PresentationTheme.kt`) — ~25 `Color` tokens
+- `PresentationTheme` (`skaldoria-shared-ui/src/desktopMain/kotlin/com/skaldoria/theme/PresentationTheme.kt`) — ~25 `Color` tokens
   (background, surface, primary, accent, text*, code*, badge*).
 - 4 built-ins in `BuiltinThemes.kt` (Nord Dark, Sleek Light, Cyber Midnight, Minimalist Editorial).
 - The deck picks one by name: `DeckProject.themeName` (`core/models/DeckProject.kt`) and the `.mdpres` manifest

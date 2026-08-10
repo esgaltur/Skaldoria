@@ -8,13 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Roadmap and delivery work. The candidate feature set is catalogued in
-[`docs/FEATURE_INDEX.md`](./docs/FEATURE_INDEX.md); the connectivity design is
-[ADR-005](./docs/adr/005-companion-link-establishment.md).
+[`skaldoria-presentation/docs/FEATURE_INDEX.md`](./skaldoria-presentation/docs/FEATURE_INDEX.md); the connectivity design is
+[ADR-005](./skaldoria-presentation/docs/adr/005-companion-link-establishment.md).
 Test suite: **235 to 624 tests** (558 in the app, 66 in `:skaldoria-markdown`), zero compiler warnings.
 
 ### Performance
 
-Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANCE_BASELINE.md).
+Measured, not guessed — see [`PERFORMANCE_BASELINE.md`](./skaldoria-presentation/docs/PERFORMANCE_BASELINE.md).
 
 - **The editor's syntax highlighter compiled three regexes per line, on every keystroke.** They
   were `Regex(...)` literals inside the per-line loop, and the highlighter runs on every
@@ -46,7 +46,7 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
   enough to invent a regression that never existed. Three plausible causes were investigated
   against that noise before it was recognised as noise. The probe now reports the fastest of three
   passes and routes every result through a sink. **Figures in
-  [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANCE_BASELINE.md) that predate this change should
+  [`PERFORMANCE_BASELINE.md`](./skaldoria-presentation/docs/PERFORMANCE_BASELINE.md) that predate this change should
   be re-run before being trusted.**
 
 ### Added
@@ -214,7 +214,7 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
 
 ### Known gaps
 - Editor ⇄ slide synchronisation and find-result reveal remain open; both wait on the caret
-  foundation in [ADR-004](./docs/adr/004-editor-sync-and-presentation-hud.md) Phase 2.
+  foundation in [ADR-004](./skaldoria-presentation/docs/adr/004-editor-sync-and-presentation-hud.md) Phase 2.
 - **No CI runs automatically** — hosted runner minutes are not free, so `.github/workflows/ci.yml`
   is `workflow_dispatch`-only. The project is still verified and released from a developer
   machine: `scripts/verify.ps1` is the gate (both test suites and the zero-warning build), and
@@ -229,7 +229,7 @@ Measured, not guessed — see [`docs/PERFORMANCE_BASELINE.md`](./docs/PERFORMANC
 ## [1.2.0] - 2026-08-05
 
 A correctness and hardening release, following a systematic pre-release review of the codebase.
-The invariants established are recorded in [`docs/QUALITY_BASELINE.md`](./docs/QUALITY_BASELINE.md).
+The invariants established are recorded in [`QUALITY_BASELINE.md`](./skaldoria-presentation/docs/QUALITY_BASELINE.md).
 Test suite: **70 to 221 tests**.
 
 ### Security - companion server
@@ -380,7 +380,7 @@ Test suite: **70 to 221 tests**.
   - Multi-threaded executor with automatic port-fallback across 50 ports and ephemeral fallback.
   - CORS preflight (`OPTIONS`) handling and resilient error boundaries. *(The wildcard CORS headers were removed in 1.2.0 - they were a CSRF vector.)*
   - Added `/api/parking-lot/add` endpoint for remote companion integration.
-  - Documented architectural decisions and protocol evaluations in [ADR-001](./docs/adr/001-companion-server-architecture.md).
+  - Documented architectural decisions and protocol evaluations in [ADR-001](./skaldoria-presentation/docs/adr/001-companion-server-architecture.md).
 
 ---
 

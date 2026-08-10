@@ -41,7 +41,7 @@ slide), scaled from 499 to 15,931 lines.
 > after the run, so its central claim could not be checked. That is fixed.
 >
 > ```
-> ./gradlew desktopTest --tests "*ScalingProbe*" -i
+> ./gradlew :skaldoria-presentation:desktopTest --tests "*ScalingProbe*" -i
 > ```
 
 Single machine, single JVM, relative magnitudes are the durable part — treat the absolute
