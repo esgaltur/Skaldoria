@@ -2,7 +2,7 @@ rootProject.name = "Skaldoria"
 
 /**
  * The markdown engine, extracted so it can be compiled, tested and benchmarked without Compose
- * on the classpath. See `docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase A.
+ * on the classpath. See `skaldoria-markdown/docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase A.
  */
 include(":skaldoria-markdown")
 include(":skaldoria-presentation")

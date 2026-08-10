@@ -108,7 +108,7 @@ error to a speaker who is trying to pair a phone.
 
 **2. Unit tests mutate the developer's real home directory.** The constructor starts an
 autosave path that reaches `ConfigManager`, which writes to `~/.skaldoria/`. `PresentationState()`
-is constructed in **20+ test cases**. Running `./gradlew desktopTest` wrote
+is constructed in **20+ test cases**. Running `./gradlew :skaldoria-presentation:desktopTest` wrote
 `~/.skaldoria/autosave_draft.md` and `~/.skaldoria/config.json` on this machine — verified by
 timestamp against the test run. Tests are not hermetic, and a test can in principle clobber a
 real recovered draft.

@@ -55,7 +55,7 @@ echo -e "\n[1/5] 🧪 Running test suite..."
 RENDER_FLAG=""
 if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     echo "  -> No DISPLAY/WAYLAND_DISPLAY: render guards will be skipped, not failed."
-    echo "     Run this on a machine with a display to exercise them (see docs/RENDERING_STATUS.md)."
+    echo "     Run this on a machine with a display to exercise them (see skaldoria-presentation/docs/RENDERING_STATUS.md)."
     RENDER_FLAG="-PskipRenderTests"
 fi
 ./gradlew :skaldoria-presentation:desktopTest :skaldoria-markdown:test --no-daemon ${RENDER_FLAG}

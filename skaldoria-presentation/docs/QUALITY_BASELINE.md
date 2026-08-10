@@ -602,7 +602,8 @@ slide, and the failure must land on `lastError` with `remoteServerError` untouch
 the `skaldoria.configDir` system property.
 
 **Rationale.** It was a `by lazy` resolving `user.home` with no way in. `PresentationState`
-autosaves through this object and is constructed in 20+ test cases, so `./gradlew desktopTest`
+autosaves through this object and is constructed in 20+ test cases, so
+`./gradlew :skaldoria-presentation:desktopTest`
 wrote a real `autosave_draft.md` and `config.json` into the developer's home — capable of
 clobbering a draft recovered from a genuinely crashed session. The Gradle test task now points the
 property at `build/test-config`, which makes the whole suite hermetic without each test having to

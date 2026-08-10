@@ -158,7 +158,7 @@ Small, isolated, and each removes a real defect or a real risk.
 - **Where:** `config/ConfigManager.kt:31-38`
 - **Problem:** `configDir` is a `by lazy` resolving `System.getProperty("user.home")` with no
   injection point. `PresentationState()` is constructed in 20+ tests and its autosave path
-  reaches `ConfigManager`, so `./gradlew desktopTest` writes to the developer's real
+  reaches `ConfigManager`, so `./gradlew :skaldoria-presentation:desktopTest` writes to the developer's real
   `~/.skaldoria/` — verified: the last run wrote `autosave_draft.md` and `config.json`. A test
   can clobber a genuine recovered draft.
 - **Fix:** give `ConfigManager` a settable/injectable root (`var rootDir: File = defaultRoot`,
@@ -281,7 +281,7 @@ Small, isolated, and each removes a real defect or a real risk.
 - **Fix:** `resources/portal/remote.html` + `audience.html`, read at startup by a
   `PortalAssets` loader; keep the `${BuildInfo.DISPLAY_VERSION}` substitution as an explicit
   placeholder replace.
-- **Verify:** packaging — confirm the resources ship in `createDistributable` output.
+- **Verify:** packaging — confirm the resources ship in `:skaldoria-presentation:createDistributable` output.
 - **Guard:** existing SEC-1 tests; add one asserting the assets load and contain no `innerHTML`.
 - **Effort:** M · **Risk:** medium (packaging is the real risk, not the code)
 

@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
  * coloured and correctly not a slide break. Those are excluded here deliberately.
  *
  * What remains is three rules where both sides *are* asking the same question and answering
- * differently — see `docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase E.
+ * differently — see `skaldoria-markdown/docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase E.
  *
  * **`DEFECT` assertions encode current, wrong behaviour** so a fix has to update them rather than
  * change the editor silently. None of these are the dangerous class: unlike the fence bug, whose

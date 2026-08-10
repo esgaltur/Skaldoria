@@ -11,7 +11,7 @@ import androidx.compose.ui.graphics.Color
  * rather than a parsing one — keeping it here is what lets the whole slide model move into a
  * module with no Compose on its classpath at all.
  *
- * See `docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase A.
+ * See `skaldoria-markdown/docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase A.
  */
 data class AnnotationStroke(
     val points: List<Offset>,
