@@ -189,6 +189,10 @@ The repository root is a Gradle aggregator. Each application lives in its own mo
 `:skaldoria-presentation`, `:skaldoria-writer`, and `:skaldoria-canvas`; shared parsing and
 rendering live in `:skaldoria-markdown` and `:skaldoria-shared-ui`.
 
+The planned [`skaldoria-cv`](./skaldoria-cv/README.md) product is currently specified as a
+Markdown-authored, paginated CV and résumé builder. It will become a Gradle module when its first
+production workflow is implemented.
+
 ```bash
 # Clone the repository
 git clone https://github.com/esgaltur/skaldoria.git
