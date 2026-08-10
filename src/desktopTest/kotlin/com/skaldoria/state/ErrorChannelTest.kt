@@ -1,6 +1,7 @@
 package com.skaldoria.state
 
 import com.skaldoria.PresentationStateTestBase
+import com.skaldoria.core.ports.FileDialogs
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -108,5 +109,38 @@ class ErrorChannelTest : PresentationStateTestBase() {
             state.toggleRemoteServer()
         }
         state.dispose()
+    }
+
+    @Test
+    fun `a save failure is reported instead of escaping the UI event handler`() {
+        val failingDialogs = object : FileDialogs {
+            override fun openFileOrProject(onChosen: (File) -> Unit) = Unit
+
+            override fun saveMarkdownFile(
+                currentPath: String?,
+                content: String,
+                onSaved: (String) -> Unit
+            ) = error("disk is read-only")
+
+            override fun saveAsMarkdownFile(content: String, onSaved: (String) -> Unit) =
+                error("disk is read-only")
+        }
+        val state = presentationState(fileDialogs = failingDialogs)
+
+        state.saveFile()
+
+        assertTrue(state.lastError.orEmpty().contains("disk is read-only"))
+        assertNull(state.currentFilePath)
+    }
+
+    @Test
+    fun `a missing recent path reports an open failure instead of doing nothing`() {
+        val missing = File("build/definitely-missing-${System.nanoTime()}.md")
+        val state = presentationState()
+
+        state.openPath(missing)
+
+        assertTrue(state.lastError.orEmpty().contains("does not exist"))
+        assertTrue(state.showWelcome, "a failed open must leave the current screen intact")
     }
 }

@@ -1,6 +1,7 @@
 package com.skaldoria.writer
 
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ParagraphStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -10,6 +11,7 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.sp
+import com.skaldoria.markdown.parser.HeadingRules
 import com.skaldoria.shared.ui.theme.SkaldoriaTheme
 
 class WysiwygVisualTransformation(
@@ -18,6 +20,60 @@ class WysiwygVisualTransformation(
     private val isVisualMode: Boolean,
     private val isFocusMode: Boolean = false
 ) : VisualTransformation {
+
+    /** Typography and source-marker width for one CommonMark ATX heading line. */
+    private data class HeadingVisualStyle(
+        val markerLength: Int,
+        val fontSize: androidx.compose.ui.unit.TextUnit,
+        val lineHeight: androidx.compose.ui.unit.TextUnit
+    )
+
+    /**
+     * One heading authority for source mode, the active visual line, and folded visual lines.
+     *
+     * H1 used to be 32sp inside the field's fixed 27sp line height, which clipped its glyphs
+     * and let adjacent lines collide. A paragraph style is required: font size is a span
+     * concern, but vertical metrics belong to the paragraph.
+     */
+    private fun headingStyle(lineWithoutIndent: String): HeadingVisualStyle? {
+        val heading = HeadingRules.heading(lineWithoutIndent) ?: return null
+        val whitespaceLength = lineWithoutIndent
+            .drop(heading.level)
+            .takeWhile(Char::isWhitespace)
+            .length
+        val (fontSize, lineHeight) = when (heading.level) {
+            1 -> 32.sp to 42.sp
+            2 -> 24.sp to 34.sp
+            3 -> 20.sp to 30.sp
+            4 -> 18.sp to 28.sp
+            5 -> 17.sp to 27.sp
+            else -> 16.sp to 27.sp
+        }
+        return HeadingVisualStyle(
+            markerLength = heading.level + whitespaceLength,
+            fontSize = fontSize,
+            lineHeight = lineHeight
+        )
+    }
+
+    private fun AnnotatedString.Builder.styleHeading(
+        start: Int,
+        end: Int,
+        style: HeadingVisualStyle,
+        alpha: Float = 1f
+    ) {
+        if (start >= end) return
+        addStyle(
+            SpanStyle(
+                color = theme.accent.copy(alpha = alpha),
+                fontWeight = FontWeight.Bold,
+                fontSize = style.fontSize
+            ),
+            start,
+            end
+        )
+        addStyle(ParagraphStyle(lineHeight = style.lineHeight), start, end)
+    }
 
     override fun filter(text: AnnotatedString): TransformedText {
         val originalText = text.text
@@ -33,22 +89,8 @@ class WysiwygVisualTransformation(
                 val lineEnd = lineStart + line.length
                 val trimmed = line.trimStart()
 
-                // Headers
-                if (trimmed.startsWith("# ")) {
-                    builder.addStyle(
-                        SpanStyle(color = theme.accent, fontWeight = FontWeight.Bold, fontSize = 32.sp),
-                        lineStart, lineEnd
-                    )
-                } else if (trimmed.startsWith("## ")) {
-                    builder.addStyle(
-                        SpanStyle(color = theme.accent, fontWeight = FontWeight.Bold, fontSize = 24.sp),
-                        lineStart, lineEnd
-                    )
-                } else if (trimmed.startsWith("### ")) {
-                    builder.addStyle(
-                        SpanStyle(color = theme.accent, fontWeight = FontWeight.Bold, fontSize = 20.sp),
-                        lineStart, lineEnd
-                    )
+                headingStyle(trimmed)?.let { style ->
+                    builder.styleHeading(lineStart, lineEnd, style)
                 }
 
                 // Bold (**text**)
@@ -230,12 +272,8 @@ class WysiwygVisualTransformation(
                 val tStart = transIdx
                 appendVisible(line)
                 val trimmedLine = line.trimStart()
-                if (trimmedLine.startsWith("# ")) {
-                    builder.addStyle(SpanStyle(color = theme.accent.copy(alpha = alpha), fontWeight = FontWeight.Bold, fontSize = 32.sp), tStart, transIdx)
-                } else if (trimmedLine.startsWith("## ")) {
-                    builder.addStyle(SpanStyle(color = theme.accent.copy(alpha = alpha), fontWeight = FontWeight.Bold, fontSize = 24.sp), tStart, transIdx)
-                } else if (trimmedLine.startsWith("### ")) {
-                    builder.addStyle(SpanStyle(color = theme.accent.copy(alpha = alpha), fontWeight = FontWeight.Bold, fontSize = 20.sp), tStart, transIdx)
+                headingStyle(trimmedLine)?.let { style ->
+                    builder.styleHeading(tStart, transIdx, style, alpha)
                 }
 
                 if (isFocusMode) {
@@ -244,32 +282,19 @@ class WysiwygVisualTransformation(
             } else {
                 val trimmedLine = line.trimStart()
                 val indentationLength = line.length - trimmedLine.length
-                val heading = when {
-                    trimmedLine.startsWith("### ") -> 3 to 20.sp
-                    trimmedLine.startsWith("## ") -> 2 to 24.sp
-                    trimmedLine.startsWith("# ") -> 1 to 32.sp
-                    else -> null
-                }
+                val heading = headingStyle(trimmedLine)
 
                 if (indentationLength > 0) {
                     appendVisible(line.take(indentationLength))
                 }
                 val contentStart = transIdx
                 if (heading != null) {
-                    appendHidden(heading.first + 1)
+                    appendHidden(heading.markerLength)
                 }
                 appendFoldedInline(lineEnd, alpha)
 
                 if (heading != null) {
-                    builder.addStyle(
-                        SpanStyle(
-                            color = theme.accent.copy(alpha = alpha),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = heading.second
-                        ),
-                        contentStart,
-                        transIdx
-                    )
+                    builder.styleHeading(contentStart, transIdx, heading, alpha)
                 }
             }
 

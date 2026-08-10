@@ -94,6 +94,7 @@ import com.skaldoria.writer.parser.ThematicBreak
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun WriterEditor(
@@ -107,7 +108,7 @@ fun WriterEditor(
 
     LaunchedEffect(state.text) {
         val sourceText = state.text
-        delay(PARSE_DEBOUNCE_MILLIS)
+        delay(PARSE_DEBOUNCE_MILLIS.milliseconds)
         val parsed = withContext(Dispatchers.Default) { DocumentParser().parse(sourceText) }
         state.acceptParsedDocument(sourceText, parsed)
     }
