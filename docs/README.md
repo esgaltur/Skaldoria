@@ -10,6 +10,7 @@ repository-level index.
 | Shared rendering UI | [`skaldoria-shared-ui/docs`](../skaldoria-shared-ui/docs/) |
 | Markdown Writer | [`skaldoria-writer/docs`](../skaldoria-writer/docs/) |
 | Canvas | [`skaldoria-canvas/docs`](../skaldoria-canvas/docs/) |
+| CV Builder (planned) | [`skaldoria-cv/docs`](../skaldoria-cv/docs/) |
 
 Repository-wide contribution and release guidance remains in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md), [`CHANGELOG.md`](../CHANGELOG.md), and the root
