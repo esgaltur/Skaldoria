@@ -57,12 +57,16 @@ class InjectedPortsTest : PresentationStateTestBase() {
     private class FakeServer : CompanionServerPort {
         var running = false
         var startedOnPort: Int? = null
+        var stopCalls = 0
         override fun start(deck: DeckControl, preferredPort: Int): String {
             running = true
             startedOnPort = preferredPort
             return "http://fake:$preferredPort"
         }
-        override fun stop() { running = false }
+        override fun stop() {
+            stopCalls++
+            running = false
+        }
     }
 
     @Test
@@ -142,6 +146,46 @@ class InjectedPortsTest : PresentationStateTestBase() {
         assertFalse(server.running)
         assertFalse(state.isRemoteServerRunning)
         state.dispose()
+    }
+
+    @Test
+    fun `disposing a state stops an active companion server exactly once`() {
+        val server = FakeServer()
+        val state = presentationState(companionServer = server)
+        state.toggleRemoteServer(port = 12345)
+
+        state.dispose()
+
+        assertFalse(server.running)
+        assertEquals(1, server.stopCalls)
+        assertFalse(state.isRemoteServerRunning)
+        assertEquals(null, state.remoteServerUrl)
+
+        // PresentationStateTestBase disposes the state again after this test. Disposal is
+        // idempotent with respect to the external resource, so that must not call stop twice.
+        state.dispose()
+        assertEquals(1, server.stopCalls)
+    }
+
+    @Test
+    fun `a failing companion stop is reported and can be retried`() {
+        var stopCalls = 0
+        val server = object : CompanionServerPort {
+            override fun start(deck: DeckControl, preferredPort: Int) = "http://fake:$preferredPort"
+            override fun stop() {
+                stopCalls++
+                error("socket is busy")
+            }
+        }
+        val state = presentationState(companionServer = server)
+        state.toggleRemoteServer()
+
+        state.toggleRemoteServer()
+
+        assertEquals(1, stopCalls)
+        assertTrue(state.isRemoteServerRunning, "a failed stop must not claim the endpoint is gone")
+        assertTrue(state.remoteServerError.orEmpty().contains("socket is busy"))
+        // The tracked-state teardown retries cleanup rather than leaking silently.
     }
 
     @Test

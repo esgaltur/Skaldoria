@@ -52,6 +52,33 @@ class WysiwygVisualTransformationTest {
         assertTrue(h2Style != null, "Expected 24sp font size for Header 2")
         assertEquals(FontWeight.Bold, h2Style!!.item.fontWeight)
     }
+
+    @Test
+    fun `h1 reserves enough line height to avoid clipping in the editor`() {
+        val transformed = WysiwygVisualTransformation(
+            theme = testTheme,
+            cursorIndex = 0,
+            isVisualMode = false
+        ).filter(AnnotatedString("# Large title\nBody below"))
+
+        val h1Paragraph = transformed.text.paragraphStyles.single { range ->
+            range.start == 0 && range.end == "# Large title".length
+        }
+        assertEquals(42.sp, h1Paragraph.item.lineHeight)
+        assertTrue(h1Paragraph.item.lineHeight > 32.sp, "H1 line height must exceed its font size")
+    }
+
+    @Test
+    fun `visual h1 hides all marker whitespace and keeps safe line height`() {
+        val transformed = WysiwygVisualTransformation(
+            theme = testTheme,
+            cursorIndex = 100,
+            isVisualMode = true
+        ).filter(AnnotatedString("#   Large title"))
+
+        assertEquals("Large title", transformed.text.text)
+        assertEquals(42.sp, transformed.text.paragraphStyles.single().item.lineHeight)
+    }
     
     @Test
     fun `visual transform handles leading whitespace`() {

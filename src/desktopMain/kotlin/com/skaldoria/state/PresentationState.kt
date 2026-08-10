@@ -202,6 +202,26 @@ class PresentationState(
         lastError = null
     }
 
+    /**
+     * Runs a synchronous application-boundary operation without letting an I/O or repository
+     * exception tear down the Compose event loop.
+     *
+     * Native dialogs block until their callback has completed, so file reads and writes made
+     * by [FileDialogs] are covered by the same boundary. Programming errors and VM failures
+     * are deliberately not swallowed: only [Exception] represents an operation the user can
+     * recover from by choosing another path or retrying.
+     */
+    private inline fun reportFailure(message: String, operation: () -> Unit) {
+        try {
+            operation()
+            lastError = null
+        } catch (failure: Exception) {
+            val detail = failure.message?.takeIf { it.isNotBlank() }
+                ?: failure.javaClass.simpleName
+            lastError = "$message: $detail"
+        }
+    }
+
     // DED-10: `isCustomThemeDialogOpen` and `isExportBundleDialogOpen` sat here and were read
     // by nothing. Neither is an unfinished feature — ZIP export ships and is reachable from the
     // Export menu (`TopBar`), it just opens a native AWT `FileDialog`, which is modal and holds
@@ -604,6 +624,9 @@ class PresentationState(
 
     /** Releases the background timer and flushes preferences. Call when the app shuts down. */
     fun dispose() {
+        // The state owns a successfully started companion session. Closing the studio must
+        // release its socket and worker pool as surely as pressing "Stop Server" does.
+        if (isRemoteServerRunning) stopRemoteServer()
         persistUiPreferences()
         timer.dispose()
         scope.cancel()
@@ -712,8 +735,8 @@ class PresentationState(
      * Falls back to opening the selection as plain markdown when it does not resolve to a
      * project, so a malformed manifest still shows something rather than failing silently.
      */
-    fun openPath(target: java.io.File) {
-        if (!target.exists()) return
+    fun openPath(target: java.io.File) = reportFailure("Could not open ${target.name}") {
+        require(target.exists()) { "The selected path does not exist" }
 
         // Classification is by validation, never by file extension. A name-based guess would
         // make every `.json` a manifest, and the manifest loader adopts sibling `.md` files
@@ -724,8 +747,10 @@ class PresentationState(
         if (target.isDirectory) {
             // A folder only opens as a project when it actually carries one; there is no
             // markdown file to fall back to, so an ordinary folder simply does nothing.
-            if (manager.isProjectDirectory(target)) openDeckProject(target)
-            return
+            if (manager.isProjectDirectory(target)) {
+                adoptProject(manager.loadProjectFromDirectory(target))
+            }
+            return@reportFailure
         }
 
         // A file is a project only if it parses as a manifest *and* resolves to real slides
@@ -734,20 +759,20 @@ class PresentationState(
         val project = manager.readManifestProject(target)
         if (project != null) {
             adoptProject(project)
-            return
+            return@reportFailure
         }
 
         loadMarkdownFromFile(target.absolutePath, target.readText())
     }
 
     /** Loads a deck project from either a project directory or a manifest file. */
-    fun openDeckProject(target: java.io.File) {
-        val proj = if (target.isDirectory) {
+    fun openDeckProject(target: java.io.File) = reportFailure("Could not open ${target.name}") {
+        val project = if (target.isDirectory) {
             projects.loadProjectFromDirectory(target)
         } else {
             projects.loadProjectFromManifest(target)
         }
-        adoptProject(proj)
+        adoptProject(project)
     }
 
     /** Makes [proj] the active deck. Shared by every project entry point. */
@@ -884,11 +909,11 @@ class PresentationState(
         }
     }
 
-    fun saveFile() {
+    fun saveFile() = reportFailure("Could not save the presentation") {
         if (isProjectMode) {
-            val proj = activeProject ?: return
+            val proj = activeProject ?: return@reportFailure
             projects.saveProject(proj)
-            return
+            return@reportFailure
         }
         fileDialogs.saveMarkdownFile(currentFilePath, markdownText) { path ->
             currentFilePath = path
@@ -897,7 +922,7 @@ class PresentationState(
         }
     }
 
-    fun saveAsFile() {
+    fun saveAsFile() = reportFailure("Could not save a copy of the presentation") {
         fileDialogs.saveAsMarkdownFile(markdownText) { path ->
             currentFilePath = path
             val firstTitle = slides.firstOrNull()?.title ?: "Presentation"
@@ -905,7 +930,7 @@ class PresentationState(
         }
     }
 
-    fun exportHtml() {
+    fun exportHtml() = reportFailure("Could not export the presentation") {
         com.skaldoria.export.FileManager.exportStandaloneHtmlDeck(this) { _ -> }
     }
 
@@ -929,10 +954,7 @@ class PresentationState(
 
     fun toggleRemoteServer(port: Int = 8888) {
         if (isRemoteServerRunning) {
-            companionServer.stop()
-            isRemoteServerRunning = false
-            remoteServerUrl = null
-            remoteServerError = null
+            stopRemoteServer()
         } else {
             try {
                 remoteServerError = null
@@ -944,6 +966,24 @@ class PresentationState(
                 remoteServerUrl = null
                 remoteServerError = e.message ?: "Failed to start HTTP server (${e.javaClass.simpleName})"
             }
+        }
+    }
+
+    /**
+     * Stops the companion while keeping the published state honest when a custom/injected
+     * server cannot release its resources. A failed stop is recoverable and may be retried;
+     * claiming the server is off would hide a potentially live remote-control endpoint.
+     */
+    private fun stopRemoteServer() {
+        try {
+            companionServer.stop()
+            isRemoteServerRunning = false
+            remoteServerUrl = null
+            remoteServerError = null
+        } catch (failure: Exception) {
+            val detail = failure.message?.takeIf { it.isNotBlank() }
+                ?: failure.javaClass.simpleName
+            remoteServerError = "Failed to stop companion server: $detail"
         }
     }
 

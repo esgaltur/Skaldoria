@@ -121,6 +121,10 @@ kotlin {
                 // JUnit Platform can run these tests. JUnit 4 is deliberately not on the classpath.
                 implementation(kotlin("test-junit5"))
                 implementation(libs.junit.jupiter)
+                // Exercise the actual Compose semantics and input path, not only rendered
+                // pixels. The Writer module uses the same multiplatform test harness.
+                @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+                implementation(compose.uiTest)
             }
         }
     }

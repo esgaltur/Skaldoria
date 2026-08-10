@@ -48,6 +48,22 @@ fun EditorWorkspace(
 ) {
     var addTemplateMenuExpanded by remember { mutableStateOf(false) }
 
+    // DED-6 was only half-wired: file/project failures reached `lastError`, but no composable
+    // read it, so the user still experienced a silent failure. Keep this at the workspace
+    // boundary so every studio action shares one visible, dismissible error surface.
+    state.lastError?.let { message ->
+        AlertDialog(
+            onDismissRequest = state::clearLastError,
+            title = { Text("Presentation error") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = state::clearLastError) {
+                    Text("Dismiss")
+                }
+            }
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
