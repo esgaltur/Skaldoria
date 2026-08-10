@@ -64,7 +64,8 @@ fun CanvasEdgeRenderer(
             }
 
             // Draw Bezier spline
-            val bezierPath = CanvasGeometry.buildBezierPath(startScreen, endScreen)
+            val bezier = CanvasGeometry.bezierBetween(startScreen, endScreen)
+            val bezierPath = CanvasGeometry.buildBezierPath(bezier)
             drawPath(
                 path = bezierPath,
                 color = edgeColor,
@@ -77,7 +78,7 @@ fun CanvasEdgeRenderer(
 
             // Draw Arrowhead
             val arrowheadPoints = CanvasGeometry.computeArrowhead(
-                start = startScreen,
+                start = bezier.control2,
                 target = endScreen,
                 arrowLength = 14f * state.viewport.zoom.coerceIn(0.6f, 2f),
                 arrowAngleDeg = 26f

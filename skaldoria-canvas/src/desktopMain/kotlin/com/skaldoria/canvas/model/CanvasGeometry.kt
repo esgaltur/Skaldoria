@@ -10,6 +10,27 @@ import kotlin.math.*
  */
 object CanvasGeometry {
 
+    /** Complete screen-space geometry for one cubic Bézier edge. */
+    data class CubicBezier(
+        val start: Offset,
+        val control1: Offset,
+        val control2: Offset,
+        val end: Offset
+    ) {
+        fun pointAt(t: Float): Offset {
+            val clampedT = t.coerceIn(0f, 1f)
+            val u = 1f - clampedT
+            val uu = u * u
+            val tt = clampedT * clampedT
+            return Offset(
+                x = uu * u * start.x + 3f * uu * clampedT * control1.x +
+                    3f * u * tt * control2.x + tt * clampedT * end.x,
+                y = uu * u * start.y + 3f * uu * clampedT * control1.y +
+                    3f * u * tt * control2.y + tt * clampedT * end.y
+            )
+        }
+    }
+
     /**
      * Resolves the best source and destination ports for an edge connecting [from] to [to].
      */
@@ -52,7 +73,7 @@ object CanvasGeometry {
     /**
      * Builds a smooth cubic Bezier curve path connecting [start] to [end].
      */
-    fun buildBezierPath(start: Offset, end: Offset): Path {
+    fun bezierBetween(start: Offset, end: Offset): CubicBezier {
         val dx = end.x - start.x
         val dy = end.y - start.y
         val dist = hypot(dx, dy)
@@ -70,45 +91,29 @@ object CanvasGeometry {
             Offset(end.x, end.y - (if (dy >= 0) curvature else -curvature))
         }
 
-        return Path().apply {
-            moveTo(start.x, start.y)
-            cubicTo(cp1.x, cp1.y, cp2.x, cp2.y, end.x, end.y)
-        }
+        return CubicBezier(start, cp1, cp2, end)
+    }
+
+    fun buildBezierPath(start: Offset, end: Offset): Path =
+        buildBezierPath(bezierBetween(start, end))
+
+    fun buildBezierPath(curve: CubicBezier): Path = Path().apply {
+        moveTo(curve.start.x, curve.start.y)
+        cubicTo(
+            curve.control1.x,
+            curve.control1.y,
+            curve.control2.x,
+            curve.control2.y,
+            curve.end.x,
+            curve.end.y
+        )
     }
 
     /**
      * Calculates the midpoint of a cubic Bezier curve between [start] and [end] for placing edge label pills.
      */
-    fun calculateMidpoint(start: Offset, end: Offset): Offset {
-        val dx = end.x - start.x
-        val dy = end.y - start.y
-        val dist = hypot(dx, dy)
-        val curvature = min(dist * 0.5f, 150f).coerceAtLeast(30f)
-
-        val cp1 = if (abs(dx) > abs(dy)) {
-            Offset(start.x + (if (dx >= 0) curvature else -curvature), start.y)
-        } else {
-            Offset(start.x, start.y + (if (dy >= 0) curvature else -curvature))
-        }
-
-        val cp2 = if (abs(dx) > abs(dy)) {
-            Offset(end.x - (if (dx >= 0) curvature else -curvature), end.y)
-        } else {
-            Offset(end.x, end.y - (if (dy >= 0) curvature else -curvature))
-        }
-
-        // Evaluate cubic bezier at t = 0.5
-        val t = 0.5f
-        val u = 1f - t
-        val tt = t * t
-        val uu = u * u
-        val uuu = uu * u
-        val ttt = tt * t
-
-        val x = uuu * start.x + 3 * uu * t * cp1.x + 3 * u * tt * cp2.x + ttt * end.x
-        val y = uuu * start.y + 3 * uu * t * cp1.y + 3 * u * tt * cp2.y + ttt * end.y
-        return Offset(x, y)
-    }
+    fun calculateMidpoint(start: Offset, end: Offset): Offset =
+        bezierBetween(start, end).pointAt(0.5f)
 
     /**
      * Computes the 3 vertices of an arrowhead polygon at [target] pointed in the incoming tangent direction.
@@ -149,36 +154,11 @@ object CanvasGeometry {
      * Determines whether a point is close to the cubic Bezier curve connecting [start] and [end].
      */
     fun isPointNearBezier(point: Offset, start: Offset, end: Offset, threshold: Float = 14f): Boolean {
-        val dx = end.x - start.x
-        val dy = end.y - start.y
-        val dist = hypot(dx, dy)
-        val curvature = min(dist * 0.5f, 150f).coerceAtLeast(30f)
-
-        val cp1 = if (abs(dx) > abs(dy)) {
-            Offset(start.x + (if (dx >= 0) curvature else -curvature), start.y)
-        } else {
-            Offset(start.x, start.y + (if (dy >= 0) curvature else -curvature))
-        }
-
-        val cp2 = if (abs(dx) > abs(dy)) {
-            Offset(end.x - (if (dx >= 0) curvature else -curvature), end.y)
-        } else {
-            Offset(end.x, end.y - (if (dy >= 0) curvature else -curvature))
-        }
-
+        val curve = bezierBetween(start, end)
         val steps = 20
         var prev = start
         for (step in 1..steps) {
-            val t = step / steps.toFloat()
-            val u = 1f - t
-            val tt = t * t
-            val uu = u * u
-            val uuu = uu * u
-            val ttt = tt * t
-
-            val x = uuu * start.x + 3 * uu * t * cp1.x + 3 * u * tt * cp2.x + ttt * end.x
-            val y = uuu * start.y + 3 * uu * t * cp1.y + 3 * u * tt * cp2.y + ttt * end.y
-            val current = Offset(x, y)
+            val current = curve.pointAt(step / steps.toFloat())
 
             if (isPointNearSegment(point, prev, current, threshold)) {
                 return true

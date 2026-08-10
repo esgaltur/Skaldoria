@@ -31,7 +31,7 @@ suspend fun PointerInputScope.detectCanvasGestures(
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = true)
         if (consumeDown) down.consume()
-        val downTime = System.currentTimeMillis()
+        val downTime = down.uptimeMillis
         val downPos = down.position
         var isDragging = false
         var isMiddleDragging = false
@@ -71,19 +71,21 @@ suspend fun PointerInputScope.detectCanvasGestures(
 
             val delta = change.position - change.previousPosition
             accumulatedDrag += delta
+            var dragDelta = delta
 
             if (!isDragging && accumulatedDrag.getDistance() >= dragSlop) {
                 isDragging = true
                 isMiddleDragging = event.buttons.isTertiaryPressed && onMiddleDrag != null
                 if (!isMiddleDragging) onDragStart?.invoke(downPos)
+                dragDelta = accumulatedDrag
             }
 
             if (isDragging) {
                 change.consume()
                 if (isMiddleDragging && onMiddleDrag != null) {
-                    onMiddleDrag.invoke(delta)
+                    onMiddleDrag.invoke(dragDelta)
                 } else {
-                    onDrag?.invoke(change, delta)
+                    onDrag?.invoke(change, dragDelta)
                 }
             }
         }
