@@ -103,6 +103,40 @@ class CanvasStateTest {
     }
 
     @Test
+    fun testConnectionLifecycleCreatesEdgeAtScreenTarget() {
+        val state = CanvasState(CanvasDocument())
+        val source = state.addNode(Offset(50f, 60f), width = 120f, height = 100f)
+        val target = state.addNode(Offset(350f, 60f), width = 120f, height = 100f)
+        state.panBy(Offset(25f, 15f))
+        state.zoomAt(1.5f, Offset.Zero)
+
+        val sourceScreen = state.viewport.canvasToScreen(source.center)
+        val targetScreen = state.viewport.canvasToScreen(target.center)
+        state.beginConnection(source.id, EdgePort.Right, sourceScreen)
+        state.moveConnectionPointerBy(targetScreen - sourceScreen)
+        val edge = state.finishConnection()
+
+        assertNotNull(edge)
+        assertEquals(source.id, edge.fromNodeId)
+        assertEquals(target.id, edge.toNodeId)
+        assertEquals(EdgePort.Right, edge.fromPort)
+        assertNull(state.connectingSourceNodeId)
+        assertNull(state.connectingTargetPosition)
+    }
+
+    @Test
+    fun testCancelledConnectionCannotCreateEdge() {
+        val state = CanvasState(CanvasDocument())
+        val source = state.addNode(Offset.Zero)
+
+        state.beginConnection(source.id, EdgePort.Auto, Offset(20f, 20f))
+        state.cancelConnection()
+
+        assertNull(state.finishConnection())
+        assertTrue(state.edges.isEmpty())
+    }
+
+    @Test
     fun testEdgeHitTesting() {
         val state = CanvasState(CanvasDocument())
         val n1 = state.addNode(Offset(0f, 0f), width = 100f, height = 100f)

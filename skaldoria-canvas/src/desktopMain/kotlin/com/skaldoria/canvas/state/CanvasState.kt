@@ -290,6 +290,41 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         return newEdge
     }
 
+    fun beginConnection(sourceNodeId: String, sourcePort: EdgePort, pointerScreenPosition: Offset) {
+        if (nodes.none { it.id == sourceNodeId }) return
+        connectingSourceNodeId = sourceNodeId
+        connectingSourcePort = sourcePort
+        connectingTargetPosition = pointerScreenPosition
+    }
+
+    fun moveConnectionPointerBy(screenDelta: Offset) {
+        connectingTargetPosition = connectingTargetPosition?.plus(screenDelta)
+    }
+
+    fun finishConnection(): CanvasEdge? {
+        val sourceId = connectingSourceNodeId
+        val targetPosition = connectingTargetPosition
+        val sourcePort = connectingSourcePort
+        cancelConnection()
+        if (sourceId == null || targetPosition == null) return null
+
+        val targetCanvasPosition = viewport.screenToCanvas(targetPosition)
+        val targetNode = findNodeAt(targetCanvasPosition) ?: return null
+        if (targetNode.id == sourceId) return null
+        return addEdge(
+            fromId = sourceId,
+            toId = targetNode.id,
+            fromPort = sourcePort,
+            toPort = EdgePort.Auto
+        )
+    }
+
+    fun cancelConnection() {
+        connectingSourceNodeId = null
+        connectingSourcePort = EdgePort.Auto
+        connectingTargetPosition = null
+    }
+
     fun updateEdgeLabel(edgeId: String, newLabel: String) {
         val edge = edges.find { it.id == edgeId } ?: return
         if (edge.label == newLabel) return

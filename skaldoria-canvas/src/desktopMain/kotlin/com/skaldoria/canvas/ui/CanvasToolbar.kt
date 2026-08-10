@@ -84,6 +84,16 @@ fun CanvasToolbar(
                         letterSpacing = 1.sp
                     )
                 )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = com.skaldoria.canvas.BuildInfo.DISPLAY_VERSION,
+                    style = TextStyle(
+                        color = currentTheme.textMuted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.5.sp
+                    )
+                )
             }
 
             VerticalDivider(color = currentTheme.cardBorder, modifier = Modifier.height(20.dp))

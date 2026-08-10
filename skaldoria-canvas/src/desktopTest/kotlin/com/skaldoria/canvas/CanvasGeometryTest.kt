@@ -85,4 +85,16 @@ class CanvasGeometryTest {
         assertEquals(200f, mid.x)
         assertEquals(300f, mid.y)
     }
+
+    @Test
+    fun testBezierGeometryHasStableEndpointsAndEndTangent() {
+        val start = Offset(100f, 100f)
+        val end = Offset(500f, 300f)
+        val curve = CanvasGeometry.bezierBetween(start, end)
+
+        assertEquals(start, curve.pointAt(0f))
+        assertEquals(end, curve.pointAt(1f))
+        assertEquals(end.y, curve.control2.y)
+        assertTrue(curve.control2.x < end.x)
+    }
 }

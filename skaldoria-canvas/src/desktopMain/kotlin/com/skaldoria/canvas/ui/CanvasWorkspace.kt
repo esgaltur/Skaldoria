@@ -19,6 +19,7 @@ import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.skaldoria.canvas.io.CanvasExporter
 import com.skaldoria.canvas.io.CanvasSerializer
@@ -52,6 +53,7 @@ fun CanvasWorkspace(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .testTag(CanvasTestTags.Workspace)
             .background(theme.background)
             .onSizeChanged {
                 canvasSize = Size(it.width.toFloat(), it.height.toFloat())
@@ -100,9 +102,11 @@ fun CanvasWorkspace(
                                 val canvasStart = state.viewport.screenToCanvas(startPos)
                                 val node = state.findNodeAt(canvasStart)
                                 if (node != null) {
-                                    state.connectingSourceNodeId = node.id
-                                    state.connectingSourcePort = com.skaldoria.canvas.model.EdgePort.Auto
-                                    state.connectingTargetPosition = startPos
+                                    state.beginConnection(
+                                        sourceNodeId = node.id,
+                                        sourcePort = com.skaldoria.canvas.model.EdgePort.Auto,
+                                        pointerScreenPosition = startPos
+                                    )
                                 }
                             }
                         }
@@ -117,7 +121,7 @@ fun CanvasWorkspace(
                             }
                             com.skaldoria.canvas.state.CanvasTool.Connect -> {
                                 if (state.connectingSourceNodeId != null) {
-                                    state.connectingTargetPosition = (state.connectingTargetPosition ?: change.position) + dragAmount
+                                    state.moveConnectionPointerBy(dragAmount)
                                 } else {
                                     state.panBy(dragAmount)
                                 }
@@ -138,31 +142,16 @@ fun CanvasWorkspace(
                                 state.applyMarqueeSelection(screenRect)
                             }
                         } else if (state.activeTool == com.skaldoria.canvas.state.CanvasTool.Connect) {
-                            val targetScreenPos = state.connectingTargetPosition
-                            val sourceId = state.connectingSourceNodeId
-                            if (targetScreenPos != null && sourceId != null) {
-                                val targetCanvasPos = state.viewport.screenToCanvas(targetScreenPos)
-                                val targetNode = state.findNodeAt(targetCanvasPos)
-                                if (targetNode != null && targetNode.id != sourceId) {
-                                    state.addEdge(
-                                        fromId = sourceId,
-                                        toId = targetNode.id,
-                                        fromPort = com.skaldoria.canvas.model.EdgePort.Auto,
-                                        toPort = com.skaldoria.canvas.model.EdgePort.Auto
-                                    )
-                                }
-                            }
+                            state.finishConnection()
                         }
                         state.marqueeStart = null
                         state.marqueeCurrent = null
-                        state.connectingSourceNodeId = null
-                        state.connectingTargetPosition = null
+                        state.cancelConnection()
                     },
                     onDragCancel = {
                         state.marqueeStart = null
                         state.marqueeCurrent = null
-                        state.connectingSourceNodeId = null
-                        state.connectingTargetPosition = null
+                        state.cancelConnection()
                     },
                     consumeDown = true
                 )

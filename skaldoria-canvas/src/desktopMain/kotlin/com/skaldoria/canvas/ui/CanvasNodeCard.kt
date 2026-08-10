@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skaldoria.canvas.model.*
 import com.skaldoria.canvas.state.CanvasState
+import com.skaldoria.canvas.state.CanvasTool
 import com.skaldoria.markdown.models.SlideElement
 import com.skaldoria.markdown.parser.MarkdownSlideParser
 import com.skaldoria.theme.PresentationTheme
@@ -34,6 +35,7 @@ import com.skaldoria.ui.components.*
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 
@@ -95,33 +97,62 @@ fun CanvasNodeCard(
                 shape = cardShape,
                 spotColor = if (isSelected) theme.primary.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.25f)
             )
-            .clip(cardShape)
-            .background(cardBg)
+            .background(cardBg, cardShape)
             .border(borderStroke, cardShape)
-            .pointerInput(node.id, zoom, isEditing) {
+            .testTag(CanvasTestTags.node(node.id))
+            .pointerInput(node.id, zoom, isEditing, state.activeTool) {
                 if (!isEditing) {
                     detectCanvasGestures(
                         onMiddleDrag = { delta ->
                             state.panBy(delta)
                         },
                         onTap = {
-                            state.selectNode(node.id, multiSelect = false)
-                        },
-                        onDoubleTap = {
-                            state.editingNodeId = node.id
-                        },
-                        onDragStart = {
-                            if (!state.selectedNodeIds.contains(node.id)) {
+                            if (state.activeTool != CanvasTool.Pan) {
                                 state.selectNode(node.id, multiSelect = false)
                             }
-                            state.beginNodeTransform()
+                        },
+                        onDoubleTap = {
+                            if (state.activeTool == CanvasTool.Select) {
+                                state.editingNodeId = node.id
+                            }
+                        },
+                        onDragStart = { localPointerPosition ->
+                            when (state.activeTool) {
+                                CanvasTool.Select -> {
+                                    if (node.id !in state.selectedNodeIds) {
+                                        state.selectNode(node.id, multiSelect = false)
+                                    }
+                                    state.beginNodeTransform()
+                                }
+                                CanvasTool.Connect -> state.beginConnection(
+                                    sourceNodeId = node.id,
+                                    sourcePort = EdgePort.Auto,
+                                    pointerScreenPosition = screenPos + localPointerPosition
+                                )
+                                CanvasTool.Pan -> Unit
+                            }
                         },
                         onDrag = { _, dragAmount ->
-                            val deltaCanvas = Offset(dragAmount.x / zoom, dragAmount.y / zoom)
-                            state.moveSelectedNodes(deltaCanvas)
+                            when (state.activeTool) {
+                                CanvasTool.Select -> state.moveSelectedNodes(dragAmount / zoom)
+                                CanvasTool.Connect -> state.moveConnectionPointerBy(dragAmount)
+                                CanvasTool.Pan -> state.panBy(dragAmount)
+                            }
                         },
-                        onDragEnd = state::endNodeTransform,
-                        onDragCancel = state::endNodeTransform,
+                        onDragEnd = {
+                            when (state.activeTool) {
+                                CanvasTool.Select -> state.endNodeTransform()
+                                CanvasTool.Connect -> state.finishConnection()
+                                CanvasTool.Pan -> Unit
+                            }
+                        },
+                        onDragCancel = {
+                            when (state.activeTool) {
+                                CanvasTool.Select -> state.endNodeTransform()
+                                CanvasTool.Connect -> state.cancelConnection()
+                                CanvasTool.Pan -> Unit
+                            }
+                        },
                         consumeDown = true
                     )
                 }
@@ -137,6 +168,7 @@ fun CanvasNodeCard(
                     width = with(density) { node.width.toDp() },
                     height = with(density) { node.height.toDp() }
                 )
+                .clip(cardShape)
                 .graphicsLayer {
                     scaleX = zoom
                     scaleY = zoom
@@ -155,7 +187,10 @@ fun CanvasNodeCard(
                         state.editingNodeId = if (isEditing) null else node.id
                     },
                     onOpenColorMenu = { showColorMenu = true },
-                    onDelete = { state.deleteSelected() }
+                    onDelete = {
+                        state.selectNode(node.id)
+                        state.deleteSelected()
+                    }
                 )
 
                 HorizontalDivider(
@@ -249,17 +284,19 @@ fun CanvasNodeCard(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .size(16.dp)
-                .pointerInput(node.id, zoom) {
-                    detectCanvasGestures(
-                        onDragStart = { state.beginNodeTransform() },
-                        onDragEnd = state::endNodeTransform,
-                        onDragCancel = state::endNodeTransform,
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            state.resizeNode(node.id, dragAmount.x / zoom, dragAmount.y / zoom)
-                        },
-                        consumeDown = true
-                    )
+                .pointerInput(node.id, zoom, state.activeTool) {
+                    if (state.activeTool == CanvasTool.Select) {
+                        detectCanvasGestures(
+                            onDragStart = { state.beginNodeTransform() },
+                            onDragEnd = state::endNodeTransform,
+                            onDragCancel = state::endNodeTransform,
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                state.resizeNode(node.id, dragAmount.x / zoom, dragAmount.y / zoom)
+                            },
+                            consumeDown = true
+                        )
+                    }
                 }
         ) {
             Icon(
@@ -538,42 +575,23 @@ private fun BoxScope.PortHandle(
             .clip(CircleShape)
             .background(if (isConnectingThis) theme.primary else theme.cardBorder)
             .border(1.5.dp, if (isConnectingThis) Color.White else theme.surface, CircleShape)
+            .testTag(CanvasTestTags.port(node.id, port.name))
             .pointerInput(node.id, port) {
                 detectCanvasGestures(
                     onDragStart = {
-                        state.connectingSourceNodeId = node.id
-                        state.connectingSourcePort = port
                         val portCanvas = node.portPosition(port)
-                        state.connectingTargetPosition = state.viewport.canvasToScreen(portCanvas)
+                        state.beginConnection(
+                            sourceNodeId = node.id,
+                            sourcePort = port,
+                            pointerScreenPosition = state.viewport.canvasToScreen(portCanvas)
+                        )
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        val current = state.connectingTargetPosition ?: state.viewport.canvasToScreen(node.portPosition(port))
-                        state.connectingTargetPosition = current + dragAmount
+                        state.moveConnectionPointerBy(dragAmount)
                     },
-                    onDragEnd = {
-                        val targetScreenPos = state.connectingTargetPosition
-                        if (targetScreenPos != null) {
-                            val targetCanvasPos = state.viewport.screenToCanvas(targetScreenPos)
-                            val targetNode = state.nodes.find {
-                                it.id != node.id && it.bounds.contains(targetCanvasPos)
-                            }
-                            if (targetNode != null) {
-                                state.addEdge(
-                                    fromId = node.id,
-                                    toId = targetNode.id,
-                                    fromPort = port,
-                                    toPort = EdgePort.Auto
-                                )
-                            }
-                        }
-                        state.connectingSourceNodeId = null
-                        state.connectingTargetPosition = null
-                    },
-                    onDragCancel = {
-                        state.connectingSourceNodeId = null
-                        state.connectingTargetPosition = null
-                    },
+                    onDragEnd = { state.finishConnection() },
+                    onDragCancel = state::cancelConnection,
                     consumeDown = true
                 )
             }
