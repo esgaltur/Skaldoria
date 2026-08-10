@@ -59,7 +59,7 @@ object ConfigManager {
      *
      * This was a `by lazy` resolving `user.home` with nothing able to override it. Because
      * `PresentationState`'s autosave path reaches this object, and that class is constructed
-     * in 20+ test cases, running `./gradlew desktopTest` wrote a real `autosave_draft.md`
+     * in 20+ test cases, running `./gradlew :skaldoria-presentation:desktopTest` wrote a real `autosave_draft.md`
      * and `config.json` into the developer's home — capable of clobbering a draft recovered
      * from a genuinely crashed session.
      *

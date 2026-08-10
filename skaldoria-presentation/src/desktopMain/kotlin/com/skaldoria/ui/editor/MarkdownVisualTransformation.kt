@@ -44,7 +44,7 @@ class MarkdownVisualTransformation(
          *
          * The rules that must *not* diverge are the shared-grammar ones in `:skaldoria-markdown`
          * (`FenceRules`), which this file calls rather than reimplements. See
-         * `docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase E, for the three that still disagree in ways
+         * `skaldoria-markdown/docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase E, for the three that still disagree in ways
          * that are genuine bugs — horizontal rules, table rows and `$$` blocks.
          *
          * PRF-5: compiled once.
@@ -117,7 +117,7 @@ class MarkdownVisualTransformation(
             //
             // Measured as making no difference on `PerformanceProbe`, and kept anyway: it costs
             // one field write and it bounds peak live memory, which the probe does not measure at
-            // all. See the open question in docs/MARKDOWN_UNIFICATION_PLAN.md, Phase C.
+            // all. See the open question in skaldoria-markdown/docs/MARKDOWN_UNIFICATION_PLAN.md, Phase C.
             memo = null
 
             val result = buildHighlight(text, theme, searchMatches, activeMatchIndex)

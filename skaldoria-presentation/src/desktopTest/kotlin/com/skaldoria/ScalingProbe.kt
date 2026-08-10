@@ -17,7 +17,7 @@ import kotlin.test.Test
  * claim could not be reproduced from the tree — the gap this class closes.
  *
  * ```
- * ./gradlew desktopTest --tests "*ScalingProbe*" -i
+ * ./gradlew :skaldoria-presentation:desktopTest --tests "*ScalingProbe*" -i
  * ```
  */
 class ScalingProbe {

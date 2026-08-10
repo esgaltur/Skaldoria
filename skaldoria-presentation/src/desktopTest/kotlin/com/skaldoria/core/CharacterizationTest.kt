@@ -12,7 +12,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Characterization tests for the bundled decks — see docs/QUALITY_BASELINE.md.
+ * Characterization tests for the bundled decks — see
+ * skaldoria-presentation/docs/QUALITY_BASELINE.md.
  *
  * These pin parser output so that a change to slide splitting or layout classification is
  * visible rather than silent. They are deliberately broad rather than deep: slide counts,

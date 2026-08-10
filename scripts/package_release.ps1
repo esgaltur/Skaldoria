@@ -98,8 +98,8 @@ if (Test-Path $distDir) {
 # Step 1: Run the local verification gate
 #
 # Delegated to verify.ps1 so the release and a plain local check cannot drift apart. It runs
-# BOTH modules — this step used to run `desktopTest` alone, so :skaldoria-markdown could be
-# red while a release was cut — and the zero-warning compile.
+# Every application and library module — this step once ran only the presentation tests, so
+# another module could be red while a release was cut — followed by the zero-warning compile.
 if (-not $SkipTests) {
     Write-Host '[1/5] Running local verification gate (tests + zero-warning build)...' -ForegroundColor Yellow
     & (Join-Path $PSScriptRoot 'verify.ps1') -SkipRenderTests:$SkipRenderTests

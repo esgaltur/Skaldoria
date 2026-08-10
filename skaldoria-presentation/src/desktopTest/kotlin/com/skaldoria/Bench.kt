@@ -7,7 +7,8 @@ import kotlin.time.measureTime
  * The measurement harness both probes use.
  *
  * Extracted rather than duplicated because *how to benchmark reliably here* is one piece of
- * knowledge, and it was learned the hard way — see PRF-6 in `docs/PERFORMANCE_BASELINE.md`. Two
+ * knowledge, and it was learned the hard way — see PRF-6 in
+ * `skaldoria-presentation/docs/PERFORMANCE_BASELINE.md`. Two
  * copies would drift, and a probe that measures differently from the one its numbers are compared
  * against is worse than no probe.
  *

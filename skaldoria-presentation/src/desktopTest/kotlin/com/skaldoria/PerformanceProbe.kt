@@ -16,11 +16,12 @@ import kotlin.time.measureTime
  *
  * Not an assertion suite: thresholds tuned on one machine become CI flakes, and the project
  * has already learned what a test that measures the wrong thing costs. This prints, in the
- * style of `RenderAllProbe`, and the numbers are quoted in `docs/PERFORMANCE_BASELINE.md`.
+ * style of `RenderAllProbe`, and the numbers are quoted in
+ * `skaldoria-presentation/docs/PERFORMANCE_BASELINE.md`.
  *
  * Run it alone:
  * ```
- * ./gradlew desktopTest --tests "*PerformanceProbe*" -i
+ * ./gradlew :skaldoria-presentation:desktopTest --tests "*PerformanceProbe*" -i
  * ```
  */
 class PerformanceProbe {

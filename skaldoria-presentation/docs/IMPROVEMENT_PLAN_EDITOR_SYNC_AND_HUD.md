@@ -136,7 +136,7 @@ is the single most likely way to break the editor. Ownership is split precisely 
 ### Acceptance
 
 - Typing in the middle of a 500-line deck leaves the caret where it was. Verified by hand.
-- `./gradlew desktopTest` stays at 235 passing.
+- `./gradlew :skaldoria-presentation:desktopTest` stays at 235 passing.
 - No behaviour differs from the previous commit in any other respect.
 
 ---
@@ -280,10 +280,10 @@ while the feature is unusable is the same failure shape QUALITY_BASELINE records
 
 A phase is done when all of the following hold:
 
-- [ ] `./gradlew desktopTest` passes, with the new guards included.
+- [ ] `./gradlew :skaldoria-presentation:desktopTest` passes, with the new guards included.
 - [ ] Each new guard was confirmed to **fail** against the pre-change code.
 - [ ] New invariant identifiers appear as comments beside the logic they constrain.
-- [ ] `docs/QUALITY_BASELINE.md` gains the EDT-* / HUD-* entries and its suite count is updated.
+- [ ] [`QUALITY_BASELINE.md`](./QUALITY_BASELINE.md) gains the EDT-* / HUD-* entries and its suite count is updated.
 - [ ] The manual script below passes for the phase's rows.
 - [ ] Zero new Kotlin compiler warnings — the project is at zero today.
 
