@@ -18,6 +18,9 @@ package com.skaldoria.markdown.parser
 /** An ATX heading: `#` through `######`, its level, and its text. */
 data class HeadingInfo(val level: Int, val text: String)
 
+/** A CommonMark list item and the text following its marker. */
+data class ListItemInfo(val text: String, val isOrdered: Boolean)
+
 object HeadingRules {
 
     /** CommonMark requires whitespace after the hashes — `#hashtag` is prose, not a heading. */
@@ -33,6 +36,26 @@ object HeadingRules {
 
         val match = ATX.find(text) ?: return null
         return HeadingInfo(level = match.groupValues[1].length, text = match.groupValues[2].trim())
+    }
+}
+
+/** Shared authority for the list markers understood by Skaldoria Markdown consumers. */
+object ListRules {
+    private val BULLET = Regex("""^[-*+]\s+(.+)$""")
+    private val NUMBERED = Regex("""^\d+\.\s+(.+)$""")
+
+    fun listItem(line: String): ListItemInfo? {
+        val text = line.trimStart()
+        val first = text.firstOrNull() ?: return null
+        if (first != '-' && first != '*' && first != '+' && !first.isDigit()) return null
+
+        BULLET.matchEntire(text)?.let {
+            return ListItemInfo(text = it.groupValues[1].trim(), isOrdered = false)
+        }
+        NUMBERED.matchEntire(text)?.let {
+            return ListItemInfo(text = it.groupValues[1].trim(), isOrdered = true)
+        }
+        return null
     }
 }
 

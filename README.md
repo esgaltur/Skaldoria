@@ -186,12 +186,12 @@ subgraphs are flattened — a node joins the innermost group that declared it. W
 ### Running from Source
 
 The repository root is a Gradle aggregator. Each application lives in its own module:
-`:skaldoria-presentation`, `:skaldoria-writer`, and `:skaldoria-canvas`; shared parsing and
+`:skaldoria-presentation`, `:skaldoria-writer`, `:skaldoria-canvas`, and `:skaldoria-cv`; shared parsing and
 rendering live in `:skaldoria-markdown` and `:skaldoria-shared-ui`.
 
-The planned [`skaldoria-cv`](./skaldoria-cv/README.md) product is currently specified as a
-Markdown-authored, paginated CV and résumé builder. It will become a Gradle module when its first
-production workflow is implemented.
+[`skaldoria-cv`](./skaldoria-cv/README.md) now provides its first production workflow: semantic
+Markdown editing, structural diagnostics, and a live ATS-oriented preview. Pagination and PDF
+export are tracked in its [implementation roadmap](./skaldoria-cv/docs/ROADMAP.md).
 
 ```bash
 # Clone the repository

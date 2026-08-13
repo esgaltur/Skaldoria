@@ -35,8 +35,9 @@ simultaneously different windows.
 - **CV-FR-001 — Plain Markdown source:** The application shall open and save UTF-8 `.md` files.
   A usable document shall remain readable in an ordinary text editor and version-control diff.
 - **CV-FR-002 — Optional metadata:** A document may declare CV-specific rendering metadata in
-  optional YAML front matter, including schema version, template, paper size, locale, accent color,
-  and page-margin preset. Ignoring the front matter shall not hide the CV's human-readable content.
+  optional YAML front matter, including schema version, template, theme, font, professional
+  headline, paper size, locale, accent color, and page-margin preset. Ignoring the front matter
+  shall not hide the CV's human-readable content.
 - **CV-FR-003 — Deterministic structure mapping:** One level-one heading shall identify the
   candidate, level-two headings shall define sections, and level-three headings shall define
   entries such as positions, projects, or education records. Lists, emphasis, links, and ordinary
@@ -81,9 +82,10 @@ simultaneously different windows.
 - **CV-FR-040 — ATS-safe default:** The default template shall use a single text column, explicit
   section headings, conventional reading order, and no information conveyed only through icons,
   color, floating objects, headers, or footers.
-- **CV-FR-041 — Template separation:** Users shall change templates without changing their CV
-  content. Templates may select typography, spacing, dividers, and arrangement only from the
-  semantic information supplied by the document model.
+- **CV-FR-041 — Presentation separation:** Users shall change templates, themes, and fonts without
+  changing their CV content. Templates define layout and spacing, themes define visual palette,
+  and fonts define typography. Each consumes only semantic information supplied by the document
+  model.
 - **CV-FR-042 — Page configuration:** Users shall select A4 or US Letter paper, supported margin
   presets, and an available font family before export.
 - **CV-FR-043 — Deterministic pagination:** Preview and export shall agree on line wrapping, page

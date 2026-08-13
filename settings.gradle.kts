@@ -9,6 +9,8 @@ include(":skaldoria-presentation")
 include(":skaldoria-writer")
 include(":skaldoria-shared-ui")
 include(":skaldoria-canvas")
+include(":skaldoria-cv")
+include(":skaldoria-cv-core")
 
 pluginManagement {
     repositories {
