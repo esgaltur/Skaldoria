@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -116,6 +117,10 @@ private fun CvToolbar(
             Spacer(Modifier.weight(1f))
             TextButton(onClick = onOpenRequest) { Text("Open") }
             Button(onClick = onSaveRequest) { Text("Save") }
+            Button(
+                onClick = { dispatch(CvEvent.FailureReported("PDF export is planned for Phase 3 (ATS-compliant rendering). Currently, only Markdown saving and live preview are available.")) },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+            ) { Text("Export PDF") }
             TemplateMenu(
                 selected = state.templateId,
                 onSelected = { dispatch(CvEvent.TemplateSelected(it)) }
