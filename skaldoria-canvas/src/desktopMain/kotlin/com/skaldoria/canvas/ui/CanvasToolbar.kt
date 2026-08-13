@@ -125,17 +125,32 @@ fun CanvasToolbar(
 
             VerticalDivider(color = currentTheme.cardBorder, modifier = Modifier.height(20.dp))
 
-            // File Operations
-            ToolbarIconButton(
-                icon = Icons.Default.Add,
-                tooltip = "Add Card (Double-click canvas)",
-                tint = currentTheme.primary,
-                isDark = currentTheme.isDark,
-                onClick = {
-                    val centerCanvas = state.viewport.screenToCanvas(Offset(screenWidth / 2f, screenHeight / 2f))
-                    state.addNode(centerCanvas)
+            // File Operations & Node Creation
+            Box {
+                var showAddNodeMenu by remember { mutableStateOf(false) }
+                ToolbarIconButton(
+                    icon = Icons.Default.Add,
+                    tooltip = "Add Node",
+                    tint = currentTheme.primary,
+                    isDark = currentTheme.isDark,
+                    onClick = { showAddNodeMenu = true }
+                )
+                DropdownMenu(
+                    expanded = showAddNodeMenu,
+                    onDismissRequest = { showAddNodeMenu = false }
+                ) {
+                    com.skaldoria.canvas.model.NodeShape.entries.forEach { shape ->
+                        DropdownMenuItem(
+                            text = { Text(shape.name) },
+                            onClick = {
+                                val centerCanvas = state.viewport.screenToCanvas(Offset(screenWidth / 2f, screenHeight / 2f))
+                                state.addNode(centerCanvas, shape = shape)
+                                showAddNodeMenu = false
+                            }
+                        )
+                    }
                 }
-            )
+            }
 
             ToolbarIconButton(
                 icon = Icons.AutoMirrored.Filled.NoteAdd,

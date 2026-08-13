@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "title": "Ingestion System Architecture",
+  "viewport": {
+    "panX": 0.0,
+    "panY": 0.0,
+    "zoom": 1.0
+  },
+  "nodes": [
+    {
+      "id": "node-api-gateway",
+      "x": 100.0,
+      "y": 200.0,
+      "width": 250.0,
+      "height": 100.0,
+      "markdown": "# API Gateway\n\nReceives HTTP requests and routes them to the event bus.",
+      "color": "Blue",
+      "zIndex": 1,
+      "shape": "Rectangle"
+    },
+    {
+      "id": "node-kafka",
+      "x": 450.0,
+      "y": 180.0,
+      "width": 220.0,
+      "height": 140.0,
+      "markdown": "# Kafka Queue\n\n**topic**: `raw-events`\n\nBuffers high-throughput incoming events asynchronously.",
+      "color": "Green",
+      "zIndex": 2,
+      "shape": "Cylinder"
+    },
+    {
+      "id": "node-ingestion-svc",
+      "x": 750.0,
+      "y": 180.0,
+      "width": 250.0,
+      "height": 140.0,
+      "markdown": "# Ingestion Service\n\nConsumes from Kafka, validates schema, and enriches data.",
+      "color": "Purple",
+      "zIndex": 3,
+      "shape": "Rectangle"
+    },
+    {
+      "id": "node-db",
+      "x": 1100.0,
+      "y": 180.0,
+      "width": 200.0,
+      "height": 140.0,
+      "markdown": "# PostgreSQL\n\nStores the enriched, structured event data for analysis.",
+      "color": "Red",
+      "zIndex": 4,
+      "shape": "Cylinder"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "fromNodeId": "node-api-gateway",
+      "toNodeId": "node-kafka",
+      "fromPort": "Right",
+      "toPort": "Left",
+      "label": "Publish",
+      "style": "Solid",
+      "color": null
+    },
+    {
+      "id": "edge-2",
+      "fromNodeId": "node-kafka",
+      "toNodeId": "node-ingestion-svc",
+      "fromPort": "Right",
+      "toPort": "Left",
+      "label": "Consume",
+      "style": "Dashed",
+      "color": "Green"
+    },
+    {
+      "id": "edge-3",
+      "fromNodeId": "node-ingestion-svc",
+      "toNodeId": "node-db",
+      "fromPort": "Right",
+      "toPort": "Left",
+      "label": "Write",
+      "style": "Solid",
+      "color": null
+    }
+  ]
+}

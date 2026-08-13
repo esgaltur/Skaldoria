@@ -4,6 +4,8 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.GenericShape
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -67,7 +69,25 @@ fun CanvasNodeCard(
         }
     }
 
-    val cardShape = RoundedCornerShape(10.dp)
+    val nodeShape = when (node.shape) {
+        NodeShape.Card -> RoundedCornerShape(10.dp)
+        NodeShape.Rectangle -> RectangleShape
+        NodeShape.Circle -> CircleShape
+        NodeShape.Diamond -> GenericShape { size, _ ->
+            moveTo(size.width / 2f, 0f)
+            lineTo(size.width, size.height / 2f)
+            lineTo(size.width / 2f, size.height)
+            lineTo(0f, size.height / 2f)
+            close()
+        }
+        NodeShape.Cylinder -> GenericShape { size, _ ->
+            val ry = size.height * 0.15f
+            addOval(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, ry * 2f))
+            addRect(androidx.compose.ui.geometry.Rect(0f, ry, size.width, size.height - ry))
+            addOval(androidx.compose.ui.geometry.Rect(0f, size.height - ry * 2f, size.width, size.height))
+        }
+    }
+    
     val cardBg = node.color.surface(theme.isDark)
     val accentColor = node.color.accent(theme.isDark)
 
@@ -94,11 +114,11 @@ fun CanvasNodeCard(
             )
             .shadow(
                 elevation = if (isSelected) 12.dp else 4.dp,
-                shape = cardShape,
+                shape = nodeShape,
                 spotColor = if (isSelected) theme.primary.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.25f)
             )
-            .background(cardBg, cardShape)
-            .border(borderStroke, cardShape)
+            .background(cardBg, nodeShape)
+            .border(borderStroke, nodeShape)
             .testTag(CanvasTestTags.node(node.id))
             .pointerInput(node.id, zoom, isEditing, state.activeTool) {
                 if (!isEditing) {
@@ -168,7 +188,7 @@ fun CanvasNodeCard(
                     width = with(density) { node.width.toDp() },
                     height = with(density) { node.height.toDp() }
                 )
-                .clip(cardShape)
+                .clip(nodeShape)
                 .graphicsLayer {
                     scaleX = zoom
                     scaleY = zoom
@@ -176,34 +196,36 @@ fun CanvasNodeCard(
                 }
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Header Bar
-                CardHeader(
-                    node = node,
-                    state = state,
-                    theme = theme,
-                    accentColor = accentColor,
-                    isEditing = isEditing,
-                    onToggleEdit = {
-                        state.editingNodeId = if (isEditing) null else node.id
-                    },
-                    onOpenColorMenu = { showColorMenu = true },
-                    onDelete = {
-                        state.selectNode(node.id)
-                        state.deleteSelected()
-                    }
-                )
+                if (node.shape == NodeShape.Card) {
+                    // Header Bar
+                    CardHeader(
+                        node = node,
+                        theme = theme,
+                        accentColor = accentColor,
+                        isEditing = isEditing,
+                        onToggleEdit = {
+                            state.editingNodeId = if (isEditing) null else node.id
+                        },
+                        onOpenColorMenu = { showColorMenu = true },
+                        onDelete = {
+                            state.selectNode(node.id)
+                            state.deleteSelected()
+                        }
+                    )
 
-                HorizontalDivider(
-                    color = theme.cardBorder.copy(alpha = 0.4f),
-                    thickness = 1.dp
-                )
+                    HorizontalDivider(
+                        color = theme.cardBorder.copy(alpha = 0.4f),
+                        thickness = 1.dp
+                    )
+                }
 
                 // Content Area
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .padding(8.dp)
+                        .padding(if (node.shape == NodeShape.Card) 8.dp else 16.dp),
+                    contentAlignment = if (node.shape == NodeShape.Card) Alignment.TopStart else Alignment.Center
                 ) {
                     if (isEditing) {
                         CardEditMode(
@@ -312,7 +334,6 @@ fun CanvasNodeCard(
 @Composable
 private fun CardHeader(
     node: CanvasNode,
-    state: CanvasState,
     theme: PresentationTheme,
     accentColor: Color,
     isEditing: Boolean,
