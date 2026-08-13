@@ -3,8 +3,10 @@ package com.skaldoria.cv
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import com.skaldoria.cv.core.CvDocument
+import com.skaldoria.cv.core.CvFrontMatterEditor
 import com.skaldoria.cv.core.CvMarkdownAdapter
 import com.skaldoria.cv.core.CvFontCatalog
 import com.skaldoria.cv.core.CvFontId
@@ -52,7 +54,8 @@ sealed interface CvEvent {
 /** UDF store: immutable state flows down and explicit [CvEvent] values flow up. */
 class CvStore(
     initialSource: String = CvExamples.softwareEngineer(),
-    private val adapter: CvMarkdownAdapter = CvMarkdownAdapter()
+    private val adapter: CvMarkdownAdapter = CvMarkdownAdapter(),
+    private val frontMatter: CvFrontMatterEditor = CvFrontMatterEditor()
 ) {
     var state by mutableStateOf(initialState(initialSource))
         private set
@@ -84,12 +87,18 @@ class CvStore(
                 )
             }
             is CvEvent.ViewModeSelected -> state.copy(viewMode = event.mode)
-            is CvEvent.TemplateSelected -> state.copy(
-                templateId = event.templateId,
-                hasTemplateOverride = true
-            )
-            is CvEvent.ThemeSelected -> state.copy(themeId = event.themeId, hasThemeOverride = true)
-            is CvEvent.FontSelected -> state.copy(fontId = event.fontId, hasFontOverride = true)
+            is CvEvent.TemplateSelected -> applyMetadata(
+                key = "template",
+                value = event.templateId.metadataValue
+            ) { copy(templateId = event.templateId, hasTemplateOverride = true) }
+            is CvEvent.ThemeSelected -> applyMetadata(
+                key = "theme",
+                value = event.themeId.metadataValue
+            ) { copy(themeId = event.themeId, hasThemeOverride = true) }
+            is CvEvent.FontSelected -> applyMetadata(
+                key = "font",
+                value = event.fontId.metadataValue
+            ) { copy(fontId = event.fontId, hasFontOverride = true) }
             CvEvent.ZoomIn -> state.copy(zoomPercent = CvZoomPolicy.zoomIn(state.zoomPercent))
             CvEvent.ZoomOut -> state.copy(zoomPercent = CvZoomPolicy.zoomOut(state.zoomPercent))
             CvEvent.ZoomReset -> state.copy(zoomPercent = CvZoomPolicy.DefaultPercent)
@@ -144,4 +153,32 @@ class CvStore(
         CvThemeCatalog.fromMetadata(document.metadata["theme"])
             ?: CvThemeCatalog.fromMetadata(document.metadata["template"])
             ?: CvThemeCatalog.default
+
+    /**
+     * Writes a top-bar selection back into the source front matter so the header, the parsed
+     * document, and any later save stay in sync, then applies the caller's state change (id +
+     * override flag). The caret is coerced into the rewritten text since its length changes.
+     */
+    private fun applyMetadata(
+        key: String,
+        value: String,
+        applySelection: CvEditorState.() -> CvEditorState
+    ): CvEditorState {
+        val newText = frontMatter.upsert(state.source.text, key, value)
+        return state
+            .copy(
+                source = state.source.copy(
+                    text = newText,
+                    selection = coerceSelection(state.source, newText.length)
+                ),
+                document = adapter.parse(newText),
+                errorMessage = null
+            )
+            .applySelection()
+    }
+
+    private fun coerceSelection(previous: TextFieldValue, length: Int): TextRange = TextRange(
+        previous.selection.start.coerceIn(0, length),
+        previous.selection.end.coerceIn(0, length)
+    )
 }
