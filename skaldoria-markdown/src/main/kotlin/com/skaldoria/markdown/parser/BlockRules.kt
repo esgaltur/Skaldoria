@@ -275,26 +275,13 @@ internal object SubheadingRule : BlockRule {
 }
 
 internal object ListRule : BlockRule {
-    private val BULLET = Regex("""^[-*+]\s+(.+)$""")
-    private val NUMBERED = Regex("""^\d+\.\s+(.+)$""")
-
-    private fun find(line: String): MatchResult? {
-        // PRF-7: both patterns are anchored, so the first character decides. Prose reaches this
-        // rule having already failed several others, and it would otherwise pay two `Regex.find`
-        // calls to learn what one char comparison answers.
-        val first = line.firstOrNull() ?: return null
-        if (first != '-' && first != '*' && first != '+' && !first.isDigit()) return null
-
-        return BULLET.find(line) ?: NUMBERED.find(line)
-    }
-
-    override fun matches(line: String, context: SectionContext) = find(line) != null
+    override fun matches(line: String, context: SectionContext) = ListRules.listItem(line) != null
 
     override fun consume(line: String, raw: String, context: SectionContext) {
         // A list item closes a quote or table, but never the list it continues.
         context.flushQuote()
         context.flushTable()
-        find(line)?.let { context.addListItem(it.groupValues[1].trim()) }
+        ListRules.listItem(line)?.let { context.addListItem(it.text) }
     }
 
     override val flushesPendingBlocks get() = false
