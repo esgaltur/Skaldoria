@@ -173,7 +173,7 @@ class WysiwygVisualTransformationTest {
     }
 
     @Test
-    fun `cursor line reveals syntax while other lines stay folded`() {
+    fun `visual mode folds every line regardless of cursor position`() {
         val source = "## Hidden **heading**\nEdit *this* line"
         val cursorOnSecondLine = source.indexOf("this")
         val transformed = WysiwygVisualTransformation(
@@ -182,7 +182,7 @@ class WysiwygVisualTransformationTest {
             isVisualMode = true
         ).filter(AnnotatedString(source))
 
-        assertEquals("Hidden heading\nEdit *this* line", transformed.text.text)
+        assertEquals("Hidden heading\nEdit this line", transformed.text.text)
     }
 
     @Test

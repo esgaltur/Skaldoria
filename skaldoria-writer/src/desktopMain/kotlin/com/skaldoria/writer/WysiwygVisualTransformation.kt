@@ -267,35 +267,24 @@ class WysiwygVisualTransformation(
             val hasCursor = cursorIndex in lineStart..lineEnd
             val alpha = if (isFocusMode && !hasCursor) 0.3f else 1f
 
-            if (hasCursor) {
-                // If cursor is on this line, show it raw so the user can edit syntax
-                val tStart = transIdx
-                appendVisible(line)
-                val trimmedLine = line.trimStart()
-                headingStyle(trimmedLine)?.let { style ->
-                    builder.styleHeading(tStart, transIdx, style, alpha)
-                }
+            // Visual mode is a pure WYSIWYG view: every marker folds away on every line,
+            // regardless of the caret. Editing markup is done through the formatting toolbar,
+            // while Source mode remains available for raw syntax editing.
+            val trimmedLine = line.trimStart()
+            val indentationLength = line.length - trimmedLine.length
+            val heading = headingStyle(trimmedLine)
 
-                if (isFocusMode) {
-                    builder.addStyle(SpanStyle(color = theme.text.copy(alpha = 1f)), tStart, transIdx)
-                }
-            } else {
-                val trimmedLine = line.trimStart()
-                val indentationLength = line.length - trimmedLine.length
-                val heading = headingStyle(trimmedLine)
+            if (indentationLength > 0) {
+                appendVisible(line.take(indentationLength))
+            }
+            val contentStart = transIdx
+            if (heading != null) {
+                appendHidden(heading.markerLength)
+            }
+            appendFoldedInline(lineEnd, alpha)
 
-                if (indentationLength > 0) {
-                    appendVisible(line.take(indentationLength))
-                }
-                val contentStart = transIdx
-                if (heading != null) {
-                    appendHidden(heading.markerLength)
-                }
-                appendFoldedInline(lineEnd, alpha)
-
-                if (heading != null) {
-                    builder.styleHeading(contentStart, transIdx, heading, alpha)
-                }
+            if (heading != null) {
+                builder.styleHeading(contentStart, transIdx, heading, alpha)
             }
 
             if (lineEnd < originalText.length) {
