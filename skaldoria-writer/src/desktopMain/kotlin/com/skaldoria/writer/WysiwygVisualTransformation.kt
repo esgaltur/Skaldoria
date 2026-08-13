@@ -78,116 +78,152 @@ class WysiwygVisualTransformation(
     override fun filter(text: AnnotatedString): TransformedText {
         val originalText = text.text
         if (originalText.isEmpty()) return TransformedText(text, OffsetMapping.Identity)
+        return if (isVisualMode) VisualFold(originalText).build()
+        else highlightSource(originalText)
+    }
 
-        if (!isVisualMode) {
-            // SOURCE MODE: Provide syntax highlighting without hiding characters
-            val builder = AnnotatedString.Builder(originalText)
-            val lines = originalText.split('\n')
-            var lineStart = 0
+    /** Runs [action] once per source line, supplying its start/end offsets in the whole text. */
+    private inline fun forEachLine(
+        text: String,
+        action: (line: String, lineStart: Int, lineEnd: Int) -> Unit
+    ) {
+        var lineStart = 0
+        for (line in text.split('\n')) {
+            val lineEnd = lineStart + line.length
+            action(line, lineStart, lineEnd)
+            lineStart = lineEnd + 1
+        }
+    }
 
-            for (line in lines) {
-                val lineEnd = lineStart + line.length
-                val trimmed = line.trimStart()
+    /** SOURCE MODE: colour markdown syntax in place without hiding any characters. */
+    private fun highlightSource(originalText: String): TransformedText {
+        val builder = AnnotatedString.Builder(originalText)
+        forEachLine(originalText) { line, lineStart, lineEnd ->
+            val trimmed = line.trimStart()
+            headingStyle(trimmed)?.let { builder.styleHeading(lineStart, lineEnd, it) }
+            builder.addInlineStyles(line, lineStart, BOLD_REGEX, sourceBoldStyle)
+            builder.addInlineStyles(line, lineStart, CODE_REGEX, sourceCodeStyle)
+            builder.addInlineStyles(line, lineStart, STRIKE_REGEX, sourceStrikeStyle)
+            builder.addInlineStyles(line, lineStart, BULLET_REGEX, sourceBulletStyle)
+            if (trimmed.startsWith(">")) builder.addStyle(sourceQuoteStyle, lineStart, lineEnd)
+        }
+        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
+    }
 
-                headingStyle(trimmed)?.let { style ->
-                    builder.styleHeading(lineStart, lineEnd, style)
-                }
+    /** Applies [style] to every [regex] match on a single line, offset into the whole text. */
+    private fun AnnotatedString.Builder.addInlineStyles(
+        line: String,
+        lineStart: Int,
+        regex: Regex,
+        style: SpanStyle
+    ) {
+        for (match in regex.findAll(line)) {
+            addStyle(style, lineStart + match.range.first, lineStart + match.range.last + 1)
+        }
+    }
 
-                // Bold (**text**)
-                if (line.contains("**")) {
-                    var i = 0
-                    while (i < line.length - 1) {
-                        if (line[i] == '*' && line[i + 1] == '*') {
-                            val closeIdx = line.indexOf("**", i + 2)
-                            if (closeIdx != -1) {
-                                builder.addStyle(
-                                    SpanStyle(color = theme.accent, fontWeight = FontWeight.Bold),
-                                    lineStart + i, lineStart + closeIdx + 2
-                                )
-                                i = closeIdx + 2
-                                continue
-                            }
-                        }
-                        i++
-                    }
-                }
+    private val sourceBoldStyle = SpanStyle(color = theme.accent, fontWeight = FontWeight.Bold)
+    private val sourceCodeStyle = SpanStyle(
+        fontFamily = FontFamily.Monospace,
+        color = theme.accent,
+        background = theme.surface
+    )
+    private val sourceStrikeStyle =
+        SpanStyle(textDecoration = TextDecoration.LineThrough, color = theme.subtext)
+    private val sourceBulletStyle = SpanStyle(color = theme.accent, fontWeight = FontWeight.Bold)
+    private val sourceQuoteStyle = SpanStyle(color = theme.subtext, fontStyle = FontStyle.Italic)
 
-                // Inline code (`...`)
-                var codeIdx = 0
-                while (codeIdx < line.length) {
-                    val startTick = line.indexOf('`', codeIdx)
-                    if (startTick == -1) break
-                    val endTick = line.indexOf('`', startTick + 1)
-                    if (endTick == -1) break
-                    builder.addStyle(
-                        SpanStyle(
-                            fontFamily = FontFamily.Monospace,
-                            color = theme.accent,
-                            background = theme.surface
-                        ),
-                        lineStart + startTick, lineStart + endTick + 1
-                    )
-                    codeIdx = endTick + 1
-                }
+    /**
+     * VISUAL MODE (WYSIWYG folding): builds a transformed string where markdown markers are
+     * hidden and their effect rendered inline, owning the origin<->transformed offset maps.
+     */
+    private inner class VisualFold(private val originalText: String) {
+        private val builder = AnnotatedString.Builder()
+        private val origToTrans = IntArray(originalText.length + 1)
+        private val transToOrigList = ArrayList<Int>(originalText.length + 1)
+        private var origIdx = 0
+        private var transIdx = 0
 
-                // Blockquote prefix (> ...)
-                if (trimmed.startsWith(">")) {
-                    builder.addStyle(
-                        SpanStyle(
-                            color = theme.subtext,
-                            fontStyle = FontStyle.Italic
-                        ),
-                        lineStart, lineEnd
-                    )
-                }
-
-                // List bullet prefix (- / * / + / 1.)
-                val bulletMatch = Regex("""^(\s*[-*+]|\s*\d+\.)\s""").find(line)
-                if (bulletMatch != null) {
-                    builder.addStyle(
-                        SpanStyle(
-                            color = theme.accent,
-                            fontWeight = FontWeight.Bold
-                        ),
-                        lineStart, lineStart + bulletMatch.range.last + 1
-                    )
-                }
-
-                // Strikethrough (~~...~~)
-                var strikeIdx = 0
-                while (strikeIdx < line.length - 1) {
-                    if (line[strikeIdx] == '~' && line[strikeIdx + 1] == '~') {
-                        val closeIdx = line.indexOf("~~", strikeIdx + 2)
-                        if (closeIdx != -1) {
-                            builder.addStyle(
-                                SpanStyle(
-                                    textDecoration = TextDecoration.LineThrough,
-                                    color = theme.subtext
-                                ),
-                                lineStart + strikeIdx, lineStart + closeIdx + 2
-                            )
-                            strikeIdx = closeIdx + 2
-                            continue
-                        }
-                    }
-                    strikeIdx++
-                }
-
-                lineStart = lineEnd + 1
+        fun build(): TransformedText {
+            forEachLine(originalText) { line, _, lineEnd ->
+                foldLine(line, lineEnd)
+                if (lineEnd < originalText.length) appendVisible("\n")
             }
-
-            return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
+            origToTrans[origIdx] = transIdx
+            transToOrigList.add(origIdx)
+            return TransformedText(builder.toAnnotatedString(), buildOffsetMapping())
         }
 
-        // VISUAL MODE (WYSIWYG folding)
-        val builder = AnnotatedString.Builder()
-        val origToTrans = IntArray(originalText.length + 1)
-        val transToOrigList = mutableListOf<Int>()
+        private fun foldLine(line: String, lineEnd: Int) {
+            val alpha = alphaFor(lineEnd - line.length, lineEnd)
+            val trimmed = line.trimStart()
+            val indentationLength = line.length - trimmed.length
+            val heading = headingStyle(trimmed)
 
-        var origIdx = 0
-        var transIdx = 0
+            if (indentationLength > 0) appendVisible(line.take(indentationLength))
+            val contentStart = transIdx
+            if (heading != null) appendHidden(heading.markerLength)
+            appendFoldedInline(lineEnd, alpha)
+            if (heading != null) builder.styleHeading(contentStart, transIdx, heading, alpha)
+        }
 
-        fun appendVisible(str: String) {
+        private fun alphaFor(lineStart: Int, lineEnd: Int): Float {
+            val hasCursor = cursorIndex in lineStart..lineEnd
+            return if (isFocusMode && !hasCursor) 0.3f else 1f
+        }
+
+        private fun appendFoldedInline(lineEnd: Int, alpha: Float) {
+            while (origIdx < lineEnd) {
+                val marker = markerAt(origIdx)
+                val closingIndex = marker?.let { closingIndexFor(it, lineEnd) }
+                if (marker == null || closingIndex == null) {
+                    appendPlainChar(alpha)
+                    continue
+                }
+                appendHidden(marker.length)
+                val contentStart = transIdx
+                appendVisible(originalText.substring(origIdx, closingIndex))
+                builder.addStyle(styleForMarker(marker, alpha), contentStart, transIdx)
+                appendHidden(marker.length)
+            }
+        }
+
+        private fun markerAt(index: Int): String? = when {
+            originalText.startsWith("**", index) -> "**"
+            originalText.startsWith("~~", index) -> "~~"
+            originalText[index] == '`' -> "`"
+            originalText[index] == '*' || originalText[index] == '_' -> originalText[index].toString()
+            else -> null
+        }
+
+        private fun closingIndexFor(marker: String, lineEnd: Int): Int? {
+            val searchStart = origIdx + marker.length
+            return originalText.indexOf(marker, searchStart).takeIf { it in searchStart until lineEnd }
+        }
+
+        private fun styleForMarker(marker: String, alpha: Float): SpanStyle = when (marker) {
+            "**" -> SpanStyle(fontWeight = FontWeight.Bold, color = theme.text.copy(alpha = alpha))
+            "~~" -> SpanStyle(
+                textDecoration = TextDecoration.LineThrough,
+                color = theme.text.copy(alpha = alpha)
+            )
+            "`" -> SpanStyle(
+                fontFamily = FontFamily.Monospace,
+                color = theme.accent.copy(alpha = alpha),
+                background = theme.surface
+            )
+            else -> SpanStyle(fontStyle = FontStyle.Italic, color = theme.text.copy(alpha = alpha))
+        }
+
+        private fun appendPlainChar(alpha: Float) {
+            val plainStart = transIdx
+            appendVisible(originalText[origIdx].toString())
+            if (isFocusMode && alpha < 1f) {
+                builder.addStyle(SpanStyle(color = theme.text.copy(alpha = alpha)), plainStart, transIdx)
+            }
+        }
+
+        private fun appendVisible(str: String) {
             for (char in str) {
                 origToTrans[origIdx] = transIdx
                 transToOrigList.add(origIdx)
@@ -197,121 +233,35 @@ class WysiwygVisualTransformation(
             builder.append(str)
         }
 
-        fun appendHidden(count: Int) {
-            for (i in 0 until count) {
+        private fun appendHidden(count: Int) {
+            repeat(count) {
                 origToTrans[origIdx] = transIdx
                 origIdx++
             }
         }
 
-        fun appendFoldedInline(lineEnd: Int, alpha: Float) {
-            while (origIdx < lineEnd) {
-                val marker = when {
-                    originalText.startsWith("**", origIdx) -> "**"
-                    originalText.startsWith("~~", origIdx) -> "~~"
-                    originalText[origIdx] == '`' -> "`"
-                    originalText[origIdx] == '*' || originalText[origIdx] == '_' ->
-                        originalText[origIdx].toString()
-                    else -> null
-                }
-                val closingIndex = marker?.let {
-                    originalText.indexOf(it, origIdx + it.length)
-                        .takeIf { close -> close in (origIdx + it.length) until lineEnd }
+        private fun buildOffsetMapping(): OffsetMapping {
+            val transToOrig = transToOrigList.toIntArray()
+            return object : OffsetMapping {
+                override fun originalToTransformed(offset: Int): Int = when {
+                    offset < 0 -> 0
+                    offset > originalText.length -> transIdx
+                    else -> origToTrans[offset]
                 }
 
-                if (marker == null || closingIndex == null) {
-                    val plainStart = transIdx
-                    appendVisible(originalText[origIdx].toString())
-                    if (isFocusMode && alpha < 1f) {
-                        builder.addStyle(
-                            SpanStyle(color = theme.text.copy(alpha = alpha)),
-                            plainStart,
-                            transIdx
-                        )
-                    }
-                    continue
+                override fun transformedToOriginal(offset: Int): Int = when {
+                    offset < 0 -> 0
+                    offset >= transToOrig.size -> originalText.length
+                    else -> transToOrig[offset]
                 }
-
-                appendHidden(marker.length)
-                val contentStart = transIdx
-                appendVisible(originalText.substring(origIdx, closingIndex))
-                val style = when (marker) {
-                    "**" -> SpanStyle(
-                        fontWeight = FontWeight.Bold,
-                        color = theme.text.copy(alpha = alpha)
-                    )
-                    "~~" -> SpanStyle(
-                        textDecoration = TextDecoration.LineThrough,
-                        color = theme.text.copy(alpha = alpha)
-                    )
-                    "`" -> SpanStyle(
-                        fontFamily = FontFamily.Monospace,
-                        color = theme.accent.copy(alpha = alpha),
-                        background = theme.surface
-                    )
-                    else -> SpanStyle(
-                        fontStyle = FontStyle.Italic,
-                        color = theme.text.copy(alpha = alpha)
-                    )
-                }
-                builder.addStyle(style, contentStart, transIdx)
-                appendHidden(marker.length)
             }
         }
+    }
 
-        val lines = originalText.split('\n')
-        var lineStart = 0
-
-        for (line in lines) {
-            val lineEnd = lineStart + line.length
-            val hasCursor = cursorIndex in lineStart..lineEnd
-            val alpha = if (isFocusMode && !hasCursor) 0.3f else 1f
-
-            // Visual mode is a pure WYSIWYG view: every marker folds away on every line,
-            // regardless of the caret. Editing markup is done through the formatting toolbar,
-            // while Source mode remains available for raw syntax editing.
-            val trimmedLine = line.trimStart()
-            val indentationLength = line.length - trimmedLine.length
-            val heading = headingStyle(trimmedLine)
-
-            if (indentationLength > 0) {
-                appendVisible(line.take(indentationLength))
-            }
-            val contentStart = transIdx
-            if (heading != null) {
-                appendHidden(heading.markerLength)
-            }
-            appendFoldedInline(lineEnd, alpha)
-
-            if (heading != null) {
-                builder.styleHeading(contentStart, transIdx, heading, alpha)
-            }
-
-            if (lineEnd < originalText.length) {
-                appendVisible("\n")
-            }
-            lineStart = lineEnd + 1
-        }
-
-        origToTrans[origIdx] = transIdx
-        transToOrigList.add(origIdx)
-        val transToOrig = transToOrigList.toIntArray()
-
-        return TransformedText(
-            builder.toAnnotatedString(),
-            object : OffsetMapping {
-                override fun originalToTransformed(offset: Int): Int {
-                    if (offset < 0) return 0
-                    if (offset > originalText.length) return transIdx
-                    return origToTrans[offset]
-                }
-
-                override fun transformedToOriginal(offset: Int): Int {
-                    if (offset < 0) return 0
-                    if (offset >= transToOrig.size) return originalText.length
-                    return transToOrig[offset]
-                }
-            }
-        )
+    private companion object {
+        val BOLD_REGEX = Regex("""\*\*.*?\*\*""")
+        val CODE_REGEX = Regex("`[^`]*`")
+        val STRIKE_REGEX = Regex("~~.*?~~")
+        val BULLET_REGEX = Regex("""^(\s*[-*+]|\s*\d+\.)\s""")
     }
 }
