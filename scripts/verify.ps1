@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Runs the full local verification gate: both test suites and the zero-warning build.
+    Runs the full local verification gate: every module test suite and the zero-warning build.
 
 .DESCRIPTION
     Nothing verifies this project automatically — .github/workflows/ci.yml runs the same two
@@ -8,9 +8,8 @@
     CONTRIBUTING.md is enforced on the machine that cuts the release, and this script is that
     enforcement, in one command, so the rules stop depending on someone remembering them:
 
-      1. `desktopTest` and `:skaldoria-markdown:test` — both modules, not just the app.
-      2. `compileKotlinDesktop compileTestKotlinDesktop -PwarningsAsErrors` — the zero-warning
-         NFR (CONTRIBUTING.md section 6). Production *and* test code must compile clean.
+      1. Every module test suite — Presentation, Markdown, shared UI, Writer, and Canvas.
+      2. Every module's production and test sources compiled with `-PwarningsAsErrors`.
 
     `package_release.ps1` calls this before it builds anything, so a release cannot be cut
     over a failing suite or a new warning.
@@ -40,8 +39,8 @@ if ($SkipRenderTests) {
 
 Push-Location $ProjectRoot
 try {
-    Write-Host "`n[1/2] Running both test suites..." -ForegroundColor Yellow
-    & .\gradlew.bat desktopTest :skaldoria-markdown:test --no-daemon @renderFlag
+    Write-Host "`n[1/2] Running all test suites..." -ForegroundColor Yellow
+    & .\gradlew.bat :skaldoria-presentation:desktopTest :skaldoria-markdown:test :skaldoria-shared-ui:desktopTest :skaldoria-writer:desktopTest :skaldoria-canvas:desktopTest :skaldoria-cv-core:test :skaldoria-cv:desktopTest --no-daemon @renderFlag
     if ($LASTEXITCODE -ne 0) {
         Write-Error 'Test suite failed.'
         exit $LASTEXITCODE
@@ -49,7 +48,7 @@ try {
     Write-Host '  -> All tests passed.' -ForegroundColor Green
 
     Write-Host "`n[2/2] Compiling with warnings as errors..." -ForegroundColor Yellow
-    & .\gradlew.bat compileKotlinDesktop compileTestKotlinDesktop -PwarningsAsErrors --no-daemon
+    & .\gradlew.bat :skaldoria-presentation:compileKotlinDesktop :skaldoria-presentation:compileTestKotlinDesktop :skaldoria-shared-ui:compileKotlinDesktop :skaldoria-shared-ui:compileTestKotlinDesktop :skaldoria-writer:compileKotlinDesktop :skaldoria-writer:compileTestKotlinDesktop :skaldoria-canvas:compileKotlinDesktop :skaldoria-canvas:compileTestKotlinDesktop :skaldoria-cv-core:compileKotlin :skaldoria-cv-core:compileTestKotlin :skaldoria-cv:compileKotlinDesktop :skaldoria-cv:compileTestKotlinDesktop -PwarningsAsErrors --no-daemon
     if ($LASTEXITCODE -ne 0) {
         Write-Error 'Compilation reported warnings. Fix the cause; do not suppress it (CONTRIBUTING.md section 10).'
         exit $LASTEXITCODE

@@ -126,7 +126,7 @@ The companion binds to your local network, so the two roles are separated delibe
 
 > The companion is meant for a room you control. It is not hardened for the open internet, and it
 > speaks plain HTTP so phones can connect without certificate warnings — see
-> [ADR-001](./docs/adr/001-companion-server-architecture.md).
+> [ADR-001](./skaldoria-presentation/docs/adr/001-companion-server-architecture.md).
 
 ### 7. 🧜‍♂️ Mermaid Diagrams — Rendered Natively
 
@@ -185,23 +185,31 @@ subgraphs are flattened — a node joins the innermost group that declared it. W
 
 ### Running from Source
 
+The repository root is a Gradle aggregator. Each application lives in its own module:
+`:skaldoria-presentation`, `:skaldoria-writer`, `:skaldoria-canvas`, and `:skaldoria-cv`; shared parsing and
+rendering live in `:skaldoria-markdown` and `:skaldoria-shared-ui`.
+
+[`skaldoria-cv`](./skaldoria-cv/README.md) now provides its first production workflow: semantic
+Markdown editing, structural diagnostics, and a live ATS-oriented preview. Pagination and PDF
+export are tracked in its [implementation roadmap](./skaldoria-cv/docs/ROADMAP.md).
+
 ```bash
 # Clone the repository
 git clone https://github.com/esgaltur/skaldoria.git
 cd skaldoria
 
 # Run desktop application via Gradle
-./gradlew run
+./gradlew :skaldoria-presentation:run
 ```
 
 ### Running Unit Tests
 
 ```bash
-./gradlew desktopTest :skaldoria-markdown:test
+./gradlew :skaldoria-presentation:desktopTest :skaldoria-markdown:test
 ```
 
-Verification and releases run on a developer machine. One command runs both test suites and the
-zero-warning build:
+Verification and releases run on a developer machine. One command runs every module test suite and
+the zero-warning build:
 
 ```powershell
 .\scripts\verify.ps1
@@ -214,8 +222,8 @@ minutes cost money and a per-commit trigger spends them whether or not anyone wa
 ### Packaging Standalone Native Executable
 
 ```bash
-./gradlew createDistributable
-# Output directory: build/compose/binaries/main/app/Skaldoria/Skaldoria.exe
+./gradlew :skaldoria-presentation:createDistributable
+# Output directory: skaldoria-presentation/build/compose/binaries/main/app/Skaldoria/Skaldoria.exe
 ```
 
 ### Cutting a Local Release
@@ -240,7 +248,8 @@ comes from `appVersion` in `build.gradle.kts` — never pass it by hand:
 |:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------|
 | <kbd>F5</kbd>                                                                        | Launch Fullscreen Presentation Mode                                                         |
 | <kbd>P</kbd>                                                                         | Toggle Pen Annotation *(presentation window)*; the Presenter Console opens from the toolbar |
-| <kbd>Ctrl</kbd> + <kbd>K</kbd>                                                       | Open Spotlight Command Palette                                                              |
+| <kbd>Ctrl</kbd> + <kbd>P</kbd>                                                       | Open Spotlight Command Palette                                                              |
+| <kbd>Ctrl</kbd> + <kbd>B</kbd> / <kbd>I</kbd> / <kbd>K</kbd>                         | Format text as **Bold**, _Italic_, or [Link]()                                              |
 | <kbd>Ctrl</kbd> + <kbd>F</kbd>                                                       | Find in Slide Source Editor                                                                 |
 | <kbd>Ctrl</kbd> + <kbd>H</kbd>                                                       | Find & Replace in Slide Source Editor                                                       |
 | <kbd>F3</kbd> / <kbd>Ctrl</kbd> + <kbd>G</kbd>                                       | Next Match — repeats the last search with the find bar closed                               |
@@ -373,19 +382,19 @@ than being mistaken for a deck.
 
 ## 📚 Documentation & Guides
 
-* 📘 **[Comprehensive User Guide & Feature Manual](./docs/USER_GUIDE.md)**: Full walkthrough of slide authoring, layouts,
+* 📘 **[Comprehensive User Guide & Feature Manual](./skaldoria-presentation/docs/USER_GUIDE.md)**: Full walkthrough of slide authoring, layouts,
   presenter console, wireless companions, and parking lot.
-* 📋 **[Functional Specification](./FUNCTIONAL_SPECIFICATION.md)**: Formal requirements and system architecture.
-* 📐 **[ADR-001: Companion Server Architecture](./docs/adr/001-companion-server-architecture.md)**: Technical evaluation of
+* 📋 **[Functional Specification](./skaldoria-presentation/docs/FUNCTIONAL_SPECIFICATION.md)**: Formal requirements and system architecture.
+* 📐 **[ADR-001: Companion Server Architecture](./skaldoria-presentation/docs/adr/001-companion-server-architecture.md)**: Technical evaluation of
   native sockets vs Ktor and HTTP/1.1 vs HTTP/2.
 * 🚀 **[Changelog](./CHANGELOG.md)**: Release history and version updates.
-* 📐 **[ADR-002: Diagram Geometry Architecture](./docs/adr/002-diagram-geometry-architecture.md)**: How diagram layout is
+* 📐 **[ADR-002: Diagram Geometry Architecture](./skaldoria-shared-ui/docs/adr/002-diagram-geometry-architecture.md)**: How diagram layout is
   separated from drawing.
-* 🔍 **[Ktor vs. hand-rolled sockets](./docs/KTOR_MIGRATION_TRADEOFFS.md)**: Measured evaluation of replacing the
+* 🔍 **[Ktor vs. hand-rolled sockets](./skaldoria-presentation/docs/KTOR_MIGRATION_TRADEOFFS.md)**: Measured evaluation of replacing the
   companion server, and why it stayed.
-* 🖼️ **[Rendering status](./docs/RENDERING_STATUS.md)**: What has been visually verified, with the headless render
+* 🖼️ **[Rendering status](./skaldoria-presentation/docs/RENDERING_STATUS.md)**: What has been visually verified, with the headless render
   harness that proves it.
-* 🧭 **[Quality Baseline](./docs/QUALITY_BASELINE.md)**: The invariants this codebase holds, the reasoning behind the
+* 🧭 **[Quality Baseline](./skaldoria-presentation/docs/QUALITY_BASELINE.md)**: The invariants this codebase holds, the reasoning behind the
   non-obvious ones, and the test guarding each.
 
 ---

@@ -6,7 +6,7 @@
     1. Runs the local verification gate (scripts/verify.ps1): both test suites and the
        zero-warning compile. Nothing verifies a push automatically — the CI workflow is
        manual-dispatch only (PLT-01) — so this is where those rules are enforced.
-    2. Builds native Windows MSI installer, EXE installer, portable ZIP bundle, and universal runnable JAR.
+    2. Builds Studio, Writer, and Canvas native distributions and universal runnable JARs.
     3. Calculates SHA-256 cryptographic checksums.
     4. Uploads all release binaries directly to GitHub Releases using 'gh' CLI without needing GitHub Actions CI/CD.
 
@@ -98,8 +98,8 @@ if (Test-Path $distDir) {
 # Step 1: Run the local verification gate
 #
 # Delegated to verify.ps1 so the release and a plain local check cannot drift apart. It runs
-# BOTH modules — this step used to run `desktopTest` alone, so :skaldoria-markdown could be
-# red while a release was cut — and the zero-warning compile.
+# Every application and library module — this step once ran only the presentation tests, so
+# another module could be red while a release was cut — followed by the zero-warning compile.
 if (-not $SkipTests) {
     Write-Host '[1/5] Running local verification gate (tests + zero-warning build)...' -ForegroundColor Yellow
     & (Join-Path $PSScriptRoot 'verify.ps1') -SkipRenderTests:$SkipRenderTests
@@ -116,7 +116,7 @@ if (-not $SkipTests) {
 Write-Host "`n[2/5] Building native standalone application and universal JAR..." -ForegroundColor Yellow
 Push-Location $ProjectRoot
 try {
-    & .\gradlew.bat createDistributable packageUberJarForCurrentOS --no-daemon
+    & .\gradlew.bat :skaldoria-presentation:createDistributable :skaldoria-presentation:packageUberJarForCurrentOS :skaldoria-writer:createDistributable :skaldoria-writer:packageUberJarForCurrentOS :skaldoria-canvas:createDistributable :skaldoria-canvas:packageUberJarForCurrentOS --no-daemon
     if ($LASTEXITCODE -ne 0) {
         Write-Error 'Gradle build failed!'
         exit $LASTEXITCODE
@@ -128,7 +128,7 @@ try {
 # Step 3: Package MSI / EXE / ZIP Artifacts
 Write-Host "`n[3/5] Bundling installer packages..." -ForegroundColor Yellow
 
-$appDir = Join-Path $ProjectRoot 'build\compose\binaries\main\app\Skaldoria'
+$appDir = Join-Path $ProjectRoot 'skaldoria-presentation\build\compose\binaries\main\app\Skaldoria'
 if (Test-Path $appDir) {
     $zipName = "Skaldoria-v$Version-windows-x64-portable.zip"
     $zipPath = Join-Path $distDir $zipName
@@ -136,8 +136,24 @@ if (Test-Path $appDir) {
     Compress-Archive -Path "$appDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
 }
 
+$writerAppDir = Join-Path $ProjectRoot 'skaldoria-writer\build\compose\binaries\main\app\SkaldoriaWriter'
+if (Test-Path $writerAppDir) {
+    $writerZipName = "SkaldoriaWriter-v$Version-windows-x64-portable.zip"
+    $writerZipPath = Join-Path $distDir $writerZipName
+    Write-Host "  -> Creating Writer portable archive: $writerZipName..." -ForegroundColor DarkCyan
+    Compress-Archive -Path "$writerAppDir\*" -DestinationPath $writerZipPath -CompressionLevel Optimal
+}
+
+$canvasAppDir = Join-Path $ProjectRoot 'skaldoria-canvas\build\compose\binaries\main\app\SkaldoriaCanvas'
+if (Test-Path $canvasAppDir) {
+    $canvasZipName = "SkaldoriaCanvas-v$Version-windows-x64-portable.zip"
+    $canvasZipPath = Join-Path $distDir $canvasZipName
+    Write-Host "  -> Creating Canvas portable archive: $canvasZipName..." -ForegroundColor DarkCyan
+    Compress-Archive -Path "$canvasAppDir\*" -DestinationPath $canvasZipPath -CompressionLevel Optimal
+}
+
 # Copy MSI installer if generated
-$msiDir = Join-Path $ProjectRoot 'build\compose\binaries\main\msi'
+$msiDir = Join-Path $ProjectRoot 'skaldoria-presentation\build\compose\binaries\main\msi'
 if (Test-Path $msiDir) {
     Get-ChildItem -Path $msiDir -Filter '*.msi' | ForEach-Object {
         $dest = Join-Path $distDir "Skaldoria-v$Version-windows-x64.msi"
@@ -145,9 +161,25 @@ if (Test-Path $msiDir) {
         Write-Host "  -> Collected MSI Installer: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
     }
 }
+$writerMsiDir = Join-Path $ProjectRoot 'skaldoria-writer\build\compose\binaries\main\msi'
+if (Test-Path $writerMsiDir) {
+    Get-ChildItem -Path $writerMsiDir -Filter '*.msi' | ForEach-Object {
+        $dest = Join-Path $distDir "SkaldoriaWriter-v$Version-windows-x64.msi"
+        Copy-Item $_.FullName -Destination $dest -Force
+        Write-Host "  -> Collected Writer MSI Installer: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+    }
+    $canvasMsiDir = Join-Path $ProjectRoot 'skaldoria-canvas\build\compose\binaries\main\msi'
+    if (Test-Path $canvasMsiDir) {
+        Get-ChildItem -Path $canvasMsiDir -Filter '*.msi' | ForEach-Object {
+            $dest = Join-Path $distDir "SkaldoriaCanvas-v$Version-windows-x64.msi"
+            Copy-Item $_.FullName -Destination $dest -Force
+            Write-Host "  -> Collected Canvas MSI Installer: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+        }
+    }
+}
 
 # Copy EXE installer if generated
-$exeDir = Join-Path $ProjectRoot 'build\compose\binaries\main\exe'
+$exeDir = Join-Path $ProjectRoot 'skaldoria-presentation\build\compose\binaries\main\exe'
 if (Test-Path $exeDir) {
     Get-ChildItem -Path $exeDir -Filter '*.exe' | ForEach-Object {
         $dest = Join-Path $distDir "Skaldoria-v$Version-windows-x64-setup.exe"
@@ -155,14 +187,46 @@ if (Test-Path $exeDir) {
         Write-Host "  -> Collected EXE Setup: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
     }
 }
+$writerExeDir = Join-Path $ProjectRoot 'skaldoria-writer\build\compose\binaries\main\exe'
+if (Test-Path $writerExeDir) {
+    Get-ChildItem -Path $writerExeDir -Filter '*.exe' | ForEach-Object {
+        $dest = Join-Path $distDir "SkaldoriaWriter-v$Version-windows-x64-setup.exe"
+        Copy-Item $_.FullName -Destination $dest -Force
+        Write-Host "  -> Collected Writer EXE Setup: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+    }
+    $canvasExeDir = Join-Path $ProjectRoot 'skaldoria-canvas\build\compose\binaries\main\exe'
+    if (Test-Path $canvasExeDir) {
+        Get-ChildItem -Path $canvasExeDir -Filter '*.exe' | ForEach-Object {
+            $dest = Join-Path $distDir "SkaldoriaCanvas-v$Version-windows-x64-setup.exe"
+            Copy-Item $_.FullName -Destination $dest -Force
+            Write-Host "  -> Collected Canvas EXE Setup: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+        }
+    }
+}
 
 # Copy Universal Uber JAR
-$uberJarDir = Join-Path $ProjectRoot 'build\compose\jars'
+$uberJarDir = Join-Path $ProjectRoot 'skaldoria-presentation\build\compose\jars'
 if (Test-Path $uberJarDir) {
     Get-ChildItem -Path $uberJarDir -Filter '*.jar' | ForEach-Object {
         $dest = Join-Path $distDir "Skaldoria-v$Version-universal.jar"
         Copy-Item $_.FullName -Destination $dest -Force
         Write-Host "  -> Collected Universal Runnable JAR: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+    }
+}
+$writerUberJarDir = Join-Path $ProjectRoot 'skaldoria-writer\build\compose\jars'
+if (Test-Path $writerUberJarDir) {
+    Get-ChildItem -Path $writerUberJarDir -Filter '*.jar' | ForEach-Object {
+        $dest = Join-Path $distDir "SkaldoriaWriter-v$Version-universal.jar"
+        Copy-Item $_.FullName -Destination $dest -Force
+        Write-Host "  -> Collected Writer Universal Runnable JAR: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+    }
+    $canvasUberJarDir = Join-Path $ProjectRoot 'skaldoria-canvas\build\compose\jars'
+    if (Test-Path $canvasUberJarDir) {
+        Get-ChildItem -Path $canvasUberJarDir -Filter '*.jar' | ForEach-Object {
+            $dest = Join-Path $distDir "SkaldoriaCanvas-v$Version-windows-x64.jar"
+            Copy-Item $_.FullName -Destination $dest -Force
+            Write-Host "  -> Collected Canvas Windows Runnable JAR: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+        }
     }
 }
 
