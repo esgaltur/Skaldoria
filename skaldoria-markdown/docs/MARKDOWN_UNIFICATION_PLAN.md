@@ -579,6 +579,68 @@ in this document only because it was misfiled as one until `LineRuleAgreementTes
 It reads files from `docs/` and its paths resolve against the root project directory. Moving it
 needs a path fix, not just a `git mv`.
 
+---
+
+## Phase G — One tokenizer under three palettes ✅ *complete*
+
+### The divergence the earlier phases could not see
+
+Phases B, E and F unified the *line rules* and proved it with `LineRuleAgreementTest` and
+`FenceLexerAgreementTest`. Both tests only ever looked at two consumers: the parser and the
+**deck** editor's highlighter. There were three.
+
+`skaldoria-writer` had a partial highlighter, and `skaldoria-cv` had a 47-line one that shared
+nothing with the rest of Skaldoria but a class name — five whole-document regexes, no dependency on
+`:skaldoria-markdown` at all. **That last part is why no test caught it:** the agreement tests
+cannot compare against a module that does not link the thing they are asserting about. A
+duplicate that is *invisible to the guard* is worse than one the guard fails on.
+
+Applying Phase F's design test to the highlighters themselves gives the split:
+
+| Half | Question | Where it went |
+| :--- | :--- | :--- |
+| **What is this span?** | CommonMark, plus the fence/math state machine | **Shared** — `MarkdownHighlightTokenizer` |
+| **What colour is it?** | The app's palette and its product decisions | **Owned** — one `when` per editor |
+
+The tokenizer emits a *superset* of kinds and each palette maps the subset it wants. An unmapped
+kind produces no span, which is how Presentation kept its exact appearance (it ignores `Italic`,
+`Link`, `Strikethrough`, `FrontMatter`) while the CV editor gained the kinds it never had.
+
+### What the CV editor was getting wrong, all of it grammar it had reimplemented
+
+- **No fence tracking whatsoever.** `# comment` inside a ```` ```bash ```` block coloured as a
+  heading, and `**` inside code bolded. Phase B fixed exactly this for the deck editor in
+  a module the CV app did not depend on.
+- **Headings anchored to column 0**, so an indented `### Skills` was prose there and a heading
+  everywhere else.
+- **Front matter matched as `^---\n.*?\n---`** against raw text, while `CvMarkdownAdapter` — the
+  authority that actually *reads* the metadata — trimmed each delimiter line. A trailing space or a
+  CRLF file parsed as metadata and displayed as unstyled text. Hoisted to `FrontMatterRules`, now
+  called by both.
+- **Italic via `Regex("\\*(.*?)\\*")` plus a `startsWith("**")` guard**, which only avoided
+  restyling bold because the lazy match happened to land on a delimiter pair.
+- **No blockquotes, tables, thematic breaks, math or inline code**, all of which already existed.
+- **Hardcoded hex** (`0xFF1976D2`, `0xFF757575`) against a Material surface, so it failed contrast
+  outright on a dark scheme. Now runs through `AdaptiveContrastEnforcer` like the other two.
+
+### The dialect flag, and why it is a parameter rather than a palette decision
+
+`tokenize(text, frontMatter = true)` is the CV dialect. It cannot be expressed by "the CV palette
+maps `FrontMatter` and Presentation does not", because front matter **consumes lines** — a leading
+`---` is metadata *instead of* a thematic break, so the choice changes what the other rules see.
+That is a tokenizer input, not a colour.
+
+### Cost
+
+The shared scan replaced ~200 lines of per-app scanning; the CV editor went from 47 lines of regex
+to ~90 lines that are almost entirely a colour table. `MarkdownHighlightTokenizerTest` adds 20
+tests over the cases above. The tokenizer memoizes its scan the way the deck highlighter memoizes
+its `AnnotatedString`; the two are complementary, since only the latter avoids re-allocating
+`SpanStyle` objects.
+
+**Writer's visual mode was deliberately left alone.** WYSIWYG folding needs a non-identity
+`OffsetMapping`, which is a different problem from colouring; only its source mode moved.
+
 ### 4. `BLOCK_RULES` ordering is load-bearing but implicit
 
 Precedence is list position, asserted by `BlockRuleOrderTest`. Making it an explicit property

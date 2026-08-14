@@ -1,57 +1,14 @@
 package com.skaldoria.writer
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.FormatBold
-import androidx.compose.material.icons.filled.FormatItalic
-import androidx.compose.material.icons.filled.FormatQuote
-import androidx.compose.material.icons.filled.FormatStrikethrough
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -69,32 +26,18 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.skaldoria.shared.ui.components.EditorTooltip
 import com.skaldoria.shared.ui.theme.SkaldoriaTheme
 import com.skaldoria.theme.PresentationTheme
 import com.skaldoria.ui.components.CodeBlockView
 import com.skaldoria.ui.components.MathFormulaRenderer
 import com.skaldoria.ui.components.MermaidDiagramCanvas
 import com.skaldoria.ui.components.inlineMarkdown
-import com.skaldoria.writer.parser.Blockquote
-import com.skaldoria.writer.parser.Bold
-import com.skaldoria.writer.parser.BulletList
-import com.skaldoria.writer.parser.Code
-import com.skaldoria.writer.parser.CodeBlock
-import com.skaldoria.writer.parser.Document
-import com.skaldoria.writer.parser.DocumentParser
-import com.skaldoria.writer.parser.Heading
-import com.skaldoria.writer.parser.InlineNode
-import com.skaldoria.writer.parser.Italic
-import com.skaldoria.writer.parser.MathBlock
-import com.skaldoria.writer.parser.Paragraph
-import com.skaldoria.writer.parser.Strikethrough
-import com.skaldoria.writer.parser.Text as AstText
-import com.skaldoria.writer.parser.ThematicBreak
+import com.skaldoria.writer.parser.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
+import com.skaldoria.writer.parser.Text as AstText
 
 @Composable
 fun WriterEditor(
@@ -158,10 +101,6 @@ fun WriterEditor(
                         )
                     }
 
-                    if (state.viewMode != ViewMode.Preview && !state.isFocusMode) {
-                        FormattingToolbar(state, theme)
-                    }
-
                     WriterWorkspace(
                         state = state,
                         theme = theme,
@@ -171,6 +110,14 @@ fun WriterEditor(
 
                     if (!state.isFocusMode) WriterFooter(state, theme)
                 }
+            }
+
+            if (state.isFocusMode) {
+                WriterFocusExit(
+                    state = state,
+                    theme = theme,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                )
             }
 
             SnackbarHost(
@@ -228,157 +175,6 @@ private fun WriterOutline(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun WriterTopBar(
-    state: WriterState,
-    theme: SkaldoriaTheme,
-    onOpenRequest: () -> Unit,
-    onSaveRequest: () -> Unit
-) {
-    Surface(color = theme.bg, shadowElevation = 2.dp) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = state::toggleSidebar) {
-                        Icon(
-                            if (state.isSidebarOpen) Icons.Default.Close else Icons.Default.Menu,
-                            contentDescription = "Toggle Sidebar",
-                            tint = theme.accent
-                        )
-                    }
-                    EditorTooltip("Open File (Ctrl+O)", theme) {
-                        IconButton(onClick = onOpenRequest) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = "Open", tint = theme.accent)
-                        }
-                    }
-                    EditorTooltip("Save File (Ctrl+S)", theme) {
-                        IconButton(onClick = onSaveRequest) {
-                            Icon(Icons.Default.Save, contentDescription = "Save", tint = theme.accent)
-                        }
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = (state.currentFile?.name ?: "Untitled Document") + if (state.isDirty) " *" else "",
-                        color = theme.text,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = state::cycleTheme) {
-                        Text(theme.name, color = theme.accent, fontWeight = FontWeight.Bold)
-                    }
-                    Text("Focus", color = theme.subtext, fontSize = 13.sp)
-                    Switch(
-                        checked = state.isFocusMode,
-                        onCheckedChange = state::updateFocusMode,
-                        enabled = state.viewMode != ViewMode.Preview,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = theme.accent,
-                            checkedTrackColor = theme.surface
-                        ),
-                        modifier = Modifier.testTag(WriterTestTags.FocusToggle)
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                SegmentedButton("Edit", state.viewMode == ViewMode.Edit, theme, WriterTestTags.viewMode(ViewMode.Edit)) {
-                    state.selectViewMode(ViewMode.Edit)
-                }
-                SegmentedButton("Split", state.viewMode == ViewMode.Split, theme, WriterTestTags.viewMode(ViewMode.Split)) {
-                    state.selectViewMode(ViewMode.Split)
-                }
-                SegmentedButton("Preview", state.viewMode == ViewMode.Preview, theme, WriterTestTags.viewMode(ViewMode.Preview)) {
-                    state.selectViewMode(ViewMode.Preview)
-                }
-                Spacer(Modifier.width(16.dp))
-                SegmentedButton("Visual", state.editingMode == EditingMode.Visual, theme, WriterTestTags.editingMode(EditingMode.Visual)) {
-                    state.selectEditingMode(EditingMode.Visual)
-                }
-                SegmentedButton("Source", state.editingMode == EditingMode.Source, theme, WriterTestTags.editingMode(EditingMode.Source)) {
-                    state.selectEditingMode(EditingMode.Source)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SegmentedButton(
-    label: String,
-    selected: Boolean,
-    theme: SkaldoriaTheme,
-    testTag: String,
-    onClick: () -> Unit
-) {
-    TextButton(
-        onClick = onClick,
-        modifier = Modifier.testTag(testTag),
-        colors = ButtonDefaults.textButtonColors(
-            containerColor = if (selected) theme.accent.copy(alpha = 0.18f) else Color.Transparent,
-            contentColor = if (selected) theme.accent else theme.subtext
-        )
-    ) {
-        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun FormattingToolbar(state: WriterState, theme: SkaldoriaTheme) {
-    Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(8.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        FormatIcon(Icons.Default.FormatBold, "Bold", WriterFormat.Bold, state, theme)
-        FormatIcon(Icons.Default.FormatItalic, "Italic", WriterFormat.Italic, state, theme)
-        FormatIcon(Icons.Default.FormatStrikethrough, "Strikethrough", WriterFormat.Strikethrough, state, theme)
-        FormatIcon(Icons.Default.Code, "Code", WriterFormat.Code, state, theme)
-        FormatText("H1", WriterFormat.Heading1, state, theme)
-        FormatText("H2", WriterFormat.Heading2, state, theme)
-        FormatIcon(Icons.Default.FormatQuote, "Quote", WriterFormat.Quote, state, theme)
-        FormatIcon(Icons.AutoMirrored.Filled.FormatListBulleted, "List", WriterFormat.List, state, theme)
-        FormatIcon(Icons.Default.Check, "Checklist", WriterFormat.Checklist, state, theme)
-    }
-}
-
-@Composable
-private fun FormatIcon(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    format: WriterFormat,
-    state: WriterState,
-    theme: SkaldoriaTheme
-) {
-    EditorTooltip(label, theme) {
-        IconButton(
-            onClick = { state.applyFormat(format) },
-            modifier = Modifier.testTag(WriterTestTags.format(format))
-        ) {
-            Icon(icon, contentDescription = label, tint = theme.accent)
-        }
-    }
-}
-
-@Composable
-private fun FormatText(label: String, format: WriterFormat, state: WriterState, theme: SkaldoriaTheme) {
-    TextButton(
-        onClick = { state.applyFormat(format) },
-        modifier = Modifier.testTag(WriterTestTags.format(format))
-    ) {
-        Text(label, color = theme.accent, fontWeight = FontWeight.Bold)
     }
 }
 

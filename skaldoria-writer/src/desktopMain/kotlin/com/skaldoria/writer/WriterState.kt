@@ -109,6 +109,11 @@ class WriterState(
         updateFocusMode(!isFocusMode)
     }
 
+    /** Pick a theme directly. [cycleTheme] remains for the keyboard path. */
+    fun selectTheme(index: Int) {
+        if (index in Themes.all.indices) currentThemeIndex = index
+    }
+
     fun cycleTheme() {
         currentThemeIndex = (currentThemeIndex + 1) % Themes.all.size
     }

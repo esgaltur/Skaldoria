@@ -14,11 +14,13 @@
 #>
 param(
     [string]$Version,
+    [string]$OutputDirectory,
     [switch]$PublishGitHub,
     [switch]$Draft,
     [switch]$Prerelease,
     [switch]$SkipTests,
-    [switch]$SkipRenderTests
+    [switch]$SkipRenderTests,
+    [switch]$SkipInstallers
 )
 
 $scriptPath = Join-Path $PSScriptRoot "package_release.ps1"

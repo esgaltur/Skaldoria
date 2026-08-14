@@ -80,6 +80,29 @@ object ThematicBreakRules {
     }
 }
 
+object FrontMatterRules {
+
+    private const val DELIMITER = "---"
+
+    /**
+     * Index of the line closing the document's YAML front matter, or null when the document has
+     * none.
+     *
+     * Only the CV dialect uses front matter, but the rule still belongs here: `CvMarkdownAdapter`
+     * and the CV editor's highlighter are two consumers asking the same question, and they used to
+     * answer differently. The adapter trims each delimiter line; the highlighter matched
+     * `^---\n.*?\n---` against the raw text, so a delimiter with a trailing space — or a file with
+     * CRLF endings — parsed as metadata while showing as an unstyled thematic break.
+     *
+     * A `---` opening the document is front matter, never a thematic break. That precedence is the
+     * caller's to apply; this only reports where the block ends.
+     */
+    fun closingLineIndex(lines: List<String>): Int? {
+        if (lines.firstOrNull()?.trim() != DELIMITER) return null
+        return (1 until lines.size).firstOrNull { lines[it].trim() == DELIMITER }
+    }
+}
+
 object MathRules {
 
     private const val DELIMITER = "$$"

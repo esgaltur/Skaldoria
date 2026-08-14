@@ -228,16 +228,29 @@ minutes cost money and a per-commit trigger spends them whether or not anyone wa
 
 ### Cutting a Local Release
 
-Installers, a portable archive, a universal JAR and SHA-256 checksums, into `dist/`. The version
-comes from `appVersion` in `build.gradle.kts` — never pass it by hand:
+The complete release is built on your machine; GitHub Actions is not involved. Windows is built
+on the host and Linux is built in WSL 2. Studio, Writer, Canvas, and CV each receive native
+installers (when their platform tools are installed), a portable archive, a runnable JAR, and
+SHA-256 checksums. The version comes from `appVersion` in `build.gradle.kts` — never pass it by
+hand:
 
 ```powershell
-.\scripts\release.ps1                 # Windows: MSI, EXE, ZIP, uber JAR
-.\scripts\release.ps1 -PublishGitHub  # ...and publish via the gh CLI
+.\scripts\release-all.ps1                 # Windows + Linux -> dist/windows and dist/linux
+.\scripts\release-all.ps1 -PublishGitHub  # ...and publish once via the local gh CLI
+```
+
+Use `-WslDistribution <name>` when the default WSL distribution is not `Ubuntu`. Inside Ubuntu,
+install a JDK 17 or newer plus `fakeroot`/`dpkg` for DEB packages and `rpm` for RPM packages.
+Portable Linux archives and runnable JARs do not require the installer tools.
+
+The platform-specific entry points remain available:
+
+```powershell
+.\scripts\release.ps1                 # Windows only -> dist/windows
 ```
 
 ```bash
-./scripts/build_linux.sh              # Linux: .deb, .rpm, .tar.gz, uber JAR
+./scripts/build_linux.sh              # Linux only -> dist/linux
 ```
 
 ---

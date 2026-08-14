@@ -5,6 +5,9 @@ object WriterTestTags {
     const val Editor = "writer-editor"
     const val Outline = "writer-outline"
     const val FocusToggle = "writer-focus-toggle"
+
+    /** The escape hatch shown *inside* focus mode, where the top bar is gone. */
+    const val FocusExit = "writer-focus-exit"
     const val Preview = "writer-preview"
 
     fun viewMode(mode: ViewMode): String = "writer-view-${mode.name.lowercase()}"

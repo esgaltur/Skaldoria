@@ -1,136 +1,251 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# Skaldoria Studio — Local Linux Release & Packaging Script
-# Builds native Linux packages (.deb, .rpm, .tar.gz, universal .jar)
-# ==============================================================================
+# Builds all Skaldoria desktop applications on Linux. Intended for native Linux or WSL 2.
 set -euo pipefail
-
-PUBLISH_GH="${2:-false}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+VERSION=""
+OUTPUT_DIRECTORY="dist/linux"
+PUBLISH_GITHUB=false
+SKIP_TESTS=false
+SKIP_RENDER_TESTS=false
+SKIP_INSTALLERS=false
+
+usage() {
+    cat <<'EOF'
+Usage: ./scripts/build_linux.sh [options]
+
+Options:
+  --version VERSION       Must match appVersion in build.gradle.kts.
+  --output-dir PATH       Artifact directory (default: dist/linux).
+  --publish               Create the GitHub release with gh.
+  --skip-tests            Skip tests and the warnings-as-errors gate.
+  --skip-render-tests     Skip Compose render guards.
+  --skip-installers       Build portable archives and JARs only.
+  -h, --help              Show this help.
+
+For compatibility, a bare first argument is treated as VERSION.
+EOF
+}
+
+while (($#)); do
+    case "$1" in
+        --version)
+            [[ $# -ge 2 ]] || { echo "Error: --version needs a value." >&2; exit 2; }
+            VERSION="$2"
+            shift 2
+            ;;
+        --output-dir)
+            [[ $# -ge 2 ]] || { echo "Error: --output-dir needs a value." >&2; exit 2; }
+            OUTPUT_DIRECTORY="$2"
+            shift 2
+            ;;
+        --publish|true)
+            PUBLISH_GITHUB=true
+            shift
+            ;;
+        --skip-tests)
+            SKIP_TESTS=true
+            shift
+            ;;
+        --skip-render-tests)
+            SKIP_RENDER_TESTS=true
+            shift
+            ;;
+        --skip-installers)
+            SKIP_INSTALLERS=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --*)
+            echo "Error: unknown option '$1'." >&2
+            usage >&2
+            exit 2
+            ;;
+        *)
+            if [[ -z "${VERSION}" ]]; then
+                VERSION="$1"
+                shift
+            else
+                echo "Error: unexpected argument '$1'." >&2
+                exit 2
+            fi
+            ;;
+    esac
+done
+
 cd "${PROJECT_ROOT}"
 
-# The version is the build's, not the script's.
-#
-# This defaulted to a literal "1.0.0", so running it with no argument stamped 1.0.0 filenames
-# onto whatever the build actually produced. build.gradle.kts is the single source of truth and
-# `printVersion` is how it is read. An explicit argument that disagrees with the build is
-# refused rather than silently honoured.
-BUILD_VERSION="$(./gradlew -q printVersion --console=plain | tail -n 1 | tr -d '[:space:]')"
-if [ -z "${BUILD_VERSION}" ]; then
-    echo "Error: could not read the project version from Gradle (./gradlew -q printVersion)." >&2
+BUILD_VERSION="$(./gradlew -q printVersion --console=plain | awk '/^[0-9]+\.[0-9]+\.[0-9]+/ { value=$0 } END { gsub(/[[:space:]]/, "", value); print value }')"
+[[ -n "${BUILD_VERSION}" ]] || { echo "Error: Gradle did not report the project version." >&2; exit 1; }
+VERSION="${VERSION:-${BUILD_VERSION}}"
+if [[ "${VERSION}" != "${BUILD_VERSION}" ]]; then
+    echo "Error: requested version '${VERSION}', but Gradle builds '${BUILD_VERSION}'." >&2
+    echo "       Change appVersion in build.gradle.kts." >&2
     exit 1
 fi
 
-VERSION="${1:-${BUILD_VERSION}}"
-if [ "${VERSION}" != "${BUILD_VERSION}" ]; then
-    echo "Error: requested version '${VERSION}' but the build produces '${BUILD_VERSION}'." >&2
-    echo "       Change appVersion in build.gradle.kts instead of overriding it here." >&2
-    exit 1
-fi
-
-echo "=========================================================="
-echo " 👑 Skaldoria Studio — Linux Packaging Pipeline"
-echo " Version: ${VERSION}"
-echo " Project: ${PROJECT_ROOT}"
-echo "=========================================================="
-
-# 1. Clean & Prepare dist directory
-mkdir -p dist
-rm -f dist/*
-
-# 2. Run Automated Verification Tests
-#
-# PLT-09: packaging must not require a display. The render guards drive real Compose frames
-# through ImageComposeScene, which needs a surface Skia can target — absent under WSL, in a
-# container, and on any headless build box. Without this the *packaging* run fails on a
-# graphics problem that says nothing about the packages being built, which is what made an
-# earlier attempt abandon the suite entirely with a blanket @Ignore (see PLT-08).
-#
-# RenderEnvironment already detects headlessness on its own; the flag is passed explicitly so
-# the reason appears in the log rather than being inferred from a skip count.
-echo -e "\n[1/5] 🧪 Running test suite..."
-RENDER_FLAG=""
-if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
-    echo "  -> No DISPLAY/WAYLAND_DISPLAY: render guards will be skipped, not failed."
-    echo "     Run this on a machine with a display to exercise them (see skaldoria-presentation/docs/RENDERING_STATUS.md)."
-    RENDER_FLAG="-PskipRenderTests"
-fi
-./gradlew :skaldoria-presentation:desktopTest :skaldoria-markdown:test --no-daemon ${RENDER_FLAG}
-echo "  -> All tests passed successfully!"
-
-# The zero-warning NFR (CONTRIBUTING.md section 6). Nothing enforces it automatically — the CI
-# workflow is manual-dispatch only (PLT-01) — so the release run is where it actually holds; the
-# Windows pipeline does the same through scripts/verify.ps1.
-echo "  -> Compiling with warnings as errors..."
-./gradlew :skaldoria-presentation:compileKotlinDesktop :skaldoria-presentation:compileTestKotlinDesktop -PwarningsAsErrors --no-daemon
-echo "  -> Zero warnings."
-
-# 3. Build Linux Distributable & Universal JAR
-echo -e "\n[2/5] 🔨 Building native Linux standalone distributable & universal JAR..."
-./gradlew :skaldoria-presentation:createDistributable :skaldoria-presentation:packageUberJarForCurrentOS --no-daemon
-
-# Attempt to build .deb and .rpm if tools are installed
-if command -v dpkg-deb >/dev/null 2>&1 || command -v fakeroot >/dev/null 2>&1; then
-    echo "  -> Building Debian (.deb) package..."
-    ./gradlew :skaldoria-presentation:packageDeb --no-daemon || true
-fi
-
-if command -v rpmbuild >/dev/null 2>&1; then
-    echo "  -> Building RedHat (.rpm) package..."
-    ./gradlew :skaldoria-presentation:packageRpm --no-daemon || true
-fi
-
-# 4. Bundle Portable Tarball and Collect Artifacts
-echo -e "\n[3/5] 📦 Bundling Linux packages..."
-
-PRESENTATION_BUILD="skaldoria-presentation/build"
-APP_DIR="${PRESENTATION_BUILD}/compose/binaries/main/app/Skaldoria"
-if [ -d "${APP_DIR}" ]; then
-    TAR_NAME="Skaldoria-v${VERSION}-linux-x64-portable.tar.gz"
-    echo "  -> Creating portable archive: ${TAR_NAME}..."
-    tar -czf "dist/${TAR_NAME}" -C "${APP_DIR}" .
-fi
-
-if [ -d "${PRESENTATION_BUILD}/compose/binaries/main/deb" ]; then
-    for deb in "${PRESENTATION_BUILD}"/compose/binaries/main/deb/*.deb; do
-        [ -f "$deb" ] && cp "$deb" "dist/Skaldoria-v${VERSION}-linux-amd64.deb" && echo "  -> Collected DEB: Skaldoria-v${VERSION}-linux-amd64.deb"
-    done
-fi
-
-if [ -d "${PRESENTATION_BUILD}/compose/binaries/main/rpm" ]; then
-    for rpm in "${PRESENTATION_BUILD}"/compose/binaries/main/rpm/*.rpm; do
-        [ -f "$rpm" ] && cp "$rpm" "dist/Skaldoria-v${VERSION}-linux-x86_64.rpm" && echo "  -> Collected RPM: Skaldoria-v${VERSION}-linux-x86_64.rpm"
-    done
-fi
-
-if [ -d "${PRESENTATION_BUILD}/compose/jars" ]; then
-    for jar in "${PRESENTATION_BUILD}"/compose/jars/*.jar; do
-        [ -f "$jar" ] && cp "$jar" "dist/Skaldoria-v${VERSION}-universal.jar" && echo "  -> Collected Universal JAR: Skaldoria-v${VERSION}-universal.jar"
-    done
-fi
-
-# 5. Generate Checksums
-echo -e "\n[4/5] 🔒 Generating SHA-256 Checksums..."
-cd dist
-sha256sum * > checksums-sha256.txt 2>/dev/null || true
-cd "${PROJECT_ROOT}"
-echo "  -> Checksums saved to dist/checksums-sha256.txt"
-
-# 6. Publish to GitHub
-echo -e "\n[5/5] 🚀 GitHub Release..."
-if [ "${PUBLISH_GH}" = "--publish" ] || [ "${PUBLISH_GH}" = "true" ]; then
-    if command -v gh >/dev/null 2>&1; then
-        echo "  Publishing release to GitHub with 'gh' CLI..."
-        gh release create "v${VERSION}" dist/* --title "Skaldoria Studio v${VERSION}" --notes-file "CHANGELOG.md" || true
-    else
-        echo "  Warning: 'gh' CLI not found. Artifacts ready in dist/."
-    fi
+if [[ "${OUTPUT_DIRECTORY}" = /* ]]; then
+    OUTPUT_DIR="${OUTPUT_DIRECTORY}"
 else
-    echo "  Build complete! Artifacts created in dist/:"
-    ls -lh dist/
+    OUTPUT_DIR="${PROJECT_ROOT}/${OUTPUT_DIRECTORY}"
+fi
+mkdir -p "${OUTPUT_DIR}"
+OUTPUT_DIR="$(cd "${OUTPUT_DIR}" && pwd)"
+case "${OUTPUT_DIR}/" in
+    "${PROJECT_ROOT}/"*) ;;
+    *) echo "Error: output directory must be inside the repository: ${OUTPUT_DIR}" >&2; exit 1 ;;
+esac
+
+# Only files created by an earlier release run live here; nested directories are preserved.
+find "${OUTPUT_DIR}" -mindepth 1 -maxdepth 1 -type f -delete
+
+case "$(uname -m)" in
+    x86_64) PORTABLE_ARCH="x64"; DEB_ARCH="amd64"; RPM_ARCH="x86_64" ;;
+    aarch64|arm64) PORTABLE_ARCH="arm64"; DEB_ARCH="arm64"; RPM_ARCH="aarch64" ;;
+    *) echo "Error: unsupported Linux architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
+APPLICATIONS=(
+    "skaldoria-presentation|Skaldoria|Skaldoria"
+    "skaldoria-writer|SkaldoriaWriter|SkaldoriaWriter"
+    "skaldoria-canvas|SkaldoriaCanvas|SkaldoriaCanvas"
+    "skaldoria-cv|SkaldoriaCV|SkaldoriaCV"
+)
+
+echo "=========================================================="
+echo " Skaldoria Suite - Linux Local Release"
+echo " Version: ${VERSION}"
+echo " Output:  ${OUTPUT_DIR}"
+echo "=========================================================="
+
+if [[ "${SKIP_TESTS}" == false ]]; then
+    echo
+    echo "[1/4] Verifying every module..."
+    RENDER_ARGS=()
+    if [[ "${SKIP_RENDER_TESTS}" == true || ( -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ) ]]; then
+        RENDER_ARGS=(-PskipRenderTests)
+        echo "  -> Render guards are skipped because this Linux session is headless or explicitly opted out."
+    fi
+    ./gradlew \
+        :skaldoria-presentation:desktopTest \
+        :skaldoria-markdown:test \
+        :skaldoria-shared-ui:desktopTest \
+        :skaldoria-writer:desktopTest \
+        :skaldoria-canvas:desktopTest \
+        :skaldoria-cv-core:test \
+        :skaldoria-cv:desktopTest \
+        --no-daemon --console=plain "${RENDER_ARGS[@]}"
+    ./gradlew \
+        :skaldoria-presentation:compileKotlinDesktop \
+        :skaldoria-presentation:compileTestKotlinDesktop \
+        :skaldoria-shared-ui:compileKotlinDesktop \
+        :skaldoria-shared-ui:compileTestKotlinDesktop \
+        :skaldoria-writer:compileKotlinDesktop \
+        :skaldoria-writer:compileTestKotlinDesktop \
+        :skaldoria-canvas:compileKotlinDesktop \
+        :skaldoria-canvas:compileTestKotlinDesktop \
+        :skaldoria-cv-core:compileKotlin \
+        :skaldoria-cv-core:compileTestKotlin \
+        :skaldoria-cv:compileKotlinDesktop \
+        :skaldoria-cv:compileTestKotlinDesktop \
+        -PwarningsAsErrors --no-daemon --console=plain
+else
+    echo
+    echo "[1/4] Verification skipped by request."
 fi
 
-echo -e "\n🎉 Linux release build finished successfully!\n"
+echo
+echo "[2/4] Building all Linux applications..."
+GRADLE_TASKS=()
+for app in "${APPLICATIONS[@]}"; do
+    IFS='|' read -r module _ _ <<< "${app}"
+    GRADLE_TASKS+=(":${module}:createDistributable" ":${module}:packageUberJarForCurrentOS")
+done
+
+BUILD_DEB=false
+BUILD_RPM=false
+if [[ "${SKIP_INSTALLERS}" == false ]]; then
+    if command -v dpkg-deb >/dev/null 2>&1 && command -v fakeroot >/dev/null 2>&1; then
+        BUILD_DEB=true
+        for app in "${APPLICATIONS[@]}"; do
+            IFS='|' read -r module _ _ <<< "${app}"
+            GRADLE_TASKS+=(":${module}:packageDeb")
+        done
+    else
+        echo "  -> DEB installers skipped: install 'fakeroot' and 'dpkg' in WSL to enable them."
+    fi
+    if command -v rpmbuild >/dev/null 2>&1; then
+        BUILD_RPM=true
+        for app in "${APPLICATIONS[@]}"; do
+            IFS='|' read -r module _ _ <<< "${app}"
+            GRADLE_TASKS+=(":${module}:packageRpm")
+        done
+    else
+        echo "  -> RPM installers skipped: install 'rpm' in WSL to enable them."
+    fi
+fi
+./gradlew "${GRADLE_TASKS[@]}" --no-daemon --console=plain
+
+copy_latest() {
+    local source_dir="$1"
+    local pattern="$2"
+    local destination="$3"
+    local candidates=()
+    shopt -s nullglob
+    candidates=("${source_dir}"/${pattern})
+    shopt -u nullglob
+    ((${#candidates[@]} > 0)) || { echo "Error: no '${pattern}' artifact in ${source_dir}." >&2; exit 1; }
+    cp "${candidates[-1]}" "${destination}"
+    echo "  -> $(basename "${destination}")"
+}
+
+echo
+echo "[3/4] Collecting artifacts..."
+for app in "${APPLICATIONS[@]}"; do
+    IFS='|' read -r module product package_name <<< "${app}"
+    compose_dir="${PROJECT_ROOT}/${module}/build/compose"
+    app_dir="${compose_dir}/binaries/main/app/${package_name}"
+    [[ -d "${app_dir}" ]] || { echo "Error: distributable was not produced: ${app_dir}" >&2; exit 1; }
+
+    tar_name="${product}-v${VERSION}-linux-${PORTABLE_ARCH}-portable.tar.gz"
+    tar -czf "${OUTPUT_DIR}/${tar_name}" -C "${app_dir}" .
+    echo "  -> ${tar_name}"
+
+    copy_latest \
+        "${compose_dir}/jars" "*${VERSION}*.jar" \
+        "${OUTPUT_DIR}/${product}-v${VERSION}-linux-${PORTABLE_ARCH}.jar"
+
+    if [[ "${BUILD_DEB}" == true ]]; then
+        copy_latest \
+            "${compose_dir}/binaries/main/deb" "*${VERSION}*.deb" \
+            "${OUTPUT_DIR}/${product}-v${VERSION}-linux-${DEB_ARCH}.deb"
+    fi
+    if [[ "${BUILD_RPM}" == true ]]; then
+        copy_latest \
+            "${compose_dir}/binaries/main/rpm" "*${VERSION}*.rpm" \
+            "${OUTPUT_DIR}/${product}-v${VERSION}-linux-${RPM_ARCH}.rpm"
+    fi
+done
+
+echo
+echo "[4/4] Writing SHA-256 checksums..."
+(
+    cd "${OUTPUT_DIR}"
+    sha256sum -- * > checksums-linux-sha256.txt
+)
+echo "  -> ${OUTPUT_DIR}/checksums-linux-sha256.txt"
+
+if [[ "${PUBLISH_GITHUB}" == true ]]; then
+    command -v gh >/dev/null 2>&1 || { echo "Error: gh is required for --publish." >&2; exit 1; }
+    gh release create "v${VERSION}" "${OUTPUT_DIR}"/* \
+        --title "Skaldoria Suite v${VERSION}" \
+        --notes-file "${PROJECT_ROOT}/CHANGELOG.md"
+fi
+
+echo
+echo "Linux release complete: ${OUTPUT_DIR}"

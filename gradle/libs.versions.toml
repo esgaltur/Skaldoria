@@ -7,6 +7,10 @@ compose-material3 = "1.9.0"
 compose-material-icons = "1.7.3"
 kotlinx-coroutines = "1.11.0"
 junit-jupiter = "5.11.4"
+# Test-only. Reads back what CvPdfRenderer writes, for the CV-NFR-101 conformance guards.
+# Deliberately NOT a runtime dependency: the PDF writer is hand-rolled so the shipped
+# applications keep zero third-party runtime dependencies.
+pdfbox = "3.0.3"
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
@@ -22,3 +26,4 @@ compose-components-resources = { module = "org.jetbrains.compose.components:comp
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
+pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }

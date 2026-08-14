@@ -1,59 +1,56 @@
 <#
 .SYNOPSIS
-    Builds, tests, packages, and optionally publishes Skaldoria to GitHub Releases locally.
+    Builds every Skaldoria desktop application for Windows.
 
 .DESCRIPTION
-    1. Runs the local verification gate (scripts/verify.ps1): both test suites and the
-       zero-warning compile. Nothing verifies a push automatically — the CI workflow is
-       manual-dispatch only (PLT-01) — so this is where those rules are enforced.
-    2. Builds Studio, Writer, and Canvas native distributions and universal runnable JARs.
-    3. Calculates SHA-256 cryptographic checksums.
-    4. Uploads all release binaries directly to GitHub Releases using 'gh' CLI without needing GitHub Actions CI/CD.
+    Verifies the repository, builds native Windows MSI/EXE installers, portable ZIP archives,
+    and runnable JARs for Studio, Writer, Canvas, and CV, then writes SHA-256 checksums.
+    Publishing is local and opt-in; GitHub Actions is not involved.
 
-.PARAMETER Version
-    The release version tag (e.g. "1.2.0").
+.PARAMETER OutputDirectory
+    Artifact directory, relative to the repository root unless absolute. Defaults to
+    dist/windows so Linux artifacts can coexist with the Windows release.
 
-    Omit it. The default is read from Gradle (`gradlew -q printVersion`), which is the single
-    source of truth in build.gradle.kts. This script used to default to a literal "1.0.0",
-    so running it without an argument stamped 1.0.0 filenames onto a 1.2.0 build. Passing a
-    value that disagrees with the build is refused rather than silently honoured.
-
-.PARAMETER PublishGitHub
-    When set, automatically publishes the release to GitHub via 'gh release create'.
-
-.PARAMETER Draft
-    Creates the GitHub release as an unpublished draft.
-
-.PARAMETER Prerelease
-    Marks the GitHub release as a pre-release.
-
-.PARAMETER SkipTests
-    Skips running the test suite before packaging.
-
-.PARAMETER SkipRenderTests
-    Forwarded to the verification gate; stands the render guards down (PLT-08).
-
-.EXAMPLE
-    .\scripts\package_release.ps1
-    .\scripts\package_release.ps1 -PublishGitHub
-    .\scripts\package_release.ps1 -PublishGitHub -Draft
+.PARAMETER SkipInstallers
+    Builds portable ZIPs and runnable JARs but skips MSI and EXE installers.
 #>
 
 [CmdletBinding()]
 param(
     [string]$Version,
+    [string]$OutputDirectory = 'dist\windows',
     [switch]$PublishGitHub,
     [switch]$Draft,
     [switch]$Prerelease,
     [switch]$SkipTests,
-    [switch]$SkipRenderTests
+    [switch]$SkipRenderTests,
+    [switch]$SkipInstallers
 )
 
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
-# The version the build itself will stamp into the installers and into BuildInfo.VERSION.
-# Artefact filenames must agree with it, so it is read rather than assumed.
+$Applications = @(
+    [pscustomobject]@{ Module = 'skaldoria-presentation'; Product = 'Skaldoria';       Package = 'Skaldoria' },
+    [pscustomobject]@{ Module = 'skaldoria-writer';       Product = 'SkaldoriaWriter'; Package = 'SkaldoriaWriter' },
+    [pscustomobject]@{ Module = 'skaldoria-canvas';       Product = 'SkaldoriaCanvas'; Package = 'SkaldoriaCanvas' },
+    [pscustomobject]@{ Module = 'skaldoria-cv';           Product = 'SkaldoriaCV';     Package = 'SkaldoriaCV' }
+)
+
+function Invoke-Gradle {
+    param([string[]]$Tasks)
+
+    Push-Location $ProjectRoot
+    try {
+        & .\gradlew.bat @Tasks --no-daemon --console=plain
+        if ($LASTEXITCODE -ne 0) {
+            throw "Gradle failed with exit code $LASTEXITCODE."
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
 function Get-GradleVersion {
     Push-Location $ProjectRoot
     try {
@@ -61,237 +58,151 @@ function Get-GradleVersion {
         if ($LASTEXITCODE -ne 0) {
             throw "Could not read the project version from Gradle:`n$output"
         }
-        $resolved = ($output | Where-Object { $_ -match '^\d+\.\d+\.\d+' } | Select-Object -Last 1)
-        if (-not $resolved) {
-            throw "Gradle did not report a version. Output was:`n$output"
+        $resolvedVersion = $output | Where-Object { $_ -match '^\d+\.\d+\.\d+' } | Select-Object -Last 1
+        if (-not $resolvedVersion) {
+            throw "Gradle did not report a semantic version. Output was:`n$output"
         }
-        return $resolved.ToString().Trim()
+        $resolvedVersion.ToString().Trim()
     } finally {
         Pop-Location
     }
+}
+
+function Resolve-OutputDirectory {
+    param([string]$Path)
+
+    $resolved = if ([IO.Path]::IsPathRooted($Path)) {
+        [IO.Path]::GetFullPath($Path)
+    } else {
+        [IO.Path]::GetFullPath((Join-Path $ProjectRoot $Path))
+    }
+
+    $projectPrefix = $ProjectRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    if (-not $resolved.StartsWith($projectPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "OutputDirectory must be inside the repository: $resolved"
+    }
+    $resolved
+}
+
+function Copy-LatestArtifact {
+    param(
+        [string]$SourceDirectory,
+        [string]$Filter,
+        [string]$Destination
+    )
+
+    $source = Get-ChildItem -Path $SourceDirectory -Filter $Filter -File -ErrorAction SilentlyContinue |
+        Where-Object Name -Like "*$Version*" |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1
+    if (-not $source) {
+        throw "Expected version $Version artifact '$Filter' was not produced in '$SourceDirectory'."
+    }
+    Copy-Item -LiteralPath $source.FullName -Destination $Destination -Force
+    Write-Host "  -> $(Split-Path $Destination -Leaf)" -ForegroundColor DarkCyan
+}
+
+function Write-Checksums {
+    param([string]$Directory)
+
+    $checksumPath = Join-Path $Directory 'checksums-windows-sha256.txt'
+    $lines = Get-ChildItem -Path $Directory -File |
+        Where-Object Name -ne 'checksums-windows-sha256.txt' |
+        Sort-Object Name |
+        ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+        }
+    if (-not $lines) {
+        throw "No Windows release artifacts were collected in '$Directory'."
+    }
+    $lines | Set-Content -LiteralPath $checksumPath -Encoding utf8
+    Write-Host "  -> $checksumPath" -ForegroundColor Green
 }
 
 $buildVersion = Get-GradleVersion
 if (-not $Version) {
     $Version = $buildVersion
 } elseif ($Version -ne $buildVersion) {
-    Write-Error "Version mismatch: -Version '$Version' but the build produces '$buildVersion'. Change appVersion in build.gradle.kts instead of overriding it here."
-    exit 1
+    throw "Version mismatch: requested '$Version', but Gradle builds '$buildVersion'. Change appVersion in build.gradle.kts."
 }
+
+$distDir = Resolve-OutputDirectory $OutputDirectory
+New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+Get-ChildItem -LiteralPath $distDir -File | Remove-Item -Force
 
 Write-Host ''
 Write-Host '==========================================================' -ForegroundColor Cyan
-Write-Host " Skaldoria Studio -- Local Release and Packaging Pipeline" -ForegroundColor Cyan
+Write-Host ' Skaldoria Suite - Windows Local Release' -ForegroundColor Cyan
 Write-Host " Version: $Version" -ForegroundColor Yellow
-Write-Host " Location: $ProjectRoot" -ForegroundColor DarkGray
+Write-Host " Output:  $distDir" -ForegroundColor DarkGray
 Write-Host '==========================================================' -ForegroundColor Cyan
-Write-Host ''
 
-# Ensure dist output directory exists
-$distDir = Join-Path $ProjectRoot 'dist'
-if (Test-Path $distDir) {
-    Remove-Item (Join-Path $distDir '*') -Recurse -Force -ErrorAction SilentlyContinue
-} else {
-    New-Item -ItemType Directory -Path $distDir | Out-Null
-}
-
-# Step 1: Run the local verification gate
-#
-# Delegated to verify.ps1 so the release and a plain local check cannot drift apart. It runs
-# Every application and library module — this step once ran only the presentation tests, so
-# another module could be red while a release was cut — followed by the zero-warning compile.
 if (-not $SkipTests) {
-    Write-Host '[1/5] Running local verification gate (tests + zero-warning build)...' -ForegroundColor Yellow
+    Write-Host "`n[1/4] Verifying every module..." -ForegroundColor Yellow
     & (Join-Path $PSScriptRoot 'verify.ps1') -SkipRenderTests:$SkipRenderTests
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error 'Verification failed! Aborting release packaging.'
-        exit $LASTEXITCODE
-    }
 } else {
-    Write-Host '[1/5] Skipping verification (-SkipTests specified)' -ForegroundColor DarkYellow
-    Write-Host '      Nothing else checks this build. Do not publish an unverified release.' -ForegroundColor DarkYellow
+    Write-Host "`n[1/4] Verification skipped by request." -ForegroundColor DarkYellow
 }
 
-# Step 2: Build Standalone Distributable and Universal JAR
-Write-Host "`n[2/5] Building native standalone application and universal JAR..." -ForegroundColor Yellow
-Push-Location $ProjectRoot
-try {
-    & .\gradlew.bat :skaldoria-presentation:createDistributable :skaldoria-presentation:packageUberJarForCurrentOS :skaldoria-writer:createDistributable :skaldoria-writer:packageUberJarForCurrentOS :skaldoria-canvas:createDistributable :skaldoria-canvas:packageUberJarForCurrentOS --no-daemon
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error 'Gradle build failed!'
-        exit $LASTEXITCODE
-    }
-} finally {
-    Pop-Location
-}
-
-# Step 3: Package MSI / EXE / ZIP Artifacts
-Write-Host "`n[3/5] Bundling installer packages..." -ForegroundColor Yellow
-
-$appDir = Join-Path $ProjectRoot 'skaldoria-presentation\build\compose\binaries\main\app\Skaldoria'
-if (Test-Path $appDir) {
-    $zipName = "Skaldoria-v$Version-windows-x64-portable.zip"
-    $zipPath = Join-Path $distDir $zipName
-    Write-Host "  -> Creating portable archive: $zipName..." -ForegroundColor DarkCyan
-    Compress-Archive -Path "$appDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
-}
-
-$writerAppDir = Join-Path $ProjectRoot 'skaldoria-writer\build\compose\binaries\main\app\SkaldoriaWriter'
-if (Test-Path $writerAppDir) {
-    $writerZipName = "SkaldoriaWriter-v$Version-windows-x64-portable.zip"
-    $writerZipPath = Join-Path $distDir $writerZipName
-    Write-Host "  -> Creating Writer portable archive: $writerZipName..." -ForegroundColor DarkCyan
-    Compress-Archive -Path "$writerAppDir\*" -DestinationPath $writerZipPath -CompressionLevel Optimal
-}
-
-$canvasAppDir = Join-Path $ProjectRoot 'skaldoria-canvas\build\compose\binaries\main\app\SkaldoriaCanvas'
-if (Test-Path $canvasAppDir) {
-    $canvasZipName = "SkaldoriaCanvas-v$Version-windows-x64-portable.zip"
-    $canvasZipPath = Join-Path $distDir $canvasZipName
-    Write-Host "  -> Creating Canvas portable archive: $canvasZipName..." -ForegroundColor DarkCyan
-    Compress-Archive -Path "$canvasAppDir\*" -DestinationPath $canvasZipPath -CompressionLevel Optimal
-}
-
-# Copy MSI installer if generated
-$msiDir = Join-Path $ProjectRoot 'skaldoria-presentation\build\compose\binaries\main\msi'
-if (Test-Path $msiDir) {
-    Get-ChildItem -Path $msiDir -Filter '*.msi' | ForEach-Object {
-        $dest = Join-Path $distDir "Skaldoria-v$Version-windows-x64.msi"
-        Copy-Item $_.FullName -Destination $dest -Force
-        Write-Host "  -> Collected MSI Installer: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+Write-Host "`n[2/4] Building all Windows applications..." -ForegroundColor Yellow
+$tasks = foreach ($app in $Applications) {
+    ":$($app.Module):createDistributable"
+    ":$($app.Module):packageUberJarForCurrentOS"
+    if (-not $SkipInstallers) {
+        ":$($app.Module):packageMsi"
+        ":$($app.Module):packageExe"
     }
 }
-$writerMsiDir = Join-Path $ProjectRoot 'skaldoria-writer\build\compose\binaries\main\msi'
-if (Test-Path $writerMsiDir) {
-    Get-ChildItem -Path $writerMsiDir -Filter '*.msi' | ForEach-Object {
-        $dest = Join-Path $distDir "SkaldoriaWriter-v$Version-windows-x64.msi"
-        Copy-Item $_.FullName -Destination $dest -Force
-        Write-Host "  -> Collected Writer MSI Installer: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
+Invoke-Gradle $tasks
+
+Write-Host "`n[3/4] Collecting artifacts..." -ForegroundColor Yellow
+foreach ($app in $Applications) {
+    $composeDir = Join-Path $ProjectRoot "$($app.Module)\build\compose"
+    $appDir = Join-Path $composeDir "binaries\main\app\$($app.Package)"
+    if (-not (Test-Path -LiteralPath $appDir -PathType Container)) {
+        throw "Expected distributable was not produced: $appDir"
     }
-    $canvasMsiDir = Join-Path $ProjectRoot 'skaldoria-canvas\build\compose\binaries\main\msi'
-    if (Test-Path $canvasMsiDir) {
-        Get-ChildItem -Path $canvasMsiDir -Filter '*.msi' | ForEach-Object {
-            $dest = Join-Path $distDir "SkaldoriaCanvas-v$Version-windows-x64.msi"
-            Copy-Item $_.FullName -Destination $dest -Force
-            Write-Host "  -> Collected Canvas MSI Installer: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
-        }
+
+    $zipPath = Join-Path $distDir "$($app.Product)-v$Version-windows-x64-portable.zip"
+    Compress-Archive -Path (Join-Path $appDir '*') -DestinationPath $zipPath -CompressionLevel Optimal -Force
+    Write-Host "  -> $(Split-Path $zipPath -Leaf)" -ForegroundColor DarkCyan
+
+    Copy-LatestArtifact `
+        -SourceDirectory (Join-Path $composeDir 'jars') `
+        -Filter '*.jar' `
+        -Destination (Join-Path $distDir "$($app.Product)-v$Version-windows-x64.jar")
+
+    if (-not $SkipInstallers) {
+        Copy-LatestArtifact `
+            -SourceDirectory (Join-Path $composeDir 'binaries\main\msi') `
+            -Filter '*.msi' `
+            -Destination (Join-Path $distDir "$($app.Product)-v$Version-windows-x64.msi")
+        Copy-LatestArtifact `
+            -SourceDirectory (Join-Path $composeDir 'binaries\main\exe') `
+            -Filter '*.exe' `
+            -Destination (Join-Path $distDir "$($app.Product)-v$Version-windows-x64-setup.exe")
     }
 }
 
-# Copy EXE installer if generated
-$exeDir = Join-Path $ProjectRoot 'skaldoria-presentation\build\compose\binaries\main\exe'
-if (Test-Path $exeDir) {
-    Get-ChildItem -Path $exeDir -Filter '*.exe' | ForEach-Object {
-        $dest = Join-Path $distDir "Skaldoria-v$Version-windows-x64-setup.exe"
-        Copy-Item $_.FullName -Destination $dest -Force
-        Write-Host "  -> Collected EXE Setup: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
-    }
-}
-$writerExeDir = Join-Path $ProjectRoot 'skaldoria-writer\build\compose\binaries\main\exe'
-if (Test-Path $writerExeDir) {
-    Get-ChildItem -Path $writerExeDir -Filter '*.exe' | ForEach-Object {
-        $dest = Join-Path $distDir "SkaldoriaWriter-v$Version-windows-x64-setup.exe"
-        Copy-Item $_.FullName -Destination $dest -Force
-        Write-Host "  -> Collected Writer EXE Setup: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
-    }
-    $canvasExeDir = Join-Path $ProjectRoot 'skaldoria-canvas\build\compose\binaries\main\exe'
-    if (Test-Path $canvasExeDir) {
-        Get-ChildItem -Path $canvasExeDir -Filter '*.exe' | ForEach-Object {
-            $dest = Join-Path $distDir "SkaldoriaCanvas-v$Version-windows-x64-setup.exe"
-            Copy-Item $_.FullName -Destination $dest -Force
-            Write-Host "  -> Collected Canvas EXE Setup: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
-        }
-    }
-}
+Write-Host "`n[4/4] Writing SHA-256 checksums..." -ForegroundColor Yellow
+Write-Checksums $distDir
 
-# Copy Universal Uber JAR
-$uberJarDir = Join-Path $ProjectRoot 'skaldoria-presentation\build\compose\jars'
-if (Test-Path $uberJarDir) {
-    Get-ChildItem -Path $uberJarDir -Filter '*.jar' | ForEach-Object {
-        $dest = Join-Path $distDir "Skaldoria-v$Version-universal.jar"
-        Copy-Item $_.FullName -Destination $dest -Force
-        Write-Host "  -> Collected Universal Runnable JAR: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
-    }
-}
-$writerUberJarDir = Join-Path $ProjectRoot 'skaldoria-writer\build\compose\jars'
-if (Test-Path $writerUberJarDir) {
-    Get-ChildItem -Path $writerUberJarDir -Filter '*.jar' | ForEach-Object {
-        $dest = Join-Path $distDir "SkaldoriaWriter-v$Version-universal.jar"
-        Copy-Item $_.FullName -Destination $dest -Force
-        Write-Host "  -> Collected Writer Universal Runnable JAR: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
-    }
-    $canvasUberJarDir = Join-Path $ProjectRoot 'skaldoria-canvas\build\compose\jars'
-    if (Test-Path $canvasUberJarDir) {
-        Get-ChildItem -Path $canvasUberJarDir -Filter '*.jar' | ForEach-Object {
-            $dest = Join-Path $distDir "SkaldoriaCanvas-v$Version-windows-x64.jar"
-            Copy-Item $_.FullName -Destination $dest -Force
-            Write-Host "  -> Collected Canvas Windows Runnable JAR: $(Split-Path $dest -Leaf)" -ForegroundColor DarkCyan
-        }
-    }
-}
-
-# Step 4: Generate SHA-256 Checksums
-Write-Host "`n[4/5] Generating SHA-256 Checksums..." -ForegroundColor Yellow
-$checksumFile = Join-Path $distDir 'checksums-sha256.txt'
-$checksums = @()
-
-Get-ChildItem -Path $distDir -File | Where-Object { $_.Name -ne 'checksums-sha256.txt' } | ForEach-Object {
-    $hash = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash.ToLower()
-    $line = "$hash  $($_.Name)"
-    $checksums += $line
-    $sizeMB = [math]::Round(($_.Length / 1MB), 2)
-    Write-Host "  * $($_.Name) ($sizeMB MB) -> $hash" -ForegroundColor Gray
-}
-
-$checksums | Out-File -FilePath $checksumFile -Encoding utf8
-Write-Host '  -> Checksums saved to dist/checksums-sha256.txt' -ForegroundColor Green
-
-# Step 5: Upload / Publish to GitHub Releases
-Write-Host "`n[5/5] GitHub Release..." -ForegroundColor Yellow
-
-$releaseFiles = Get-ChildItem -Path $distDir -File | Select-Object -ExpandProperty FullName
-
+$releaseFiles = Get-ChildItem -LiteralPath $distDir -File | Select-Object -ExpandProperty FullName
 if ($PublishGitHub) {
-    if (-not (Get-Command 'gh' -ErrorAction SilentlyContinue)) {
-        Write-Warning "'gh' GitHub CLI is not installed."
-        Write-Host 'Install it via: winget install --id GitHub.cli' -ForegroundColor Yellow
-        Write-Host 'Then run: gh auth login' -ForegroundColor Yellow
-    } else {
-        Write-Host "  Creating GitHub Release v$Version with GitHub CLI..." -ForegroundColor Cyan
-
-        $ghArgs = @('release', 'create', "v$Version")
-        $ghArgs += $releaseFiles
-        $ghArgs += @('--title', "Skaldoria Studio v$Version")
-
-        $changelogPath = Join-Path $ProjectRoot 'CHANGELOG.md'
-        if (Test-Path $changelogPath) {
-            $ghArgs += @('--notes-file', $changelogPath)
-        } else {
-            $ghArgs += @('--notes', "Official release of Skaldoria Studio v$Version")
-        }
-
-        if ($Draft) { $ghArgs += '--draft' }
-        if ($Prerelease) { $ghArgs += '--prerelease' }
-
-        & gh @ghArgs
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "`nSUCCESS: GitHub Release v$Version has been created and published!" -ForegroundColor Green
-        } else {
-            Write-Warning "gh command exited with code $LASTEXITCODE. Please check your GitHub permissions."
-        }
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        throw "GitHub CLI 'gh' is required for -PublishGitHub. Install it and run 'gh auth login'."
     }
-} else {
-    Write-Host "  Ready to upload! Packages are prepared in: $distDir" -ForegroundColor Green
-    Write-Host ''
-    Write-Host '  To publish directly to GitHub from PowerShell anytime, run:' -ForegroundColor White
-    Write-Host '    .\scripts\release.ps1 -PublishGitHub' -ForegroundColor Cyan
-    Write-Host ''
-    Write-Host '  Or manually upload the files located in the dist folder:' -ForegroundColor White
-    Get-ChildItem -Path $distDir -File | ForEach-Object {
-        $sizeMB = [math]::Round(($_.Length / 1MB), 2)
-        Write-Host "    - $($_.Name) ($sizeMB MB)" -ForegroundColor Gray
+    $ghArgs = @('release', 'create', "v$Version") + $releaseFiles + @(
+        '--title', "Skaldoria Suite v$Version",
+        '--notes-file', (Join-Path $ProjectRoot 'CHANGELOG.md')
+    )
+    if ($Draft) { $ghArgs += '--draft' }
+    if ($Prerelease) { $ghArgs += '--prerelease' }
+    & gh @ghArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "GitHub release creation failed with exit code $LASTEXITCODE."
     }
 }
 
-Write-Host ''
+Write-Host "`nWindows release complete: $distDir`n" -ForegroundColor Green

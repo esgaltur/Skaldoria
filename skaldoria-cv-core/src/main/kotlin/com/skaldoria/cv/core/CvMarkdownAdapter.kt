@@ -2,6 +2,7 @@ package com.skaldoria.cv.core
 
 import com.skaldoria.markdown.parser.FenceInfo
 import com.skaldoria.markdown.parser.FenceRules
+import com.skaldoria.markdown.parser.FrontMatterRules
 import com.skaldoria.markdown.parser.HeadingRules
 import com.skaldoria.markdown.parser.ListRules
 import com.skaldoria.markdown.parser.ThematicBreakRules
@@ -182,7 +183,9 @@ class CvMarkdownAdapter {
         diagnostics: MutableList<CvDiagnostic>
     ): Int {
         if (lines.firstOrNull()?.trim() != "---") return 0
-        val closingIndex = (1 until lines.size).firstOrNull { lines[it].trim() == "---" }
+        // Shared with the CV editor's highlighter, which used to match `^---\n.*?\n---` against
+        // the raw text and so disagreed with this on trailing whitespace and CRLF endings.
+        val closingIndex = FrontMatterRules.closingLineIndex(lines)
         if (closingIndex == null) {
             diagnostics += diagnostic(
                 code = "CV_UNCLOSED_METADATA",

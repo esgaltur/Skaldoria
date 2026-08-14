@@ -19,8 +19,12 @@ kotlin {
             dependencies {
                 implementation(project(":skaldoria-cv-core"))
                 implementation(project(":skaldoria-shared-ui"))
+                // The shared line grammar and highlight tokenizer. Without this the editor's
+                // highlighter reimplemented both, and drifted from CvMarkdownAdapter.
+                implementation(project(":skaldoria-markdown"))
                 implementation(compose.desktop.currentOs)
                 implementation(libs.compose.material3)
+                implementation(libs.compose.material.icons.extended)
             }
         }
 
@@ -28,6 +32,9 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation(compose.desktop.currentOs)
+                // Test-only, as in :skaldoria-cv-core — reads back what the hand-rolled writer
+                // produced, here through the real Compose measurer rather than a fake.
+                implementation(libs.pdfbox)
             }
         }
     }

@@ -214,17 +214,30 @@ argument that disagrees with the build, because they previously defaulted to a h
 `1.0.0` and happily produced `Skaldoria-v1.0.0-*` files from a 1.2.0 build.
 
 ```powershell
-.\scripts\release.ps1                     # Windows: MSI, EXE, portable ZIP, uber JAR -> dist/
-.\scripts\release.ps1 -PublishGitHub -Draft
+.\scripts\release-all.ps1                     # all 4 apps, Windows host + Linux through WSL
+.\scripts\release-all.ps1 -PublishGitHub -Draft
+```
+
+Artifacts are separated into `dist/windows/` and `dist/linux/`; a combined checksum manifest is
+written to `dist/checksums-sha256.txt`. This is a fully local build and optional local `gh`
+upload—GitHub Actions is not used. Select another installed distribution with
+`-WslDistribution <name>`.
+
+Platform-specific builds are also available:
+
+```powershell
+.\scripts\release.ps1                     # Windows only: MSI, EXE, ZIP, JAR
 ```
 
 ```bash
-./scripts/build_linux.sh                  # Linux: .deb, .rpm, .tar.gz, uber JAR -> dist/
-./scripts/build_linux.sh "" --publish
+./scripts/build_linux.sh                  # Linux only: DEB/RPM when available, tar.gz, JAR
+./scripts/build_linux.sh --publish
 ```
 
-Both verify first, write SHA-256 checksums into `dist/`, and publish through the `gh` CLI only
-when asked to.
+Every entry point verifies first, writes SHA-256 checksums, and publishes through `gh` only when
+asked to. Ubuntu/WSL needs JDK 17+, `tar`, and `sha256sum`; install `fakeroot` and `dpkg` for DEB
+installers and `rpm` for RPM installers. Without those optional packaging tools the portable
+Linux application archives and runnable JARs are still produced.
 
 ### Building without a display (WSL, containers, headless boxes)
 

@@ -185,6 +185,106 @@ class WysiwygVisualTransformationTest {
         assertEquals("Hidden heading\nEdit *this* line", transformed.text.text)
     }
 
+    // ---------------------------------------------------------------------
+    // Heading markers on the caret's own line
+    // ---------------------------------------------------------------------
+
+    /**
+     * The reported bug: opening a document in visual mode showed `# ` on its title.
+     *
+     * The caret starts at offset 0, offset 0 is the H1, and the rule was "reveal syntax on
+     * whichever line has the caret" — so the one line the user was most likely looking at was the
+     * one still showing markup.
+     */
+    @Test
+    fun `an h1 stays folded when the caret rests at the start of the document`() {
+        val transformed = WysiwygVisualTransformation(testTheme, cursorIndex = 0, isVisualMode = true)
+            .filter(AnnotatedString("# My Title\n\nBody text."))
+
+        assertEquals("My Title\n\nBody text.", transformed.text.text)
+    }
+
+    @Test
+    fun `a heading stays folded while its text is being typed`() {
+        val source = "## Section title"
+        val transformed = WysiwygVisualTransformation(
+            testTheme,
+            cursorIndex = source.length,
+            isVisualMode = true
+        ).filter(AnnotatedString(source))
+
+        assertEquals("Section title", transformed.text.text)
+    }
+
+    @Test
+    fun `the marker reveals when the caret steps inside it`() {
+        // Offset 1 sits between the `#` and its space — the one position from which the heading
+        // level is actually being edited.
+        val transformed = WysiwygVisualTransformation(testTheme, cursorIndex = 1, isVisualMode = true)
+            .filter(AnnotatedString("# My Title"))
+
+        assertEquals("# My Title", transformed.text.text, "the marker must be editable")
+    }
+
+    @Test
+    fun `clicking at the start of a heading does not shove the text sideways`() {
+        // The start of the visible title maps back to the first character after the marker.
+        // Revealing there would make the line jump under the pointer on every click.
+        val transformed = WysiwygVisualTransformation(testTheme, cursorIndex = 2, isVisualMode = true)
+            .filter(AnnotatedString("# My Title"))
+
+        assertEquals("My Title", transformed.text.text)
+    }
+
+    @Test
+    fun `every heading level folds on the caret line`() {
+        for (level in 1..6) {
+            val marker = "#".repeat(level)
+            val transformed = WysiwygVisualTransformation(testTheme, cursorIndex = 0, isVisualMode = true)
+                .filter(AnnotatedString("$marker Title"))
+            assertEquals("Title", transformed.text.text, "H$level did not fold")
+        }
+    }
+
+    @Test
+    fun `inline syntax on the caret line is still revealed inside a folded heading`() {
+        val transformed = WysiwygVisualTransformation(testTheme, cursorIndex = 0, isVisualMode = true)
+            .filter(AnnotatedString("# A **bold** title"))
+
+        assertEquals(
+            "A **bold** title",
+            transformed.text.text,
+            "the marker folds but the line being edited keeps its inline syntax"
+        )
+    }
+
+    @Test
+    fun `a non-heading caret line is unaffected`() {
+        val transformed = WysiwygVisualTransformation(testTheme, cursorIndex = 0, isVisualMode = true)
+            .filter(AnnotatedString("Plain *italic* line"))
+
+        assertEquals("Plain *italic* line", transformed.text.text)
+    }
+
+    @Test
+    fun `offset mapping stays monotonic when the caret line folds its marker`() {
+        val source = "# My Title\n\nBody."
+        val transformed = WysiwygVisualTransformation(testTheme, cursorIndex = 0, isVisualMode = true)
+            .filter(AnnotatedString(source))
+
+        var previous = 0
+        for (offset in 0..source.length) {
+            val mapped = transformed.offsetMapping.originalToTransformed(offset)
+            assertTrue(mapped in 0..transformed.text.length, "out of range at $offset")
+            assertTrue(mapped >= previous, "mapping moved backwards at $offset")
+            previous = mapped
+        }
+        for (offset in 0..transformed.text.length) {
+            val back = transformed.offsetMapping.transformedToOriginal(offset)
+            assertTrue(back in 0..source.length, "reverse mapping out of range at $offset")
+        }
+    }
+
     @Test
     fun `offset mapping is bounded and monotonic for mixed folded syntax`() {
         val source = "## A **bold** and `code` title\n\nPlain *italic* text"

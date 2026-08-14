@@ -11,18 +11,24 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.sp
-import com.skaldoria.markdown.parser.FenceInfo
-import com.skaldoria.markdown.parser.HeadingRules
-import com.skaldoria.markdown.parser.MathRules
-import com.skaldoria.markdown.parser.TableRules
-import com.skaldoria.markdown.parser.ThematicBreakRules
-import com.skaldoria.markdown.parser.FenceRules
+import com.skaldoria.markdown.parser.MarkdownHighlightTokenizer
+import com.skaldoria.markdown.parser.MarkdownTokenKind
 import com.skaldoria.theme.AdaptiveContrastEnforcer
 import com.skaldoria.theme.PresentationTheme
 
 /**
- * High-performance real-time syntax highlighter for Markdown editor in Skaldoria.
- * Transforms plain markdown text into rich colored syntax tokens without changing cursor offsets.
+ * High-performance real-time syntax highlighter for the Markdown editor in Skaldoria.
+ * Transforms plain markdown text into rich coloured syntax tokens without changing cursor offsets.
+ *
+ * **What lives where.** Deciding *what a span is* belongs to
+ * [MarkdownHighlightTokenizer] in `:skaldoria-markdown`, which the Writer and CV editors call too.
+ * This file only maps those kinds onto a [PresentationTheme] — the part that is genuinely
+ * per-application and should never be shared. See
+ * `skaldoria-markdown/docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase G.
+ *
+ * Kinds this palette leaves unmapped (`Italic`, `Link`, `FrontMatter`) produce no span, which is
+ * how the deck editor keeps its current appearance while the tokenizer serves dialects that do
+ * want them.
  */
 class MarkdownVisualTransformation(
     private val theme: PresentationTheme,
@@ -37,33 +43,6 @@ class MarkdownVisualTransformation(
     }
 
     companion object {
-        /**
-         * **Category: display only.** These decide what gets coloured, nothing else. They are
-         * allowed — expected — to be looser than the parser: this file styles `### Sub` and
-         * `#hashtag` as headings, neither of which begins a slide, and that is correct for both.
-         *
-         * The rules that must *not* diverge are the shared-grammar ones in `:skaldoria-markdown`
-         * (`FenceRules`), which this file calls rather than reimplements. See
-         * `skaldoria-markdown/docs/MARKDOWN_UNIFICATION_PLAN.md`, Phase E, for the three that still disagree in ways
-         * that are genuine bugs — horizontal rules, table rows and `$$` blocks.
-         *
-         * PRF-5: compiled once.
-         *
-         * These three were `Regex(...)` literals *inside* the per-line loop, so every call
-         * re-ran `Pattern.compile` once per line — and [filter] is called on every composition
-         * of the editor field, which is at least once per keystroke. On an 886-line deck that
-         * was ~900 compilations per keystroke for [BULLET] alone, since it sits on the path
-         * every ordinary prose line takes.
-         */
-        private val CODE_WORD = Regex("""\b[a-zA-Z_][a-zA-Z0-9_]*\b""")
-        private val CODE_STRING = Regex("""\"[^\"]*\"|'[^']*'""")
-        private val BULLET = Regex("""^(\s*[-*+]|\s*\d+\.)\s""")
-
-        private val KEYWORDS = setOf(
-            "fun", "val", "var", "class", "object", "interface", "import", "package",
-            "return", "if", "else", "when", "for", "while", "try", "catch", "def",
-            "async", "await", "const", "let", "function", "public", "private", "override"
-        )
 
         /** The inputs [highlightMarkdown] is a pure function of, plus what it produced. */
         private class Memo(
@@ -88,6 +67,10 @@ class MarkdownVisualTransformation(
          * produce a byte-identical result. Those now cost a few comparisons. The text check is
          * effectively free in that case because Compose hands back the same `String` instance and
          * `String.equals` short-circuits on reference identity.
+         *
+         * The tokenizer keeps a memo of its own over the pure scan. This one still earns its place
+         * on top of that: it also avoids re-allocating the thousands of `SpanStyle` objects a large
+         * deck produces, which the tokenizer cannot do because it runs below the palette.
          *
          * Not thread-safe, deliberately: it is driven from the UI thread, the same convention
          * `DeckHistory` documents.
@@ -134,278 +117,106 @@ class MarkdownVisualTransformation(
             return buildAnnotatedString {
                 append(text)
 
-                val lines = text.split("\n")
-                var currentOffset = 0
-
-                // Phase B: fence state comes from the same authority the parser uses, so the
-                // editor cannot colour a block the parser does not consider code. This was a
-                // private `startsWith("```")` toggle, which made tilde fences invisible here and
-                // disagreed with the parser on any unusual info string.
-                var openFence: FenceInfo? = null
-
-                // Phase F: `$$` block state, tracked the same way as fences. Without it the
-                // delimiters were styled and the formula body between them fell through to
-                // ordinary prose handling.
-                var inMathBlock = false
-
                 val baseBg = theme.surface
 
-                // Safe mathematically guaranteed high-contrast colors
-                val editorCodeTextColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeText, baseBg, 7.0f)
-                val editorKeywordColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeKeyword, baseBg, 4.5f)
-                val editorStringColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeString, baseBg, 4.5f)
-                val editorCommentColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeComment, baseBg, 4.5f)
-                val editorInlineCodeTextColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeKeyword, theme.surfaceVariant, 4.5f)
-                val editorInlineCodeBg = theme.surfaceVariant
+                // Mathematically guaranteed high-contrast colours.
+                val codeTextColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeText, baseBg, 7.0f)
+                val keywordColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeKeyword, baseBg, 4.5f)
+                val stringColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeString, baseBg, 4.5f)
+                val commentColor = AdaptiveContrastEnforcer.ensureContrast(theme.codeComment, baseBg, 4.5f)
+                val inlineCodeTextColor =
+                    AdaptiveContrastEnforcer.ensureContrast(theme.codeKeyword, theme.surfaceVariant, 4.5f)
 
-                for (line in lines) {
-                    val lineStart = currentOffset
-                    val lineEnd = lineStart + line.length
-                    val trimmed = line.trim()
-
-                    // Fence markers: ``` or ~~~, of any length, with any info string.
-                    val currentFence = openFence
-                    val isFenceMarker = if (currentFence != null) {
-                        FenceRules.closes(trimmed, currentFence).also { if (it) openFence = null }
-                    } else {
-                        FenceRules.openingFence(trimmed)?.also { openFence = it } != null
-                    }
-
-                    if (isFenceMarker) {
-                        addStyle(
-                            SpanStyle(
-                                color = theme.accent,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace
-                            ),
-                            lineStart,
-                            lineEnd
-                        )
-                        currentOffset += line.length + 1
-                        continue
-                    }
-
-                    if (openFence != null) {
-                        // Apply base code styling
-                        addStyle(
-                            SpanStyle(
-                                color = editorCodeTextColor,
-                                fontFamily = FontFamily.Monospace
-                            ),
-                            lineStart,
-                            lineEnd
+                for (token in MarkdownHighlightTokenizer.tokenize(text)) {
+                    val style = when (token.kind) {
+                        MarkdownTokenKind.FenceMarker -> SpanStyle(
+                            color = theme.accent,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
                         )
 
-                        // Highlight comments
-                        if (trimmed.startsWith("//") || trimmed.startsWith("#") || trimmed.startsWith("/*")) {
-                            addStyle(
-                                SpanStyle(color = editorCommentColor, fontStyle = FontStyle.Italic),
-                                lineStart,
-                                lineEnd
-                            )
-                        } else {
-                            // Token highlighting for code
-                            for (match in CODE_WORD.findAll(line)) {
-                                if (KEYWORDS.contains(match.value)) {
-                                    val start = lineStart + match.range.first
-                                    val end = lineStart + match.range.last + 1
-                                    addStyle(
-                                        SpanStyle(
-                                            color = editorKeywordColor,
-                                            fontWeight = FontWeight.Bold,
-                                            fontFamily = FontFamily.Monospace
-                                        ),
-                                        start,
-                                        end
-                                    )
-                                }
-                            }
-
-                            // Highlight string literals
-                            for (match in CODE_STRING.findAll(line)) {
-                                val start = lineStart + match.range.first
-                                val end = lineStart + match.range.last + 1
-                                addStyle(
-                                    SpanStyle(color = editorStringColor, fontFamily = FontFamily.Monospace),
-                                    start,
-                                    end
-                                )
-                            }
-                        }
-
-                        currentOffset += line.length + 1
-                        continue
-                    }
-
-                    // Math blocks ($$ … $$), including the body between the delimiters.
-                    // Policy note: the parser turns this into one MathFormula element; here it is
-                    // only a colour. Both defer to MathRules for *what the syntax is*.
-                    val isMathLine = when {
-                        inMathBlock -> {
-                            if (MathRules.closesBlock(trimmed)) inMathBlock = false
-                            true
-                        }
-                        MathRules.isSingleLine(trimmed) -> true
-                        MathRules.opensBlock(trimmed) -> {
-                            inMathBlock = true
-                            true
-                        }
-                        else -> false
-                    }
-
-                    if (isMathLine) {
-                        addStyle(
-                            SpanStyle(
-                                color = theme.primary,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Medium
-                            ),
-                            lineStart,
-                            lineEnd
+                        MarkdownTokenKind.CodeText -> SpanStyle(
+                            color = codeTextColor,
+                            fontFamily = FontFamily.Monospace
                         )
-                        currentOffset += line.length + 1
-                        continue
-                    }
 
-                    // Headers (# Heading)
-                    val heading = HeadingRules.heading(trimmed)
-                    if (heading != null) {
-                        val headerLevel = heading.level
-                        val headerColor = when (headerLevel) {
-                            1 -> theme.primary
-                            2 -> theme.accent
-                            3 -> theme.textPrimary
-                            else -> theme.textSecondary
-                        }
-                        val headerWeight = if (headerLevel <= 2) FontWeight.Bold else FontWeight.SemiBold
-
-                        addStyle(
-                            SpanStyle(
-                                color = headerColor,
-                                fontWeight = headerWeight
-                            ),
-                            lineStart,
-                            lineEnd
+                        MarkdownTokenKind.CodeComment -> SpanStyle(
+                            color = commentColor,
+                            fontStyle = FontStyle.Italic
                         )
-                        currentOffset += line.length + 1
-                        continue
-                    }
 
-                    // Directives & Comments (<!-- ... --> or ::: ...)
-                    if (trimmed.startsWith("<!--") || trimmed.startsWith(":::") || trimmed.startsWith("> note:")) {
-                        addStyle(
-                            SpanStyle(
-                                color = editorCommentColor,
-                                fontStyle = FontStyle.Italic
-                            ),
-                            lineStart,
-                            lineEnd
+                        MarkdownTokenKind.CodeKeyword -> SpanStyle(
+                            color = keywordColor,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
                         )
-                        currentOffset += line.length + 1
-                        continue
-                    }
 
-                    // Thematic breaks: ***, --- or ___. Previously only an exact `---` was styled,
-                    // so the other forms split the deck with no visual indication.
-                    if (ThematicBreakRules.isThematicBreak(trimmed)) {
-                        addStyle(
-                            SpanStyle(
-                                color = theme.accent,
-                                fontWeight = FontWeight.ExtraBold,
-                                letterSpacing = 4.sp
-                            ),
-                            lineStart,
-                            lineEnd
+                        MarkdownTokenKind.CodeString -> SpanStyle(
+                            color = stringColor,
+                            fontFamily = FontFamily.Monospace
                         )
-                        currentOffset += line.length + 1
-                        continue
-                    }
 
-                    // Blockquotes (> ...)
-                    if (trimmed.startsWith(">")) {
-                        addStyle(
-                            SpanStyle(
-                                color = theme.textSecondary,
-                                fontStyle = FontStyle.Italic
-                            ),
-                            lineStart,
-                            lineEnd
+                        MarkdownTokenKind.MathBlock -> SpanStyle(
+                            color = theme.primary,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Medium
                         )
-                        currentOffset += line.length + 1
-                        continue
-                    }
 
-
-                    // AUT-17: table rows, with or without the outer pipes. Delegated to the
-                    // parser's own grammar so the editor cannot style a table the parser does
-                    // not build — the divergence that FenceRules already fixed for fences.
-                    if (TableRules.isFencedRow(trimmed) || TableRules.isSeparatorRow(trimmed)) {
-                        addStyle(
-                            SpanStyle(
-                                color = theme.textSecondary,
-                                fontFamily = FontFamily.Monospace
-                            ),
-                            lineStart,
-                            lineEnd
+                        MarkdownTokenKind.Heading -> SpanStyle(
+                            color = when (token.level) {
+                                1 -> theme.primary
+                                2 -> theme.accent
+                                3 -> theme.textPrimary
+                                else -> theme.textSecondary
+                            },
+                            fontWeight = if (token.level <= 2) FontWeight.Bold else FontWeight.SemiBold
                         )
-                        currentOffset += line.length + 1
-                        continue
-                    }
 
-                    // Bullet Lists (- or * or + or 1.)
-                    val bulletMatch = BULLET.find(line)
-                    if (bulletMatch != null) {
-                        val bulletEnd = lineStart + bulletMatch.range.last + 1
-                        addStyle(
-                            SpanStyle(
-                                color = theme.primary,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            lineStart,
-                            bulletEnd
+                        MarkdownTokenKind.Directive -> SpanStyle(
+                            color = commentColor,
+                            fontStyle = FontStyle.Italic
                         )
-                    }
 
-                    // Inline code (`...`)
-                    var inlineCodeIdx = 0
-                    while (inlineCodeIdx < line.length) {
-                        val startTick = line.indexOf('`', inlineCodeIdx)
-                        if (startTick == -1) break
-                        val endTick = line.indexOf('`', startTick + 1)
-                        if (endTick == -1) break
-
-                        addStyle(
-                            SpanStyle(
-                                color = editorInlineCodeTextColor,
-                                fontFamily = FontFamily.Monospace,
-                                background = editorInlineCodeBg
-                            ),
-                            lineStart + startTick,
-                            lineStart + endTick + 1
+                        MarkdownTokenKind.ThematicBreak -> SpanStyle(
+                            color = theme.accent,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 4.sp
                         )
-                        inlineCodeIdx = endTick + 1
-                    }
 
-                    // Inline bold (**...**)
-                    var boldIdx = 0
-                    while (boldIdx < line.length - 1) {
-                        val startBold = line.indexOf("**", boldIdx)
-                        if (startBold == -1) break
-                        val endBold = line.indexOf("**", startBold + 2)
-                        if (endBold == -1) break
-
-                        addStyle(
-                            SpanStyle(fontWeight = FontWeight.Bold),
-                            lineStart + startBold,
-                            lineStart + endBold + 2
+                        MarkdownTokenKind.Blockquote -> SpanStyle(
+                            color = theme.textSecondary,
+                            fontStyle = FontStyle.Italic
                         )
-                        boldIdx = endBold + 2
+
+                        MarkdownTokenKind.TableRow -> SpanStyle(
+                            color = theme.textSecondary,
+                            fontFamily = FontFamily.Monospace
+                        )
+
+                        MarkdownTokenKind.BulletMarker -> SpanStyle(
+                            color = theme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        MarkdownTokenKind.InlineCode -> SpanStyle(
+                            color = inlineCodeTextColor,
+                            fontFamily = FontFamily.Monospace,
+                            background = theme.surfaceVariant
+                        )
+
+                        MarkdownTokenKind.Bold -> SpanStyle(fontWeight = FontWeight.Bold)
+
+                        // Not part of the deck editor's appearance; see the class KDoc.
+                        MarkdownTokenKind.Italic,
+                        MarkdownTokenKind.Strikethrough,
+                        MarkdownTokenKind.Link,
+                        MarkdownTokenKind.FrontMatter -> null
                     }
 
-                    currentOffset += line.length + 1
+                    if (style != null) addStyle(style, token.start, token.end)
                 }
 
-                // Overlay Find & Search Highlight Styles
+                // Overlay Find & Search highlight styles.
                 for ((idx, matchRange) in searchMatches.withIndex()) {
                     if (matchRange.first >= 0 && matchRange.last < text.length && matchRange.first <= matchRange.last) {
                         val isActive = idx == activeMatchIndex

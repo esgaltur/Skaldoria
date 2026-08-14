@@ -10,8 +10,11 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.skaldoria.markdown.parser.HeadingRules
+import com.skaldoria.markdown.parser.MarkdownHighlightTokenizer
+import com.skaldoria.markdown.parser.MarkdownTokenKind
 import com.skaldoria.shared.ui.theme.SkaldoriaTheme
 
 class WysiwygVisualTransformation(
@@ -24,8 +27,8 @@ class WysiwygVisualTransformation(
     /** Typography and source-marker width for one CommonMark ATX heading line. */
     private data class HeadingVisualStyle(
         val markerLength: Int,
-        val fontSize: androidx.compose.ui.unit.TextUnit,
-        val lineHeight: androidx.compose.ui.unit.TextUnit
+        val fontSize: TextUnit,
+        val lineHeight: TextUnit
     )
 
     /**
@@ -35,20 +38,26 @@ class WysiwygVisualTransformation(
      * and let adjacent lines collide. A paragraph style is required: font size is a span
      * concern, but vertical metrics belong to the paragraph.
      */
+    private fun headingTypography(level: Int): Pair<TextUnit, TextUnit> = when (level) {
+        1 -> 32.sp to 42.sp
+        2 -> 24.sp to 34.sp
+        3 -> 20.sp to 30.sp
+        4 -> 18.sp to 28.sp
+        5 -> 17.sp to 27.sp
+        else -> 16.sp to 27.sp
+    }
+
+    /**
+     * Visual mode also needs to know how many characters the marker occupies, so it can hide them.
+     * Source mode does not, which is why the typography lookup above is separate.
+     */
     private fun headingStyle(lineWithoutIndent: String): HeadingVisualStyle? {
         val heading = HeadingRules.heading(lineWithoutIndent) ?: return null
         val whitespaceLength = lineWithoutIndent
             .drop(heading.level)
             .takeWhile(Char::isWhitespace)
             .length
-        val (fontSize, lineHeight) = when (heading.level) {
-            1 -> 32.sp to 42.sp
-            2 -> 24.sp to 34.sp
-            3 -> 20.sp to 30.sp
-            4 -> 18.sp to 28.sp
-            5 -> 17.sp to 27.sp
-            else -> 16.sp to 27.sp
-        }
+        val (fontSize, lineHeight) = headingTypography(heading.level)
         return HeadingVisualStyle(
             markerLength = heading.level + whitespaceLength,
             fontSize = fontSize,
@@ -59,7 +68,8 @@ class WysiwygVisualTransformation(
     private fun AnnotatedString.Builder.styleHeading(
         start: Int,
         end: Int,
-        style: HeadingVisualStyle,
+        fontSize: TextUnit,
+        lineHeight: TextUnit,
         alpha: Float = 1f
     ) {
         if (start >= end) return
@@ -67,117 +77,86 @@ class WysiwygVisualTransformation(
             SpanStyle(
                 color = theme.accent.copy(alpha = alpha),
                 fontWeight = FontWeight.Bold,
-                fontSize = style.fontSize
+                fontSize = fontSize
             ),
             start,
             end
         )
-        addStyle(ParagraphStyle(lineHeight = style.lineHeight), start, end)
+        addStyle(ParagraphStyle(lineHeight = lineHeight), start, end)
+    }
+
+    private fun AnnotatedString.Builder.styleHeading(
+        start: Int,
+        end: Int,
+        style: HeadingVisualStyle,
+        alpha: Float = 1f
+    ) = styleHeading(start, end, style.fontSize, style.lineHeight, alpha)
+
+    /**
+     * Source mode: colour the markdown without hiding any of it.
+     *
+     * The token scan is shared with the deck and CV editors via [MarkdownHighlightTokenizer]; only
+     * the mapping onto [SkaldoriaTheme] is Writer's. Visual mode below cannot use it — folding
+     * needs a non-identity `OffsetMapping`, which is a different problem and stays local.
+     *
+     * Two things changed when this stopped scanning for itself. Fenced blocks are now respected, so
+     * `# comment` and `**` inside ```` ``` ```` are no longer styled as markdown; and the bullet
+     * marker comes from the shared rule rather than a `Regex` recompiled on every line of every
+     * keystroke.
+     */
+    private fun highlightSource(originalText: String): AnnotatedString {
+        val builder = AnnotatedString.Builder(originalText)
+
+        for (token in MarkdownHighlightTokenizer.tokenize(originalText)) {
+            when (token.kind) {
+                MarkdownTokenKind.Heading -> {
+                    val (fontSize, lineHeight) = headingTypography(token.level)
+                    builder.styleHeading(token.start, token.end, fontSize, lineHeight)
+                }
+
+                MarkdownTokenKind.Bold -> builder.addStyle(
+                    SpanStyle(color = theme.accent, fontWeight = FontWeight.Bold),
+                    token.start, token.end
+                )
+
+                MarkdownTokenKind.InlineCode -> builder.addStyle(
+                    SpanStyle(
+                        fontFamily = FontFamily.Monospace,
+                        color = theme.accent,
+                        background = theme.surface
+                    ),
+                    token.start, token.end
+                )
+
+                MarkdownTokenKind.Blockquote -> builder.addStyle(
+                    SpanStyle(color = theme.subtext, fontStyle = FontStyle.Italic),
+                    token.start, token.end
+                )
+
+                MarkdownTokenKind.BulletMarker -> builder.addStyle(
+                    SpanStyle(color = theme.accent, fontWeight = FontWeight.Bold),
+                    token.start, token.end
+                )
+
+                MarkdownTokenKind.Strikethrough -> builder.addStyle(
+                    SpanStyle(textDecoration = TextDecoration.LineThrough, color = theme.subtext),
+                    token.start, token.end
+                )
+
+                // Writer is a prose editor: code interiors, math, tables and directives are left
+                // as plain text, the same as before this shared the tokenizer.
+                else -> Unit
+            }
+        }
+
+        return builder.toAnnotatedString()
     }
 
     override fun filter(text: AnnotatedString): TransformedText {
         val originalText = text.text
         if (originalText.isEmpty()) return TransformedText(text, OffsetMapping.Identity)
 
-        if (!isVisualMode) {
-            // SOURCE MODE: Provide syntax highlighting without hiding characters
-            val builder = AnnotatedString.Builder(originalText)
-            val lines = originalText.split('\n')
-            var lineStart = 0
-
-            for (line in lines) {
-                val lineEnd = lineStart + line.length
-                val trimmed = line.trimStart()
-
-                headingStyle(trimmed)?.let { style ->
-                    builder.styleHeading(lineStart, lineEnd, style)
-                }
-
-                // Bold (**text**)
-                if (line.contains("**")) {
-                    var i = 0
-                    while (i < line.length - 1) {
-                        if (line[i] == '*' && line[i + 1] == '*') {
-                            val closeIdx = line.indexOf("**", i + 2)
-                            if (closeIdx != -1) {
-                                builder.addStyle(
-                                    SpanStyle(color = theme.accent, fontWeight = FontWeight.Bold),
-                                    lineStart + i, lineStart + closeIdx + 2
-                                )
-                                i = closeIdx + 2
-                                continue
-                            }
-                        }
-                        i++
-                    }
-                }
-
-                // Inline code (`...`)
-                var codeIdx = 0
-                while (codeIdx < line.length) {
-                    val startTick = line.indexOf('`', codeIdx)
-                    if (startTick == -1) break
-                    val endTick = line.indexOf('`', startTick + 1)
-                    if (endTick == -1) break
-                    builder.addStyle(
-                        SpanStyle(
-                            fontFamily = FontFamily.Monospace,
-                            color = theme.accent,
-                            background = theme.surface
-                        ),
-                        lineStart + startTick, lineStart + endTick + 1
-                    )
-                    codeIdx = endTick + 1
-                }
-
-                // Blockquote prefix (> ...)
-                if (trimmed.startsWith(">")) {
-                    builder.addStyle(
-                        SpanStyle(
-                            color = theme.subtext,
-                            fontStyle = FontStyle.Italic
-                        ),
-                        lineStart, lineEnd
-                    )
-                }
-
-                // List bullet prefix (- / * / + / 1.)
-                val bulletMatch = Regex("""^(\s*[-*+]|\s*\d+\.)\s""").find(line)
-                if (bulletMatch != null) {
-                    builder.addStyle(
-                        SpanStyle(
-                            color = theme.accent,
-                            fontWeight = FontWeight.Bold
-                        ),
-                        lineStart, lineStart + bulletMatch.range.last + 1
-                    )
-                }
-
-                // Strikethrough (~~...~~)
-                var strikeIdx = 0
-                while (strikeIdx < line.length - 1) {
-                    if (line[strikeIdx] == '~' && line[strikeIdx + 1] == '~') {
-                        val closeIdx = line.indexOf("~~", strikeIdx + 2)
-                        if (closeIdx != -1) {
-                            builder.addStyle(
-                                SpanStyle(
-                                    textDecoration = TextDecoration.LineThrough,
-                                    color = theme.subtext
-                                ),
-                                lineStart + strikeIdx, lineStart + closeIdx + 2
-                            )
-                            strikeIdx = closeIdx + 2
-                            continue
-                        }
-                    }
-                    strikeIdx++
-                }
-
-                lineStart = lineEnd + 1
-            }
-
-            return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
-        }
+        if (!isVisualMode) return TransformedText(highlightSource(originalText), OffsetMapping.Identity)
 
         // VISUAL MODE (WYSIWYG folding)
         val builder = AnnotatedString.Builder()
@@ -268,16 +247,52 @@ class WysiwygVisualTransformation(
             val alpha = if (isFocusMode && !hasCursor) 0.3f else 1f
 
             if (hasCursor) {
-                // If cursor is on this line, show it raw so the user can edit syntax
-                val tStart = transIdx
-                appendVisible(line)
+                // The caret's line shows its syntax so it can be edited — with the heading marker
+                // as the deliberate exception.
+                //
+                // Revealing on "the caret is somewhere on this line" meant a document opened in
+                // visual mode showed `# ` on its title, every time: the caret starts at offset 0
+                // and offset 0 is the H1. The user asked for WYSIWYG and got markup on the one
+                // line they were most likely looking at.
+                //
+                // The marker is instead revealed only while the caret is *inside* it, which is the
+                // one moment it is being edited. Strictly inside, so that clicking at the start of
+                // the title — which maps back to the first visible character — does not make the
+                // marker reappear and shove the text sideways under the pointer. Left-arrow from
+                // there steps into the marker and reveals it.
                 val trimmedLine = line.trimStart()
-                headingStyle(trimmedLine)?.let { style ->
-                    builder.styleHeading(tStart, transIdx, style, alpha)
-                }
+                val indentationLength = line.length - trimmedLine.length
+                val heading = headingStyle(trimmedLine)
+                val markerStart = lineStart + indentationLength
+                val editingMarker = heading != null &&
+                    cursorIndex > markerStart &&
+                    cursorIndex < markerStart + heading.markerLength
 
-                if (isFocusMode) {
-                    builder.addStyle(SpanStyle(color = theme.text.copy(alpha = 1f)), tStart, transIdx)
+                if (heading != null && !editingMarker) {
+                    if (indentationLength > 0) {
+                        appendVisible(line.take(indentationLength))
+                    }
+                    val contentStart = transIdx
+                    appendHidden(heading.markerLength)
+                    // Inline markers stay raw: this is still the line being edited.
+                    appendVisible(line.substring(indentationLength + heading.markerLength))
+                    builder.styleHeading(contentStart, transIdx, heading, alpha)
+
+                    if (isFocusMode) {
+                        builder.addStyle(
+                            SpanStyle(color = theme.text.copy(alpha = 1f)),
+                            contentStart,
+                            transIdx
+                        )
+                    }
+                } else {
+                    val tStart = transIdx
+                    appendVisible(line)
+                    heading?.let { style -> builder.styleHeading(tStart, transIdx, style, alpha) }
+
+                    if (isFocusMode) {
+                        builder.addStyle(SpanStyle(color = theme.text.copy(alpha = 1f)), tStart, transIdx)
+                    }
                 }
             } else {
                 val trimmedLine = line.trimStart()
