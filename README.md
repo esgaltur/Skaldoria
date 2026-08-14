@@ -168,6 +168,12 @@ subgraphs are flattened — a node joins the innermost group that declared it. W
   as `data:` URIs, so the file needs no network and no CDN. The source is kept as `alt` text and in
   a `<details>` fallback.
 
+> Deck export above and [Skaldoria CV's PDF export](./skaldoria-cv/README.md) are deliberately
+> different mechanisms. A deck is a visual artefact and can defer page breaks to a browser; a CV is
+> read by machines, so it needs a writer that guarantees selectable text, embedded fonts and
+> pagination identical to the preview. CV export therefore emits PDF directly rather than printing
+> HTML, and needs no browser installed.
+
 ### 9. 🎨 10+ Intelligent Slide Layouts
 - Automatic heuristic classification detects:
   - **Hero Title Slides** & **Section Headers**
@@ -189,9 +195,11 @@ The repository root is a Gradle aggregator. Each application lives in its own mo
 `:skaldoria-presentation`, `:skaldoria-writer`, `:skaldoria-canvas`, and `:skaldoria-cv`; shared parsing and
 rendering live in `:skaldoria-markdown` and `:skaldoria-shared-ui`.
 
-[`skaldoria-cv`](./skaldoria-cv/README.md) now provides its first production workflow: semantic
-Markdown editing, structural diagnostics, and a live ATS-oriented preview. Pagination and PDF
-export are tracked in its [implementation roadmap](./skaldoria-cv/docs/ROADMAP.md).
+[`skaldoria-cv`](./skaldoria-cv/README.md) authors CVs end to end: semantic Markdown editing,
+structural diagnostics, deterministic A4/Letter pagination, and **ATS-ready PDF export** with
+selectable text, live links and embedded fonts. Preview and export share one resolved layout, so
+the pages you approve are the pages that get written. Remaining work — page virtualisation and the
+pre-export ATS report — is tracked in its [implementation roadmap](./skaldoria-cv/docs/ROADMAP.md).
 
 ```bash
 # Clone the repository
@@ -205,7 +213,11 @@ cd skaldoria
 ### Running Unit Tests
 
 ```bash
+# The presentation app and the shared engine
 ./gradlew :skaldoria-presentation:desktopTest :skaldoria-markdown:test
+
+# Every module (955 tests)
+./gradlew build
 ```
 
 Verification and releases run on a developer machine. One command runs every module test suite and
@@ -409,6 +421,11 @@ than being mistaken for a deck.
   harness that proves it.
 * 🧭 **[Quality Baseline](./skaldoria-presentation/docs/QUALITY_BASELINE.md)**: The invariants this codebase holds, the reasoning behind the
   non-obvious ones, and the test guarding each.
+* 🧩 **[Markdown unification plan](./skaldoria-markdown/docs/MARKDOWN_UNIFICATION_PLAN.md)**: How one grammar came to serve four
+  applications — which rules are shared, which are deliberately not, and the duplicates each phase removed.
+* 📄 **[Skaldoria CV roadmap](./skaldoria-cv/docs/ROADMAP.md)** and **[requirements](./skaldoria-cv/docs/REQUIREMENTS.md)**: Delivery order and
+  the functional/non-functional specification behind the CV authoring workflow.
+* ✍️ **[Skaldoria Writer requirements](./skaldoria-writer/docs/REQUIREMENTS.md)**: The distraction-free Markdown editor's specification.
 
 ---
 

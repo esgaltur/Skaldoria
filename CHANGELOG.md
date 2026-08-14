@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Roadmap and delivery work. The candidate feature set is catalogued in
 [`skaldoria-presentation/docs/FEATURE_INDEX.md`](./skaldoria-presentation/docs/FEATURE_INDEX.md); the connectivity design is
 [ADR-005](./skaldoria-presentation/docs/adr/005-companion-link-establishment.md).
-Test suite: **235 to 624 tests** (558 in the app, 66 in `:skaldoria-markdown`), zero compiler warnings.
+Test suite: **235 to 955 tests**, zero compiler warnings — 496 `:skaldoria-presentation`,
+164 `:skaldoria-shared-ui`, 114 `:skaldoria-markdown`, 51 `:skaldoria-writer`, 46 `:skaldoria-cv-core`,
+43 `:skaldoria-cv`, 41 `:skaldoria-canvas`.
 
 ### Performance
 
@@ -50,6 +52,50 @@ Measured, not guessed — see [`PERFORMANCE_BASELINE.md`](./skaldoria-presentati
   be re-run before being trusted.**
 
 ### Added
+- **One markdown highlighter under three editors.** Syntax highlighting was written three times —
+  a complete version in `:skaldoria-presentation`, a partial one in `:skaldoria-writer`, and a
+  47-line reimplementation in `:skaldoria-cv` that shared nothing with the rest of Skaldoria but a
+  class name. `MarkdownHighlightTokenizer` in `:skaldoria-markdown` now answers *"what is this
+  span?"* once, delegating every line rule to the shared grammar; each editor keeps only a `when`
+  mapping token kinds onto its own palette.
+
+  **The CV copy was invisible to the existing guards, which is the part worth remembering.**
+  `LineRuleAgreementTest` and `FenceLexerAgreementTest` compare the parser against the *deck*
+  editor, and `:skaldoria-cv` did not depend on `:skaldoria-markdown` at all — a test cannot catch
+  a duplicate in a module that never links the thing it is asserting about. See
+  `MARKDOWN_UNIFICATION_PLAN.md`, Phase G.
+
+- **`InlineRuns`, shared inline parsing that yields renderable runs.** `MarkdownToken` keeps the
+  delimiters and says where they are, which is what a highlighter needs; a renderer needs the
+  opposite. Emphasis, inline code, strikethrough and links now resolve once for both CV renderers,
+  which is what lets preview and PDF lay out identical text.
+
+- **Skaldoria CV: a resolved layout model (Phase 2).** Pagination used to live inside the preview's
+  `SubcomposeLayout`, so it existed only while Compose was measuring and could not be inspected,
+  tested or reused. `CvLayoutEngine` resolves a document into positioned pages through an injected
+  `CvTextMeasurer`, Compose-free and unit-testable against a deterministic fake. Preview and export
+  consume the same `CvResolvedLayout`, so the pages a user approves are the pages that get written.
+
+  Measurement runs at **density 1.0** deliberately: a point is a point on every monitor, so a CV
+  cannot paginate differently on a HiDPI display than on a projector. The user's hardware is not
+  one of the settings CV-NFR-041 talks about.
+
+- **Skaldoria CV: accessible, text-based PDF export (Phase 3).** Real text-showing operators
+  against embedded CIDFontType2 fonts — selectable, searchable, extractable by an ATS, with a
+  `ToUnicode` CMap so arbitrary Unicode round-trips, URI link annotations for email and web
+  contacts, document metadata, and an atomic temp-sibling write so a failed export never replaces
+  an existing file.
+
+  **The writer is hand-rolled** (`:skaldoria-cv-core/pdf` — objects, xref, Flate streams, TrueType
+  embedding), keeping the repository's zero third-party runtime dependencies. Apache PDFBox is a
+  **test-only** dependency that reads back what the writer produced; a guard checking our own bytes
+  with our own model would pass on a file no reader accepts.
+
+  Two decisions recorded rather than rediscovered: faces embed **whole**, because subsetting means
+  rebuilding `glyf`, `loca` and composite-glyph references for a two-face document; and **weights
+  are synthesised** with text rendering mode 2, because only regular and italic Roboto are bundled
+  and the text has to stay a real string for extraction to work.
+
 - **`:skaldoria-markdown`, a Gradle module holding the markdown engine.** The parser, block rules,
   layout classifier and slide model, with **zero Compose on its compile classpath** — verified,
   not assumed. It compiles, tests and benchmarks without a UI toolkit, which is what makes the
@@ -108,7 +154,78 @@ Measured, not guessed — see [`PERFORMANCE_BASELINE.md`](./skaldoria-presentati
   artefacts built from 1.2.0 sources. They now read the build's version and **refuse** an
   argument that disagrees with it, rather than honouring the mislabel.
 
+### Changed
+- **Skaldoria CV's top bar, from one row of fourteen controls to two tiers.** Nothing indicated
+  grouping, so "Save As" sat beside "Template" as if they were the same kind of thing; selection was
+  shown by prefixing a label with a bullet (`• Zoom`, `• Split`), which is not an affordance anyone
+  recognises and made buttons change width as state changed; and every dropdown spelled out its
+  category *and* value (`Template: Software Engineer — ATS Single Column`), overflowing the default
+  window. Split by **frequency and consequence**: file actions on top with Export PDF as the only
+  filled button, document appearance on a tonal strip below. Adds a diagnostics badge, real zoom
+  controls (previously reachable only through an overlay you had to switch on first), and a keyboard
+  shortcut in every tooltip — `Ctrl+1/2/3`, `Ctrl+±/0` and `Ctrl+Shift+E` had existed with nothing
+  on screen to reveal them.
+
+- **Skaldoria Writer's top bar, from three stacked rows to two.** `Edit | Split | Preview` and
+  `Visual | Source` were glued together with a 16dp gap, reading as one five-button run despite
+  answering different questions; they now sit in different rows, because position separates where a
+  gap does not. The formatting toolbar was centre-aligned and scrollable, so every button moved when
+  the window resized — it is left-aligned now. The theme became a menu with colour swatches instead
+  of a button that cycled blindly through the list, and the outline toggle stopped using a Close (X)
+  icon, which reads as closing the document.
+
+  **Focus mode used to hide its own way out**, leaving Esc and F11 as the only exits with nothing on
+  screen to say so. It now shows an escape chip.
+
 ### Fixed
+- **Exported CVs ran their text off the right edge of the page.** `CvFontResolver` registered the
+  bundled Roboto with `GraphicsEnvironment.registerFont` (AWT) and then returned
+  `FontFamily("Roboto")` — a lookup **by name**. Compose shapes with Skia, Skia never sees AWT
+  registrations, so the preview measured with a substituted face while export embedded the real
+  Roboto file. Measured at **13% narrower**: lines broken to fit the substitute reached 610pt on a
+  595pt-wide sheet once drawn in the real font.
+
+  `CvFontProgram` now resolves a font to actual bytes and builds the Compose `FontFamily` **from
+  those bytes**, so the metrics that decide line breaks are the metrics that draw the glyphs
+  (measured drift after: 0.09%). This also removed a second copy of font-file location that export
+  had been doing independently — the same "two places answering one question differently" shape as
+  the highlighter.
+
+  The guard for it needed fixing too: the first version passed with the bug deliberately
+  reintroduced, because its fixture wrapped prose across source lines, and text 13% wider than a
+  half-full line still fits. `CvPageFitTest` now measures the finished PDF's glyph positions with
+  PDFBox against paragraphs that actually fill the content width.
+
+- **PDF text extracted as "rel iable" and "P a g e  1  o f  1".** `Tc` (character spacing) belongs
+  to the PDF graphics state and survives `ET`, so the `1 Tc` set for section-heading letter-spacing
+  leaked into every following text object. Invisible on screen, but enough for an extractor to
+  insert spaces after narrow glyphs — which is exactly what an ATS reads. Now written explicitly on
+  every text object, including `0 Tc`.
+
+- **PDF runs overlapped and swallowed characters**, so `**twelve** years` extracted as
+  `welve years`. Each run was placed at the measurer's absolute `x`; when measurer and font metrics
+  differ by fractions of a point the runs collide. The measurer now decides where lines *break* and
+  the embedded font's own advances decide where glyphs *sit* within a line.
+
+- **List text sat flush against its bullet.** A text measurer reports width to the last *visible*
+  glyph, so the marker `"• "` measured exactly as wide as `"•"`. The gap is now an explicit
+  `listMarkerGap` in the template rather than a trailing space that measures as nothing.
+
+- **The CV editor's highlighter disagreed with the rest of Skaldoria.** It tracked no fenced code,
+  so `# comment` inside a ```` ```bash ```` block coloured as a heading and `**` inside code still
+  bolded; it anchored `#` to column 0, missing indented headings; it matched front matter with
+  `^---\n.*?\n---` against raw text while `CvMarkdownAdapter` — the authority that actually reads
+  the metadata — trimmed each delimiter, so a trailing space or a CRLF file parsed as metadata and
+  displayed as unstyled text; and it used hardcoded hex that failed contrast on a dark scheme. All
+  of it was grammar the shared rules had already settled.
+
+- **Skaldoria Writer showed `#` on the document title in visual mode.** Raw syntax was revealed on
+  whichever line held the caret, and the caret starts at offset 0 — the H1 in nearly every
+  document. So the one line the user was most likely looking at was the one still showing markup.
+  The marker now folds even on the caret's line and reveals only while the caret is *inside* it;
+  strictly inside, so clicking at the start of a heading does not make the text jump sideways under
+  the pointer.
+
 - **Two deprecated Compose APIs, found by the new gate on its first run.** The suite was green
   and this document claimed zero warnings, but `-PwarningsAsErrors` reported
   `TooltipDefaults.rememberPlainTooltipPositionProvider` (`AppTooltip.kt`) and
@@ -221,9 +338,11 @@ Measured, not guessed — see [`PERFORMANCE_BASELINE.md`](./skaldoria-presentati
   both release pipelines run it before packaging. The cost is honest: **nothing checks a push**,
   so a change that skips the script is unverified until someone runs it or dispatches the
   workflow. A per-commit trigger waits on a budget or a public repository.
-- **Tables written without outer pipes (`a | b` / `---|---`) are unsupported.** Ordinary GFM, and
-  neither the parser nor the highlighter handles it — they agree, and both are wrong, so this is a
-  missing feature rather than a divergence.
+- ~~**Tables written without outer pipes (`a | b` / `---|---`) are unsupported.**~~ **Closed
+  (AUT-17).** Both sides defer to `TableRules` and the parser assembles the table. One deliberate
+  asymmetry remains, pinned by `LineRuleAgreementTest`: the editor styles only the *delimiter* row
+  of a pipe-less table, because recognising its header needs the one-line lookahead the parser has
+  and the highlighter does not — and adding it would put lookahead on the per-keystroke path.
 - ~~**Test suites leak `PresentationState` coroutine scopes.**~~ **Fixed — see below (COR-14).**
 
 ## [1.2.0] - 2026-08-05

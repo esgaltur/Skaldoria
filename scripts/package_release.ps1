@@ -51,6 +51,22 @@ function Invoke-Gradle {
     }
 }
 
+function Assert-NoConcurrentGradleBuild {
+    # Gradle does not serialize separate invocations that target the same module build folders.
+    # A concurrent IDE/terminal build can therefore remove jpackage or generated-source inputs
+    # during a release. Daemon processes are harmless; active wrapper processes are not.
+    $activeBuilds = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        if (-not $_.CommandLine -or $_.ProcessId -eq $PID) { return $false }
+        $normalizedCommandLine = $_.CommandLine.Replace('/', '\')
+        $normalizedCommandLine.IndexOf('gradle-wrapper.jar', [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+            $normalizedCommandLine.IndexOf($ProjectRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    }
+    if ($activeBuilds) {
+        $processIds = ($activeBuilds | Select-Object -ExpandProperty ProcessId) -join ', '
+        throw "Another Gradle build is using this checkout (PID: $processIds). Wait for it to finish before releasing."
+    }
+}
+
 function Get-GradleVersion {
     Push-Location $ProjectRoot
     try {
@@ -131,12 +147,22 @@ $distDir = Resolve-OutputDirectory $OutputDirectory
 New-Item -ItemType Directory -Path $distDir -Force | Out-Null
 Get-ChildItem -LiteralPath $distDir -File | Remove-Item -Force
 
+Assert-NoConcurrentGradleBuild
+
 Write-Host ''
 Write-Host '==========================================================' -ForegroundColor Cyan
 Write-Host ' Skaldoria Suite - Windows Local Release' -ForegroundColor Cyan
 Write-Host " Version: $Version" -ForegroundColor Yellow
 Write-Host " Output:  $distDir" -ForegroundColor DarkGray
 Write-Host '==========================================================' -ForegroundColor Cyan
+
+Write-Host "`nPreparing clean Windows build outputs..." -ForegroundColor Yellow
+$cleanTasks = @(
+    ':skaldoria-markdown:clean',
+    ':skaldoria-shared-ui:clean',
+    ':skaldoria-cv-core:clean'
+) + ($Applications | ForEach-Object { ":$($_.Module):clean" })
+Invoke-Gradle $cleanTasks
 
 if (-not $SkipTests) {
     Write-Host "`n[1/4] Verifying every module..." -ForegroundColor Yellow
@@ -149,12 +175,15 @@ Write-Host "`n[2/4] Building all Windows applications..." -ForegroundColor Yello
 $tasks = foreach ($app in $Applications) {
     ":$($app.Module):createDistributable"
     ":$($app.Module):packageUberJarForCurrentOS"
-    if (-not $SkipInstallers) {
-        ":$($app.Module):packageMsi"
-        ":$($app.Module):packageExe"
-    }
 }
 Invoke-Gradle $tasks
+if (-not $SkipInstallers) {
+    # Compose's installer tasks share and clean jpackage temporary inputs. Running MSI and EXE
+    # in one Gradle invocation lets the first format invalidate inputs of the second, so each
+    # format gets its own task graph. Apps of the same format use module-local directories.
+    Invoke-Gradle ($Applications | ForEach-Object { ":$($_.Module):packageMsi" })
+    Invoke-Gradle ($Applications | ForEach-Object { ":$($_.Module):packageExe" })
+}
 
 Write-Host "`n[3/4] Collecting artifacts..." -ForegroundColor Yellow
 foreach ($app in $Applications) {

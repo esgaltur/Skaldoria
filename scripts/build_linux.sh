@@ -123,6 +123,18 @@ echo " Version: ${VERSION}"
 echo " Output:  ${OUTPUT_DIR}"
 echo "=========================================================="
 
+echo
+echo "Preparing clean Linux build outputs..."
+./gradlew \
+    :skaldoria-markdown:clean \
+    :skaldoria-shared-ui:clean \
+    :skaldoria-cv-core:clean \
+    :skaldoria-presentation:clean \
+    :skaldoria-writer:clean \
+    :skaldoria-canvas:clean \
+    :skaldoria-cv:clean \
+    --no-daemon --console=plain
+
 if [[ "${SKIP_TESTS}" == false ]]; then
     echo
     echo "[1/4] Verifying every module..."
@@ -172,24 +184,35 @@ BUILD_RPM=false
 if [[ "${SKIP_INSTALLERS}" == false ]]; then
     if command -v dpkg-deb >/dev/null 2>&1 && command -v fakeroot >/dev/null 2>&1; then
         BUILD_DEB=true
-        for app in "${APPLICATIONS[@]}"; do
-            IFS='|' read -r module _ _ <<< "${app}"
-            GRADLE_TASKS+=(":${module}:packageDeb")
-        done
     else
         echo "  -> DEB installers skipped: install 'fakeroot' and 'dpkg' in WSL to enable them."
     fi
     if command -v rpmbuild >/dev/null 2>&1; then
         BUILD_RPM=true
-        for app in "${APPLICATIONS[@]}"; do
-            IFS='|' read -r module _ _ <<< "${app}"
-            GRADLE_TASKS+=(":${module}:packageRpm")
-        done
     else
         echo "  -> RPM installers skipped: install 'rpm' in WSL to enable them."
     fi
 fi
 ./gradlew "${GRADLE_TASKS[@]}" --no-daemon --console=plain
+
+# jpackage formats share temporary runtime inputs. Build each installer format in a separate
+# Gradle invocation so one format cannot clean files still needed by another.
+if [[ "${BUILD_DEB}" == true ]]; then
+    DEB_TASKS=()
+    for app in "${APPLICATIONS[@]}"; do
+        IFS='|' read -r module _ _ <<< "${app}"
+        DEB_TASKS+=(":${module}:packageDeb")
+    done
+    ./gradlew "${DEB_TASKS[@]}" --no-daemon --console=plain
+fi
+if [[ "${BUILD_RPM}" == true ]]; then
+    RPM_TASKS=()
+    for app in "${APPLICATIONS[@]}"; do
+        IFS='|' read -r module _ _ <<< "${app}"
+        RPM_TASKS+=(":${module}:packageRpm")
+    done
+    ./gradlew "${RPM_TASKS[@]}" --no-daemon --console=plain
+fi
 
 copy_latest() {
     local source_dir="$1"
