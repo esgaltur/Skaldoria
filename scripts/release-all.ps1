@@ -22,6 +22,8 @@ param(
     [switch]$Prerelease,
     [switch]$SkipTests,
     [switch]$SkipRenderTests,
+    [switch]$SkipWindows,
+    [switch]$SkipLinux,
     [switch]$SkipWindowsInstallers,
     [switch]$SkipLinuxInstallers
 )
@@ -96,41 +98,55 @@ Write-Host " WSL:     $WslDistribution" -ForegroundColor DarkGray
 Write-Host " Output:  $releaseRoot" -ForegroundColor DarkGray
 Write-Host '==========================================================' -ForegroundColor Cyan
 
-Write-Host "`n[1/4] Building Windows release..." -ForegroundColor Yellow
-$windowsArgs = @{
-    Version = $Version
-    OutputDirectory = $windowsDir
-    SkipTests = $SkipTests
-    SkipRenderTests = $SkipRenderTests
-    SkipInstallers = $SkipWindowsInstallers
+if ($SkipWindows) {
+    if (-not (Get-ChildItem -LiteralPath $windowsDir -File -ErrorAction SilentlyContinue)) {
+        throw "-SkipWindows requires existing artifacts in '$windowsDir'."
+    }
+    Write-Host "`n[1/4] Preserving existing Windows release (-SkipWindows)." -ForegroundColor DarkYellow
+} else {
+    Write-Host "`n[1/4] Building Windows release..." -ForegroundColor Yellow
+    $windowsArgs = @{
+        Version = $Version
+        OutputDirectory = $windowsDir
+        SkipTests = $SkipTests
+        SkipRenderTests = $SkipRenderTests
+        SkipInstallers = $SkipWindowsInstallers
+    }
+    & (Join-Path $PSScriptRoot 'package_release.ps1') @windowsArgs
 }
-& (Join-Path $PSScriptRoot 'package_release.ps1') @windowsArgs
 
-Write-Host "`n[2/4] Checking WSL and building Linux release..." -ForegroundColor Yellow
-& wsl.exe -d $WslDistribution -- bash -lc 'command -v java >/dev/null && command -v tar >/dev/null && command -v sha256sum >/dev/null'
-if ($LASTEXITCODE -ne 0) {
-    throw "WSL distribution '$WslDistribution' needs Java, tar, and sha256sum. Install a JDK 17 or newer plus coreutils."
-}
+if ($SkipLinux) {
+    if (-not (Get-ChildItem -LiteralPath $linuxDir -File -ErrorAction SilentlyContinue)) {
+        throw "-SkipLinux requires existing artifacts in '$linuxDir'."
+    }
+    Write-Host "`n[2/4] Preserving existing Linux release (-SkipLinux)." -ForegroundColor DarkYellow
+} else {
+    Write-Host "`n[2/4] Checking WSL and building Linux release..." -ForegroundColor Yellow
+    & wsl.exe -d $WslDistribution -- bash -lc 'command -v java >/dev/null && command -v tar >/dev/null && command -v sha256sum >/dev/null'
+    if ($LASTEXITCODE -ne 0) {
+        throw "WSL distribution '$WslDistribution' needs Java, tar, and sha256sum. Install a JDK 17 or newer plus coreutils."
+    }
 
-# wsl.exe treats unquoted backslashes as Bash escapes. Literal single quotes are intentionally
-# passed through so wslpath receives one intact Windows path, including any spaces.
-$wslProjectRoot = (& wsl.exe -d $WslDistribution -- wslpath -a "'$ProjectRoot'").Trim()
-if ($LASTEXITCODE -ne 0 -or -not $wslProjectRoot) {
-    throw "Could not translate the project path for WSL distribution '$WslDistribution'."
-}
-$relativeLinuxOutput = (Get-RelativePath -BasePath $ProjectRoot -TargetPath $linuxDir).Replace('\', '/')
-$linuxArgs = @(
-    '-d', $WslDistribution, '--',
-    'bash', "$wslProjectRoot/scripts/build_linux.sh",
-    '--version', $Version,
-    '--output-dir', "$wslProjectRoot/$relativeLinuxOutput"
-)
-if ($SkipTests) { $linuxArgs += '--skip-tests' }
-if ($SkipRenderTests) { $linuxArgs += '--skip-render-tests' }
-if ($SkipLinuxInstallers) { $linuxArgs += '--skip-installers' }
-& wsl.exe @linuxArgs
-if ($LASTEXITCODE -ne 0) {
-    throw "Linux release failed in WSL with exit code $LASTEXITCODE."
+    # wsl.exe treats unquoted backslashes as Bash escapes. Literal single quotes are intentionally
+    # passed through so wslpath receives one intact Windows path, including any spaces.
+    $wslProjectRoot = (& wsl.exe -d $WslDistribution -- wslpath -a "'$ProjectRoot'").Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $wslProjectRoot) {
+        throw "Could not translate the project path for WSL distribution '$WslDistribution'."
+    }
+    $relativeLinuxOutput = (Get-RelativePath -BasePath $ProjectRoot -TargetPath $linuxDir).Replace('\', '/')
+    $linuxArgs = @(
+        '-d', $WslDistribution, '--',
+        'bash', "$wslProjectRoot/scripts/build_linux.sh",
+        '--version', $Version,
+        '--output-dir', "$wslProjectRoot/$relativeLinuxOutput"
+    )
+    if ($SkipTests) { $linuxArgs += '--skip-tests' }
+    if ($SkipRenderTests) { $linuxArgs += '--skip-render-tests' }
+    if ($SkipLinuxInstallers) { $linuxArgs += '--skip-installers' }
+    & wsl.exe @linuxArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Linux release failed in WSL with exit code $LASTEXITCODE."
+    }
 }
 
 Write-Host "`n[3/4] Writing combined SHA-256 checksums..." -ForegroundColor Yellow

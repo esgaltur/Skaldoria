@@ -222,6 +222,8 @@ Artifacts are separated into `dist/windows/` and `dist/linux/`; a combined check
 written to `dist/checksums-sha256.txt`. This is a fully local build and optional local `gh`
 upload—GitHub Actions is not used. Select another installed distribution with
 `-WslDistribution <name>`.
+Use `-SkipWindows` or `-SkipLinux` to resume after a platform-specific failure while preserving
+the already completed platform artifacts.
 
 Platform-specific builds are also available:
 

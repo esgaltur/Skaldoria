@@ -254,6 +254,8 @@ hand:
 Use `-WslDistribution <name>` when the default WSL distribution is not `Ubuntu`. Inside Ubuntu,
 install a JDK 17 or newer plus `fakeroot`/`dpkg` for DEB packages and `rpm` for RPM packages.
 Portable Linux archives and runnable JARs do not require the installer tools.
+After a platform-specific failure, resume without rebuilding successful artifacts by passing
+`-SkipWindows` or `-SkipLinux`.
 
 The platform-specific entry points remain available:
 
