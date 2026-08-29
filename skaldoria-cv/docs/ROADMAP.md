@@ -18,12 +18,25 @@ remains authoritative; this file records delivery order and current status.
 - [x] Bundle OFL-licensed Roboto and add independent font selection with explicit availability.
 - [x] Bundle a concrete software engineer CV example with measurable, evidence-oriented content.
 - [x] Add source syntax highlighting without hiding Markdown characters.
-- [ ] Add outline navigation, undo/redo, find/replace, save-as, and crash recovery.
+- [x] Add outline navigation, undo/redo, find/replace, save-as, and crash recovery.
 
 Source highlighting is delegated to the shared `MarkdownHighlightTokenizer` in `:skaldoria-markdown`
 rather than reimplemented here; see `MARKDOWN_UNIFICATION_PLAN.md`, Phase G, for what the local
-version was getting wrong. Undo/redo and save-as are present; outline navigation, find/replace and
-crash recovery remain.
+version was getting wrong.
+
+Three notes on what closed this phase:
+
+- **Find and replace is not a local implementation.** `FindReplaceController` moved from
+  `:skaldoria-presentation` to `:skaldoria-shared-ui`, so both applications search by one set of
+  rules and one set of tests. Its Compose state stays outside `CvEditorState` because a search is a
+  view on the document, not part of it.
+- **The outline navigates by source line.** `CvPageElement` carries the `SourceRange` it was built
+  from, so `CvResolvedLayout.pageContaining` can move the preview to the page showing a heading
+  rather than guessing from element order.
+- **Recovery is offered, never applied.** A debounced snapshot is written to `~/.skaldoria/cv`
+  through the same atomic writer as a save; on the next launch it is compared against the file on
+  disk and only offered when they differ. Restoring loads the text and leaves the document dirty,
+  so the original is replaced only by an explicit save.
 
 Primary requirements: CV-FR-001–007, CV-FR-020, CV-FR-022–026, CV-NFR-001–006, CV-NFR-040.
 
@@ -37,13 +50,30 @@ Primary requirements: CV-FR-001–007, CV-FR-020, CV-FR-022–026, CV-NFR-001–
 - [x] Add persistent manual zoom, Ctrl/Cmd-wheel zoom, and visible two-axis preview scrolling without document reflow.
 - [x] Produce a resolved layout model with deterministic measurements and invalidation boundaries.
 - [x] Share resolved pagination between preview and export and add full widow/orphan guards.
-- [ ] Render only visible and adjacent pages with fit-page, fit-width, actual-size, zoom, and navigation controls.
-- [ ] Report rather than clip, overlap, omit, or illegibly scale overflow content.
+- [x] Render only visible and adjacent pages with fit-page, fit-width, actual-size, zoom, and navigation controls.
+- [x] Report rather than clip, overlap, omit, or illegibly scale overflow content.
 
 `CvLayoutEngine` resolves a document into positioned pages through an injected `CvTextMeasurer`,
 so pagination is decided once and consumed by both renderers. Measurement runs at density 1.0, which
-makes a point a point on every monitor — pagination cannot vary with the user's display. Page
-virtualisation and overflow reporting are still outstanding; every page is composed today.
+makes a point a point on every monitor — pagination cannot vary with the user's display.
+
+**Virtualisation** keeps the space and drops the paint: a page outside the window becomes a spacer
+of identical size, so the scroll geometry and scrollbar do not move as the window slides.
+`CvPageWindow` owns that arithmetic as pure functions, which is what makes "which pages are on
+screen" testable without a display.
+
+**Overflow reporting** covers the one case pagination cannot resolve: a flow item taller than the
+content box. `PagePacker` gives it a fresh page, it still does not fit, and the remainder used to be
+clipped by the sheet in preview and drawn off-page in the PDF — text disappearing from both outputs
+with nothing anywhere saying so. `CvLayoutEngine` now reports it as a `CvLayoutOverflow` carrying
+the source line, surfaced as a blocking `CV_CONTENT_OVERFLOW` diagnostic. Note what this is *not*:
+the engine still does not split an oversized block across pages, so the reported content remains
+clipped on screen. Reporting is what CV-FR-046 asks for; splitting text blocks at line boundaries
+would need the preview's draw path to render a line range rather than re-requesting the whole
+`TextLayoutResult`, and is worth doing only if real CVs turn out to hit it.
+
+The resolved layout is now hoisted to `CvEditor` rather than resolved inside the preview, because
+the overflow report has to be visible in Source view, where no page is drawn at all.
 
 Primary requirements: CV-FR-021, CV-FR-040–047, CV-NFR-020–024, CV-NFR-041–043.
 

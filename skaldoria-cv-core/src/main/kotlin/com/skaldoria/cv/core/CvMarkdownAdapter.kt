@@ -138,11 +138,17 @@ class CvMarkdownAdapter {
                 )
                 else -> CvBlock(CvBlockKind.Paragraph, line.trim(), SourceRange(lineNumber))
             }
+            val inHeader = candidateName != null && currentSection == null && currentEntry == null
             val lineContacts = contactItems(line, lineNumber)
-            val isHeaderContactLine = candidateName != null && currentSection == null && currentEntry == null &&
-                lineContacts.isNotEmpty() && isContactOnlyLine(line)
+            val isHeaderContactLine = inHeader && lineContacts.isNotEmpty() && isContactOnlyLine(line)
             if (!isHeaderContactLine) addBlock(block, headerBlocks, currentSection, currentEntry)
-            contacts += lineContacts
+
+            // Only the header region contributes contacts. Harvesting every line put any link a
+            // CV mentioned in passing — a repository in an Experience bullet, a publication URL —
+            // into the header strip beside the candidate's phone number, where it read as a way to
+            // contact them. Links in body text are already rendered and made clickable by
+            // InlineRuns, so they lose nothing by not being contacts.
+            if (inHeader) contacts += lineContacts
             lineIndex++
         }
 
