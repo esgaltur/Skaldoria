@@ -138,7 +138,7 @@ class FindRevealScrollTest : PresentationStateTestBase() {
             listOf(
                 "open_and_type" to {
                     state.toggleFind()
-                    state.findQuery = "the needle is here"
+                    state.updateFindQuery("the needle is here")
                 },
                 "next_1" to { state.findNext() },
                 "next_2" to { state.findNext() },

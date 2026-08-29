@@ -377,7 +377,7 @@ class PresentationState(
 
     var findQuery: String
         get() = findReplace.query
-        set(value) { findReplace.query = value }
+        private set(value) { findReplace.query = value }
 
     var replaceQuery: String
         get() = findReplace.replacement
@@ -396,13 +396,16 @@ class PresentationState(
         private set(value) { findReplace.isRegex = value }
 
     fun updateReplaceQuery(value: String) { replaceQuery = value }
-    fun toggleFindCaseSensitivity() { isFindCaseSensitive = !isFindCaseSensitive }
-    fun toggleFindWholeWord() { isFindWholeWord = !isFindWholeWord }
-    fun toggleFindRegex() { isFindRegex = !isFindRegex }
+    fun updateFindCaseSensitivity(enabled: Boolean) { isFindCaseSensitive = enabled }
+    fun updateFindWholeWord(enabled: Boolean) { isFindWholeWord = enabled }
+    fun updateFindRegex(enabled: Boolean) { isFindRegex = enabled }
+    fun toggleFindCaseSensitivity() = updateFindCaseSensitivity(!isFindCaseSensitive)
+    fun toggleFindWholeWord() = updateFindWholeWord(!isFindWholeWord)
+    fun toggleFindRegex() = updateFindRegex(!isFindRegex)
 
     var currentMatchIndex: Int
         get() = findReplace.currentMatchIndex
-        set(value) { findReplace.currentMatchIndex = value }
+        private set(value) { findReplace.currentMatchIndex = value }
 
     val findMatches: List<IntRange>
         get() = findReplace.matches

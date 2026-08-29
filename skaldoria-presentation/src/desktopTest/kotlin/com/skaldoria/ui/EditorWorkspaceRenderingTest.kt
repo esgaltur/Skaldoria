@@ -171,7 +171,7 @@ class EditorWorkspaceRenderingTest : PresentationStateTestBase() {
         val before = renderSettled(deckState(withNeedle), "editor_workspace_before_find")
 
         val searched = deckState(withNeedle).apply {
-            findQuery = "needle is here"
+            updateFindQuery("needle is here")
             findNext()
         }
         val after = renderSettled(searched, "editor_workspace_after_find")

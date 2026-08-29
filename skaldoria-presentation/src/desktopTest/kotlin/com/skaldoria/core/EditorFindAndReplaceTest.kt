@@ -14,11 +14,11 @@ class EditorFindAndReplaceTest : PresentationStateTestBase() {
         val state = presentationState()
         state.updateMarkdown("# Kotlin Engine\nKotlin is fast, kotlin is modern.\nKOTLIN rocks!")
 
-        state.findQuery = "kotlin"
-        state.isFindCaseSensitive = false
+        state.updateFindQuery("kotlin")
+        state.updateFindCaseSensitivity(false)
         assertEquals(4, state.findMatches.size)
 
-        state.isFindCaseSensitive = true
+        state.updateFindCaseSensitivity(true)
         assertEquals(1, state.findMatches.size) // only lowercase "kotlin"
     }
 
@@ -27,11 +27,11 @@ class EditorFindAndReplaceTest : PresentationStateTestBase() {
         val state = presentationState()
         state.updateMarkdown("cat concatenate caterpillar cat")
 
-        state.findQuery = "cat"
-        state.isFindWholeWord = false
+        state.updateFindQuery("cat")
+        state.updateFindWholeWord(false)
         assertEquals(4, state.findMatches.size)
 
-        state.isFindWholeWord = true
+        state.updateFindWholeWord(true)
         assertEquals(2, state.findMatches.size)
     }
 
@@ -40,8 +40,8 @@ class EditorFindAndReplaceTest : PresentationStateTestBase() {
         val state = presentationState()
         state.updateMarkdown("Slide 1: Alpha\nSlide 2: Beta\nSlide 42: Omega")
 
-        state.findQuery = "Slide \\d+"
-        state.isFindRegex = true
+        state.updateFindQuery("Slide \\d+")
+        state.updateFindRegex(true)
         assertEquals(3, state.findMatches.size)
     }
 
@@ -49,7 +49,7 @@ class EditorFindAndReplaceTest : PresentationStateTestBase() {
     fun testFindNextAndPreviousCycling() {
         val state = presentationState()
         state.updateMarkdown("alpha beta alpha gamma alpha")
-        state.findQuery = "alpha"
+        state.updateFindQuery("alpha")
 
         assertEquals(3, state.findMatches.size)
         assertEquals(0, state.currentMatchIndex)
@@ -71,8 +71,8 @@ class EditorFindAndReplaceTest : PresentationStateTestBase() {
     fun testReplaceCurrentAndReplaceAll() {
         val state = presentationState()
         state.updateMarkdown("apple banana apple cherry apple")
-        state.findQuery = "apple"
-        state.replaceQuery = "orange"
+        state.updateFindQuery("apple")
+        state.updateReplaceQuery("orange")
 
         assertEquals(3, state.findMatches.size)
         state.replaceCurrent() // replaces first apple

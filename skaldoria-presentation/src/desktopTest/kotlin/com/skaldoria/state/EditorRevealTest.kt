@@ -39,7 +39,7 @@ class EditorRevealTest : PresentationStateTestBase() {
     fun `findNext reveals the match it selected`() {
         val state = presentationState()
         state.updateMarkdown(longDeck())
-        state.findQuery = "Point 3"
+        state.updateFindQuery("Point 3")
 
         val before = state.editorRevealToken
         state.findNext()
@@ -58,7 +58,7 @@ class EditorRevealTest : PresentationStateTestBase() {
     fun `findPrevious reveals the match it selected`() {
         val state = presentationState()
         state.updateMarkdown(longDeck())
-        state.findQuery = "Point 3"
+        state.updateFindQuery("Point 3")
 
         val before = state.editorRevealToken
         state.findPrevious()
@@ -74,7 +74,7 @@ class EditorRevealTest : PresentationStateTestBase() {
         // indistinguishable from no signal and the second press would do nothing.
         val state = presentationState()
         state.updateMarkdown(longDeck())
-        state.findQuery = "needle"
+        state.updateFindQuery("needle")
         assertEquals(1, state.findMatches.size)
 
         state.findNext()
@@ -107,7 +107,7 @@ class EditorRevealTest : PresentationStateTestBase() {
         // "half a feature" shape as revealing a match you cannot navigate from.
         val state = presentationState()
         state.updateMarkdown(longDeck())
-        state.findQuery = "Point 2 on slide 9"
+        state.updateFindQuery("Point 2 on slide 9")
         state.findNext()
 
         assertEquals(8, state.currentSlideIndex)
@@ -303,7 +303,7 @@ class EditorRevealTest : PresentationStateTestBase() {
     fun `a reveal target past the end of a shorter document is clamped`() {
         val state = presentationState()
         state.updateMarkdown(longDeck())
-        state.findQuery = "needle"
+        state.updateFindQuery("needle")
         state.findNext()
 
         state.updateMarkdown("# Tiny")
@@ -327,7 +327,7 @@ class EditorRevealTest : PresentationStateTestBase() {
         val state = presentationState()
         state.updateMarkdown(longDeck())
         state.toggleFind()
-        state.findQuery = "needle"
+        state.updateFindQuery("needle")
         state.findNext()
 
         val before = state.editorFocusToken
@@ -341,7 +341,7 @@ class EditorRevealTest : PresentationStateTestBase() {
         val state = presentationState()
         state.updateMarkdown(longDeck())
         state.toggleFind()
-        state.findQuery = "needle"
+        state.updateFindQuery("needle")
         state.findNext()
         val match = state.findMatches[state.currentMatchIndex]
 
