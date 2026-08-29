@@ -1,7 +1,7 @@
 package com.skaldoria.canvas
 
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
+import com.skaldoria.canvas.model.CanvasPoint as Offset
+import com.skaldoria.canvas.model.CanvasRect as Rect
 import com.skaldoria.canvas.model.CanvasGeometry
 import com.skaldoria.canvas.model.CanvasNode
 import com.skaldoria.canvas.model.EdgePort

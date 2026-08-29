@@ -13,6 +13,18 @@ group = "com.skaldoria"
 val appVersion = "1.2.0"
 version = appVersion
 
+/**
+ * Local releases build Windows and Linux from the same checkout. Give those builds isolated
+ * outputs so an IDE build—or the other operating system—cannot replace classes and jpackage
+ * inputs while a release gate is running.
+ */
+providers.gradleProperty("releaseBuildRoot").orNull?.let { relativeRoot ->
+    val releaseRoot = layout.projectDirectory.dir(relativeRoot)
+    subprojects {
+        layout.buildDirectory.set(releaseRoot.dir(name))
+    }
+}
+
 /** Makes the authoritative version available to local release scripts. */
 tasks.register("printVersion") {
     group = "help"

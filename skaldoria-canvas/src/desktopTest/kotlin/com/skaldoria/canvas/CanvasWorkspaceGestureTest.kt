@@ -2,6 +2,7 @@ package com.skaldoria.canvas
 
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.geometry.Offset
+import com.skaldoria.canvas.model.CanvasPoint
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithTag
@@ -35,7 +36,7 @@ class CanvasWorkspaceGestureTest {
 
     @Test
     fun panToolDragOnEmptyCanvasMovesViewport() = runComposeUiTest {
-        val state = CanvasState(CanvasDocument()).apply { activeTool = CanvasTool.Pan }
+        val state = CanvasState(CanvasDocument()).apply { selectTool(CanvasTool.Pan) }
         setCanvasContent(state)
 
         onNodeWithTag(CanvasTestTags.Workspace).performMouseInput {
@@ -107,7 +108,7 @@ class CanvasWorkspaceGestureTest {
         val edge = state.edges.single()
         assertEquals("a", edge.fromNodeId)
         assertEquals("b", edge.toNodeId)
-        assertTrue(state.findEdgeAt(Offset(350f, 250f), threshold = 24f) != null)
+        assertTrue(state.findEdgeAt(CanvasPoint(350f, 250f), threshold = 24f) != null)
     }
 
     @Test
@@ -157,7 +158,7 @@ class CanvasWorkspaceGestureTest {
             ),
             viewport = CanvasViewport()
         )
-    ).apply { activeTool = tool }
+    ).apply { selectTool(tool) }
 
     private fun androidx.compose.ui.test.ComposeUiTest.setCanvasContent(state: CanvasState) {
         setContent {

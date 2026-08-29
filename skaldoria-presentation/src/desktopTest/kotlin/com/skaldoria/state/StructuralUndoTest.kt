@@ -139,4 +139,17 @@ class StructuralUndoTest : PresentationStateTestBase() {
         assertFalse(state.canUndo, "undoing across decks would restore one deck over another")
         assertEquals(1, state.slides.size)
     }
+
+    @Test
+    fun `rejected structural edits do not create undo entries`() {
+        val state = deckOfThree()
+
+        state.moveSlide(1, 1)
+        state.deleteSlide(99)
+        state.duplicateSlide(99)
+
+        assertFalse(state.canUndo, "commands that changed nothing must not create history")
+        assertFalse(state.canRedo)
+        assertEquals(listOf("Alpha", "Beta", "Gamma"), state.slides.map { it.title })
+    }
 }

@@ -1,5 +1,6 @@
 package com.skaldoria.config
 
+import com.skaldoria.core.json.Json
 import java.io.File
 
 /**
@@ -157,11 +158,17 @@ object ConfigManager {
      * never actually saved — so theme and editor font size reset on every launch.
      */
     @Synchronized
-    fun saveUiPreferences(themeId: String, editorFontSize: Int, hudVisibility: String? = null) {
+    fun saveUiPreferences(
+        themeId: String,
+        editorFontSize: Int,
+        hudVisibility: String? = null,
+        transition: String? = null
+    ) {
         val current = loadConfig()
         saveConfig(
             current.copy(
                 lastThemeId = themeId,
+                lastTransition = transition ?: current.lastTransition,
                 editorFontSize = editorFontSize,
                 // Null means "unchanged", so callers that do not know about the HUD cannot
                 // erase the setting by omitting it.
@@ -195,19 +202,19 @@ object ConfigManager {
     internal fun serializeConfigJson(config: AppConfig): String {
         val sb = StringBuilder()
         sb.append("{\n")
-        sb.append("  \"lastThemeId\": \"").append(escapeJson(config.lastThemeId)).append("\",\n")
-        sb.append("  \"lastTransition\": \"").append(escapeJson(config.lastTransition)).append("\",\n")
+        sb.append("  \"lastThemeId\": ").append(Json.string(config.lastThemeId)).append(",\n")
+        sb.append("  \"lastTransition\": ").append(Json.string(config.lastTransition)).append(",\n")
         sb.append("  \"editorFontSize\": ").append(config.editorFontSize).append(",\n")
         // Omitted entirely when unset, so an untouched preference stays absent from the file
         // rather than being written as a literal null the parser then has to special-case.
         config.hudVisibility?.let {
-            sb.append("  \"hudVisibility\": \"").append(escapeJson(it)).append("\",\n")
+            sb.append("  \"hudVisibility\": ").append(Json.string(it)).append(",\n")
         }
         sb.append("  \"recentProjects\": [\n")
         config.recentProjects.forEachIndexed { index, project ->
             sb.append("    {\n")
-            sb.append("      \"path\": \"").append(escapeJson(project.path)).append("\",\n")
-            sb.append("      \"title\": \"").append(escapeJson(project.title)).append("\",\n")
+            sb.append("      \"path\": ").append(Json.string(project.path)).append(",\n")
+            sb.append("      \"title\": ").append(Json.string(project.title)).append(",\n")
             sb.append("      \"lastOpenedTimestamp\": ").append(project.lastOpenedTimestamp).append(",\n")
             sb.append("      \"slideCount\": ").append(project.slideCount).append("\n")
             sb.append("    }")
@@ -220,59 +227,26 @@ object ConfigManager {
     }
 
     internal fun parseConfigJson(json: String): AppConfig {
-        var lastThemeId = "nord-dark"
-        var lastTransition = "fade"
-        var editorFontSize = 14
-        val recentList = mutableListOf<RecentProject>()
-
-        // Simple line parser
-        val themeMatch = Regex("\"lastThemeId\"\\s*:\\s*\"([^\"]+)\"").find(json)
-        if (themeMatch != null) lastThemeId = themeMatch.groupValues[1]
-
-        val transMatch = Regex("\"lastTransition\"\\s*:\\s*\"([^\"]+)\"").find(json)
-        if (transMatch != null) lastTransition = transMatch.groupValues[1]
-
-        val fontMatch = Regex("\"editorFontSize\"\\s*:\\s*(\\d+)").find(json)
-        if (fontMatch != null) editorFontSize = fontMatch.groupValues[1].toIntOrNull() ?: 14
-
-        // Absent in any config written before DEL-02; stays null and the caller applies the
-        // default, so an older file loads without special handling.
-        val hudVisibility = Regex("\"hudVisibility\"\\s*:\\s*\"([^\"]+)\"").find(json)
-            ?.groupValues?.get(1)
-            ?.let(::unescapeJson)
-
-        val projectBlocks = json.split(Regex("\\{[\\s\\r\\n]*\"path\""))
-        for (i in 1 until projectBlocks.size) {
-            val block = "{\"path\"" + projectBlocks[i]
-            val pathMatch = Regex("\"path\"\\s*:\\s*\"([^\"]+)\"").find(block)
-            val titleMatch = Regex("\"title\"\\s*:\\s*\"([^\"]+)\"").find(block)
-            val timeMatch = Regex("\"lastOpenedTimestamp\"\\s*:\\s*(\\d+)").find(block)
-            val countMatch = Regex("\"slideCount\"\\s*:\\s*(\\d+)").find(block)
-
-            if (pathMatch != null && titleMatch != null) {
-                recentList.add(
-                    RecentProject(
-                        path = unescapeJson(pathMatch.groupValues[1]),
-                        title = unescapeJson(titleMatch.groupValues[1]),
-                        lastOpenedTimestamp = timeMatch?.groupValues?.get(1)?.toLongOrNull() ?: System.currentTimeMillis(),
-                        slideCount = countMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
-                    )
-                )
-            }
+        val root = Json.parseObject(json) ?: return AppConfig()
+        val recentList = root.array("recentProjects").orEmpty().mapNotNull { value ->
+            val project = value as? Json.ObjectValue ?: return@mapNotNull null
+            val path = project.string("path") ?: return@mapNotNull null
+            val title = project.string("title") ?: return@mapNotNull null
+            RecentProject(
+                path = path,
+                title = title,
+                lastOpenedTimestamp = project.number("lastOpenedTimestamp")?.toLongOrNull()
+                    ?: System.currentTimeMillis(),
+                slideCount = project.number("slideCount")?.toIntOrNull() ?: 1
+            )
         }
 
         return AppConfig(
             recentProjects = recentList,
-            lastThemeId = lastThemeId,
-            lastTransition = lastTransition,
-            editorFontSize = editorFontSize,
-            hudVisibility = hudVisibility
+            lastThemeId = root.string("lastThemeId") ?: "nord-dark",
+            lastTransition = root.string("lastTransition") ?: "fade",
+            editorFontSize = root.number("editorFontSize")?.toIntOrNull() ?: 14,
+            hudVisibility = root.string("hudVisibility")
         )
     }
-
-    private fun escapeJson(str: String): String =
-        str.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
-
-    private fun unescapeJson(str: String): String =
-        str.replace("\\\"", "\"").replace("\\\\", "\\").replace("\\n", "\n").replace("\\r", "\r")
 }

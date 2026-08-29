@@ -43,7 +43,7 @@ object DeckKeyHandler {
             AppCommands.PEN_DRAWING -> state.togglePenDrawing()
             AppCommands.CLEAR_ANNOTATIONS -> state.clearAnnotations()
             AppCommands.UNDO_STROKE -> state.undoStroke()
-            AppCommands.COMMAND_PALETTE -> state.isCommandPaletteOpen = true
+            AppCommands.COMMAND_PALETTE -> state.openCommandPalette()
             AppCommands.EXIT_FULLSCREEN -> onEscape()
             else -> return false
         }

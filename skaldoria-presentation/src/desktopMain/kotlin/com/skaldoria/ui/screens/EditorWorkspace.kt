@@ -128,7 +128,7 @@ fun EditorWorkspace(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(4.dp))
                                             .background(state.currentTheme.surfaceVariant)
-                                            .clickable { state.isPerSlideEditorMode = !state.isPerSlideEditorMode }
+                                            .clickable(onClick = state::togglePerSlideEditorMode)
                                             .padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }
@@ -172,7 +172,7 @@ fun EditorWorkspace(
                                 theme = state.currentTheme
                             ) {
                                 IconButton(
-                                    onClick = { state.isFollowCaretEnabled = !state.isFollowCaretEnabled },
+                                    onClick = state::toggleFollowCaret,
                                     modifier = Modifier.size(24.dp)
                                 ) {
                                     Icon(
@@ -546,7 +546,7 @@ fun EditorWorkspace(
         if (state.isCommandPaletteOpen) {
             CommandPalette(
                 state = state,
-                onClose = { state.isCommandPaletteOpen = false }
+                onClose = state::closeCommandPalette
             )
         }
 
@@ -556,7 +556,7 @@ fun EditorWorkspace(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.45f))
-                    .clickable { state.isParkingLotDrawerOpen = false }
+                    .clickable(onClick = state::closeParkingLotDrawer)
             ) {
                 Surface(
                     modifier = Modifier
@@ -584,7 +584,7 @@ fun EditorWorkspace(
                                 color = state.currentTheme.textPrimary
                             )
                             IconButton(
-                                onClick = { state.isParkingLotDrawerOpen = false },
+                                onClick = state::closeParkingLotDrawer,
                                 modifier = Modifier.size(24.dp)
                             ) {
                                 Icon(

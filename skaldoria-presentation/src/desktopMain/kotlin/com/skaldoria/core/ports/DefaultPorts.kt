@@ -1,6 +1,7 @@
 package com.skaldoria.core.ports
 
 import com.skaldoria.core.models.DeckProject
+import com.skaldoria.config.ConfigManager
 import com.skaldoria.export.FileManager
 import com.skaldoria.project.DeckProjectManager
 import com.skaldoria.remote.DeckControl
@@ -39,4 +40,33 @@ object DefaultFileDialogs : FileDialogs {
 object DefaultCompanionServer : CompanionServerPort {
     override fun start(deck: DeckControl, preferredPort: Int) = RemoteCompanionServer.start(deck, preferredPort)
     override fun stop() = RemoteCompanionServer.stop()
+}
+
+object DefaultPreferencesRepository : PreferencesRepository {
+    override fun loadUiPreferences(): UiPreferences = ConfigManager.loadConfig().let { config ->
+        UiPreferences(
+            themeId = config.lastThemeId,
+            editorFontSize = config.editorFontSize,
+            hudVisibility = config.hudVisibility,
+            transition = config.lastTransition
+        )
+    }
+
+    override fun saveUiPreferences(preferences: UiPreferences) = ConfigManager.saveUiPreferences(
+        themeId = preferences.themeId,
+        editorFontSize = preferences.editorFontSize,
+        hudVisibility = preferences.hudVisibility,
+        transition = preferences.transition
+    )
+
+    override fun saveDraft(content: String) = ConfigManager.saveDraft(content)
+    override fun loadDraft(): String? = ConfigManager.loadDraft()
+    override fun clearDraft() = ConfigManager.clearDraft()
+    override fun addRecentProject(path: String, title: String, slideCount: Int) =
+        ConfigManager.addRecentProject(path, title, slideCount)
+}
+
+object DefaultHtmlDeckExporter : HtmlDeckExporter {
+    override fun export(source: HtmlDeckSource, onExportCompleted: (String) -> Unit) =
+        FileManager.exportStandaloneHtmlDeck(source, onExportCompleted)
 }

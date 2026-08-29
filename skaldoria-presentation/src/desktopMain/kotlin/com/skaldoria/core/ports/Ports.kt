@@ -1,6 +1,8 @@
 package com.skaldoria.core.ports
 
 import com.skaldoria.core.models.DeckProject
+import com.skaldoria.markdown.models.Slide
+import com.skaldoria.theme.PresentationTheme
 import java.io.File
 
 /**
@@ -46,4 +48,32 @@ interface CompanionServerPort {
     /** @return the base URL the pairing dialog displays. */
     fun start(deck: com.skaldoria.remote.DeckControl, preferredPort: Int): String
     fun stop()
+}
+
+data class UiPreferences(
+    val themeId: String,
+    val editorFontSize: Int,
+    val hudVisibility: String?,
+    val transition: String
+)
+
+/** Draft, recent-project and UI-preference persistence used by the presentation façade. */
+interface PreferencesRepository {
+    fun loadUiPreferences(): UiPreferences
+    fun saveUiPreferences(preferences: UiPreferences)
+    fun saveDraft(content: String)
+    fun loadDraft(): String?
+    fun clearDraft()
+    fun addRecentProject(path: String, title: String, slideCount: Int)
+}
+
+/** Read-only surface needed to render a standalone HTML deck. */
+interface HtmlDeckSource {
+    val currentTheme: PresentationTheme
+    val slides: List<Slide>
+}
+
+/** Native HTML export boundary. */
+interface HtmlDeckExporter {
+    fun export(source: HtmlDeckSource, onExportCompleted: (String) -> Unit = {})
 }

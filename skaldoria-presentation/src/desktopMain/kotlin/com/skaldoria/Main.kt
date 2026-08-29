@@ -112,7 +112,7 @@ fun main() = application {
                 AppCommands.SAVE_AS -> state.saveAsFile()
                 AppCommands.SAVE -> state.saveFile()
                 AppCommands.EXPORT -> com.skaldoria.export.DeckExporter.exportPdf(state) {}
-                AppCommands.COMMAND_PALETTE -> state.isCommandPaletteOpen = !state.isCommandPaletteOpen
+                AppCommands.COMMAND_PALETTE -> state.toggleCommandPalette()
                 AppCommands.FORMAT_BOLD -> state.formatSelection("**")
                 AppCommands.FORMAT_ITALIC -> state.formatSelection("_")
                 AppCommands.FORMAT_LINK -> state.formatSelection("[", "]()")
@@ -148,7 +148,7 @@ fun main() = application {
     // Presentation Deck Window
     if (state.isFullscreen) {
         Window(
-            onCloseRequest = { state.isFullscreen = false },
+            onCloseRequest = state::exitFullscreen,
             icon = appIcon,
             title = "Skaldoria — Presentation Deck (${BuildInfo.DISPLAY_VERSION})",
             state = deckWindowState,
@@ -158,7 +158,7 @@ fun main() = application {
             // handler cannot be starved that way. It runs only when the content did not
             // consume the event, so nothing is handled twice.
             onKeyEvent = { event ->
-                DeckKeyHandler.handle(event, state) { state.isFullscreen = false }
+                DeckKeyHandler.handle(event, state, state::exitFullscreen)
             }
         ) {
             ProvideDeckBaseDir(state.deckBaseDir) { FullscreenDeck(state) }
@@ -168,7 +168,7 @@ fun main() = application {
     // Dedicated Speaker / Presenter Notes Window
     if (state.isPresenterModeActive) {
         Window(
-            onCloseRequest = { state.isPresenterModeActive = false },
+            onCloseRequest = state::closePresenterMode,
             icon = appIcon,
             title = "Skaldoria — Speaker Console & Notes (${BuildInfo.DISPLAY_VERSION})",
             alwaysOnTop = true,
@@ -176,13 +176,13 @@ fun main() = application {
             // KEY-1. This window is `alwaysOnTop`, so it holds focus for most of a talk — and
             // it answered to no key at all before this.
             onKeyEvent = { event ->
-                DeckKeyHandler.handle(event, state) { state.isPresenterModeActive = false }
+                DeckKeyHandler.handle(event, state, state::closePresenterMode)
             }
         ) {
             ProvideDeckBaseDir(state.deckBaseDir) {
                 PresenterView(
                     state = state,
-                    onClose = { state.isPresenterModeActive = false }
+                    onClose = state::closePresenterMode
                 )
             }
         }

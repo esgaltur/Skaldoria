@@ -29,6 +29,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$ReleaseBuildRoot = 'build/release/windows'
+$ReleaseBuildRootPath = Join-Path $ProjectRoot 'build\release\windows'
 
 $Applications = @(
     [pscustomobject]@{ Module = 'skaldoria-presentation'; Product = 'Skaldoria';       Package = 'Skaldoria' },
@@ -42,7 +44,7 @@ function Invoke-Gradle {
 
     Push-Location $ProjectRoot
     try {
-        & .\gradlew.bat @Tasks --no-daemon --console=plain
+        & .\gradlew.bat @Tasks -PwarningsAsErrors "-PreleaseBuildRoot=$ReleaseBuildRoot" --no-daemon --console=plain
         if ($LASTEXITCODE -ne 0) {
             throw "Gradle failed with exit code $LASTEXITCODE."
         }
@@ -166,7 +168,7 @@ Invoke-Gradle $cleanTasks
 
 if (-not $SkipTests) {
     Write-Host "`n[1/4] Verifying every module..." -ForegroundColor Yellow
-    & (Join-Path $PSScriptRoot 'verify.ps1') -SkipRenderTests:$SkipRenderTests
+    & (Join-Path $PSScriptRoot 'verify.ps1') -SkipRenderTests:$SkipRenderTests -BuildRoot $ReleaseBuildRoot
 } else {
     Write-Host "`n[1/4] Verification skipped by request." -ForegroundColor DarkYellow
 }
@@ -187,7 +189,7 @@ if (-not $SkipInstallers) {
 
 Write-Host "`n[3/4] Collecting artifacts..." -ForegroundColor Yellow
 foreach ($app in $Applications) {
-    $composeDir = Join-Path $ProjectRoot "$($app.Module)\build\compose"
+    $composeDir = Join-Path $ReleaseBuildRootPath "$($app.Module)\compose"
     $appDir = Join-Path $composeDir "binaries\main\app\$($app.Package)"
     if (-not (Test-Path -LiteralPath $appDir -PathType Container)) {
         throw "Expected distributable was not produced: $appDir"

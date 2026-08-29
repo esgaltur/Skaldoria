@@ -26,6 +26,7 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import com.skaldoria.canvas.state.CanvasState
+import com.skaldoria.canvas.io.CanvasDocumentController
 import com.skaldoria.canvas.state.CanvasTool
 import com.skaldoria.canvas.ui.CanvasWorkspace
 import com.skaldoria.shared.ui.util.loadClasspathPainter
@@ -34,12 +35,13 @@ import com.skaldoria.theme.PresentationTheme
 
 fun main() = application {
     val state = remember { CanvasState() }
+    val files = remember { CanvasDocumentController() }
     var theme by remember { mutableStateOf(BuiltinThemes.SkaldoriaDark) }
     val appIcon = remember { loadClasspathPainter("icons/canvas.png") }
     val windowTitle = canvasWindowTitle(state)
 
     Window(
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = { if (files.confirmReplace(state)) exitApplication() },
         title = windowTitle,
         icon = appIcon,
         state = remember {
@@ -54,7 +56,8 @@ fun main() = application {
         CanvasWindowContent(
             state = state,
             theme = theme,
-            onThemeSelected = { theme = it }
+            onThemeSelected = { theme = it },
+            files = files
         )
     }
 }
@@ -63,7 +66,8 @@ fun main() = application {
 fun CanvasWindowContent(
     state: CanvasState,
     theme: PresentationTheme,
-    onThemeSelected: (PresentationTheme) -> Unit
+    onThemeSelected: (PresentationTheme) -> Unit,
+    files: CanvasDocumentController = CanvasDocumentController()
 ) {
     val colors = if (theme.isDark) {
         darkColorScheme(
@@ -90,7 +94,8 @@ fun CanvasWindowContent(
             CanvasWorkspace(
                 state = state,
                 theme = theme,
-                onThemeSelected = onThemeSelected
+                onThemeSelected = onThemeSelected,
+                files = files
             )
         }
     }
@@ -131,15 +136,15 @@ internal fun CanvasState.handleKeyEvent(event: KeyEvent): Boolean {
             true
         }
         event.key == Key.V && !commandModifier && editingNodeId == null -> {
-            activeTool = CanvasTool.Select
+            selectTool(CanvasTool.Select)
             true
         }
         event.key == Key.C && !commandModifier && editingNodeId == null -> {
-            activeTool = CanvasTool.Connect
+            selectTool(CanvasTool.Connect)
             true
         }
         event.key == Key.H && !commandModifier && editingNodeId == null -> {
-            activeTool = CanvasTool.Pan
+            selectTool(CanvasTool.Pan)
             true
         }
         event.key == Key.Escape -> {

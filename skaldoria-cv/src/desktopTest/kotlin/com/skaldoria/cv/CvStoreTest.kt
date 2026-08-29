@@ -115,4 +115,36 @@ class CvStoreTest {
         store.dispatch(CvEvent.SourceChanged(TextFieldValue("---\nfont: inter\n---\n# Candidate")))
         assertEquals(CvFontId.Georgia, store.state.fontId)
     }
+
+    @Test
+    fun `undo and redo keep metadata-derived presentation state consistent with source`() {
+        val modern = "---\ntheme: modern-blue\nfont: roboto\ntemplate: software-engineer-ats\n---\n# Candidate"
+        val graphite = "---\ntheme: graphite\nfont: arial\ntemplate: classic-ats\n---\n# Candidate"
+        val store = CvStore(modern)
+
+        store.dispatch(CvEvent.SourceChanged(TextFieldValue(graphite)))
+        assertEquals(CvThemeId.Graphite, store.state.themeId)
+        assertEquals(CvFontId.Arial, store.state.fontId)
+
+        store.dispatch(CvEvent.Undo)
+        assertEquals(modern, store.state.source.text)
+        assertEquals(CvThemeId.ModernBlue, store.state.themeId)
+        assertEquals(CvFontId.Roboto, store.state.fontId)
+
+        store.dispatch(CvEvent.Redo)
+        assertEquals(graphite, store.state.source.text)
+        assertEquals(CvThemeId.Graphite, store.state.themeId)
+        assertEquals(CvFontId.Arial, store.state.fontId)
+    }
+
+    @Test
+    fun `source history remains bounded during a long editing session`() {
+        val store = CvStore("# Candidate")
+
+        repeat(CvStore.HISTORY_LIMIT + 25) { index ->
+            store.dispatch(CvEvent.SourceChanged(TextFieldValue("# Candidate $index")))
+        }
+
+        assertEquals(CvStore.HISTORY_LIMIT, store.state.undoStack.size)
+    }
 }

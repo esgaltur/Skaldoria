@@ -59,7 +59,7 @@ fun PresenterView(
     }
 
     if (state.isGridOverviewOpen) {
-        SlideGridOverviewDialog(state = state, onDismiss = { state.isGridOverviewOpen = false })
+        SlideGridOverviewDialog(state = state, onDismiss = state::closeGridOverview)
     }
 
     // F-18: `state.elapsedSeconds` is deliberately NOT read here.
@@ -95,8 +95,8 @@ fun PresenterView(
                     // Esc closes the console; it must not also drop the deck out of
                     // fullscreen, which would end the presentation from the wrong window.
                     when {
-                        state.isCommandPaletteOpen -> state.isCommandPaletteOpen = false
-                        state.isGridOverviewOpen -> state.isGridOverviewOpen = false
+                        state.isCommandPaletteOpen -> state.closeCommandPalette()
+                        state.isGridOverviewOpen -> state.closeGridOverview()
                         else -> onClose()
                     }
                 }

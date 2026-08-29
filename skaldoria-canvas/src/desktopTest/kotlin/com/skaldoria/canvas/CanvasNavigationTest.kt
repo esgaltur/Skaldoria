@@ -1,6 +1,6 @@
 package com.skaldoria.canvas
 
-import androidx.compose.ui.geometry.Offset
+import com.skaldoria.canvas.model.CanvasPoint as Offset
 import com.skaldoria.canvas.model.CanvasDocument
 import com.skaldoria.canvas.model.CanvasViewport
 import com.skaldoria.canvas.state.CanvasState

@@ -22,14 +22,10 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.skaldoria.canvas.io.CanvasExporter
-import com.skaldoria.canvas.io.CanvasSerializer
-import com.skaldoria.canvas.model.CanvasDocument
+import com.skaldoria.canvas.io.CanvasDocumentController
 import com.skaldoria.canvas.model.CanvasNode
 import com.skaldoria.canvas.state.CanvasState
 import com.skaldoria.theme.PresentationTheme
-import java.io.File
-import javax.swing.JFileChooser
-import javax.swing.filechooser.FileNameExtensionFilter
 
 /**
  * The master spatial whiteboard workspace.
@@ -41,6 +37,7 @@ fun CanvasWorkspace(
     state: CanvasState,
     theme: PresentationTheme,
     onThemeSelected: (PresentationTheme) -> Unit,
+    files: CanvasDocumentController = CanvasDocumentController(),
     modifier: Modifier = Modifier
 ) {
     var canvasSize by remember { mutableStateOf(Size(1280f, 800f)) }
@@ -66,23 +63,23 @@ fun CanvasWorkspace(
                 val isShift = event.keyboardModifiers.isShiftPressed
 
                 if (isZoom) {
-                    state.zoomFromWheel(scrollDelta.y, change.position)
+                    state.zoomFromWheel(scrollDelta.y, change.position.toCanvasPoint())
                 } else {
-                    state.panFromWheel(scrollDelta, horizontal = isShift)
+                    state.panFromWheel(scrollDelta.toCanvasPoint(), horizontal = isShift)
                 }
                 event.changes.forEach { it.consume() }
             }
             .pointerInput(state.activeTool) {
                 detectCanvasGestures(
                     onMiddleDrag = { delta ->
-                        state.panBy(delta)
+                        state.panBy(delta.toCanvasPoint())
                     },
                     onDoubleTap = { tapPos ->
-                        val canvasPos = state.viewport.screenToCanvas(tapPos)
+                        val canvasPos = state.viewport.screenToCanvas(tapPos.toCanvasPoint())
                         state.addNode(canvasPos)
                     },
                     onTap = { tapPos ->
-                        val clickedEdge = state.findEdgeAt(tapPos)
+                        val clickedEdge = state.findEdgeAt(tapPos.toCanvasPoint())
                         if (clickedEdge != null) {
                             state.selectEdge(clickedEdge.id)
                         } else {
@@ -92,20 +89,19 @@ fun CanvasWorkspace(
                     onDragStart = { startPos ->
                         when (state.activeTool) {
                             com.skaldoria.canvas.state.CanvasTool.Select -> {
-                                state.marqueeStart = startPos
-                                state.marqueeCurrent = startPos
+                                state.beginMarquee(startPos.toCanvasPoint())
                             }
                             com.skaldoria.canvas.state.CanvasTool.Pan -> {
                                 // Pan mode
                             }
                             com.skaldoria.canvas.state.CanvasTool.Connect -> {
-                                val canvasStart = state.viewport.screenToCanvas(startPos)
+                                val canvasStart = state.viewport.screenToCanvas(startPos.toCanvasPoint())
                                 val node = state.findNodeAt(canvasStart)
                                 if (node != null) {
                                     state.beginConnection(
                                         sourceNodeId = node.id,
                                         sourcePort = com.skaldoria.canvas.model.EdgePort.Auto,
-                                        pointerScreenPosition = startPos
+                                        pointerScreenPosition = startPos.toCanvasPoint()
                                     )
                                 }
                             }
@@ -114,16 +110,16 @@ fun CanvasWorkspace(
                     onDrag = { change, dragAmount ->
                         when (state.activeTool) {
                             com.skaldoria.canvas.state.CanvasTool.Pan -> {
-                                state.panBy(dragAmount)
+                                state.panBy(dragAmount.toCanvasPoint())
                             }
                             com.skaldoria.canvas.state.CanvasTool.Select -> {
-                                state.marqueeCurrent = (state.marqueeCurrent ?: state.marqueeStart ?: change.position) + dragAmount
+                                state.updateMarquee(change.position.toCanvasPoint(), dragAmount.toCanvasPoint())
                             }
                             com.skaldoria.canvas.state.CanvasTool.Connect -> {
                                 if (state.connectingSourceNodeId != null) {
-                                    state.moveConnectionPointerBy(dragAmount)
+                                    state.moveConnectionPointerBy(dragAmount.toCanvasPoint())
                                 } else {
-                                    state.panBy(dragAmount)
+                                    state.panBy(dragAmount.toCanvasPoint())
                                 }
                             }
                         }
@@ -132,8 +128,8 @@ fun CanvasWorkspace(
                         if (state.activeTool == com.skaldoria.canvas.state.CanvasTool.Select) {
                             val mStart = state.marqueeStart
                             val mCurrent = state.marqueeCurrent
-                            if (mStart != null && mCurrent != null && (mStart - mCurrent).getDistance() > 8f) {
-                                val screenRect = Rect(
+                            if (mStart != null && mCurrent != null && (mStart - mCurrent).distance() > 8f) {
+                                val screenRect = com.skaldoria.canvas.model.CanvasRect(
                                     minOf(mStart.x, mCurrent.x),
                                     minOf(mStart.y, mCurrent.y),
                                     maxOf(mStart.x, mCurrent.x),
@@ -144,13 +140,11 @@ fun CanvasWorkspace(
                         } else if (state.activeTool == com.skaldoria.canvas.state.CanvasTool.Connect) {
                             state.finishConnection()
                         }
-                        state.marqueeStart = null
-                        state.marqueeCurrent = null
+                        state.cancelMarquee()
                         state.cancelConnection()
                     },
                     onDragCancel = {
-                        state.marqueeStart = null
-                        state.marqueeCurrent = null
+                        state.cancelMarquee()
                         state.cancelConnection()
                     },
                     consumeDown = true
@@ -164,8 +158,12 @@ fun CanvasWorkspace(
         )
 
         // Layer 2: Graph Connections & Edges
+        val visibleEdges = remember(state.edges, state.nodes, state.viewport, canvasSize) {
+            state.getVisibleEdges(canvasSize.width, canvasSize.height)
+        }
         CanvasEdgeRenderer(
             state = state,
+            edges = visibleEdges,
             theme = theme
         )
 
@@ -189,7 +187,7 @@ fun CanvasWorkspace(
         // Layer 4: Marquee Selection Rectangle
         val mStart = state.marqueeStart
         val mCurrent = state.marqueeCurrent
-        if (mStart != null && mCurrent != null && (mStart - mCurrent).getDistance() > 6f) {
+        if (mStart != null && mCurrent != null && (mStart - mCurrent).distance() > 6f) {
             val marqueeRect = Rect(
                 minOf(mStart.x, mCurrent.x),
                 minOf(mStart.y, mCurrent.y),
@@ -239,13 +237,13 @@ fun CanvasWorkspace(
                 exportDocContent = CanvasExporter.exportToMarkdownDocument(state.document)
             },
             onNewDocument = {
-                state.loadDocument(CanvasDocument())
+                files.newDocument(state)
             },
             onSaveDocument = {
-                saveDocumentToFile(state)
+                files.save(state)
             },
             onOpenDocument = {
-                openDocumentFromFile(state)
+                files.open(state)
             },
             screenWidth = canvasSize.width,
             screenHeight = canvasSize.height,
@@ -287,46 +285,6 @@ fun CanvasWorkspace(
                 isPresentationDeck = false,
                 onDismiss = { exportDocContent = null }
             )
-        }
-    }
-}
-
-private fun saveDocumentToFile(state: CanvasState) {
-    val currentPath = state.currentFilePath
-    if (currentPath != null) {
-        val json = CanvasSerializer.toJson(state.document)
-        File(currentPath).writeText(json, Charsets.UTF_8)
-        state.isDirty = false
-    } else {
-        val chooser = JFileChooser().apply {
-            dialogTitle = "Save Canvas Document"
-            fileFilter = FileNameExtensionFilter("Skaldoria Canvas (*.canvas)", "canvas")
-            selectedFile = File("${state.document.title.replace(" ", "_").lowercase()}.canvas")
-        }
-        if (chooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
-            var file = chooser.selectedFile
-            if (!file.name.endsWith(".canvas", ignoreCase = true)) {
-                file = File(file.parentFile, "${file.name}.canvas")
-            }
-            val json = CanvasSerializer.toJson(state.document)
-            file.writeText(json, Charsets.UTF_8)
-            state.currentFilePath = file.absolutePath
-            state.isDirty = false
-        }
-    }
-}
-
-private fun openDocumentFromFile(state: CanvasState) {
-    val chooser = JFileChooser().apply {
-        dialogTitle = "Open Canvas Document"
-        fileFilter = FileNameExtensionFilter("Skaldoria Canvas (*.canvas)", "canvas")
-    }
-    if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-        val file = chooser.selectedFile
-        if (file.exists()) {
-            val json = file.readText(Charsets.UTF_8)
-            val doc = CanvasSerializer.fromJson(json)
-            state.loadDocument(doc, file.absolutePath)
         }
     }
 }

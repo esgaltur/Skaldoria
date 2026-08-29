@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.skaldoria.canvas.model.CanvasPoint
 import com.skaldoria.canvas.state.CanvasState
 import com.skaldoria.theme.PresentationTheme
 import kotlin.math.max
@@ -90,14 +91,14 @@ fun CanvasMinimap(
                     val targetCanvas = minimapToCanvas(tapPos)
                     val newPanX = screenWidth / 2f - targetCanvas.x * state.viewport.zoom
                     val newPanY = screenHeight / 2f - targetCanvas.y * state.viewport.zoom
-                    state.panBy(Offset(newPanX - state.viewport.panX, newPanY - state.viewport.panY))
+                    state.panBy(CanvasPoint(newPanX - state.viewport.panX, newPanY - state.viewport.panY))
                 }
             }
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
                     val deltaCanvas = Offset(dragAmount.x / miniScale, dragAmount.y / miniScale)
-                    state.panBy(Offset(-deltaCanvas.x * state.viewport.zoom, -deltaCanvas.y * state.viewport.zoom))
+                    state.panBy(CanvasPoint(-deltaCanvas.x * state.viewport.zoom, -deltaCanvas.y * state.viewport.zoom))
                 }
             }
     ) {

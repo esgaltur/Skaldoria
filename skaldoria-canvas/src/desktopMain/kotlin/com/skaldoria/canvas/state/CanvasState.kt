@@ -1,8 +1,6 @@
 package com.skaldoria.canvas.state
 
 import androidx.compose.runtime.*
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import com.skaldoria.canvas.model.*
 import java.util.UUID
 import kotlin.math.exp
@@ -25,9 +23,12 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         private set
 
     var currentFilePath by mutableStateOf<String?>(null)
+        private set
     var isDirty by mutableStateOf(false)
+        private set
 
     var activeTool by mutableStateOf(CanvasTool.Select)
+        private set
 
     var selectedNodeIds by mutableStateOf(setOf<String>())
     var selectedEdgeId by mutableStateOf<String?>(null)
@@ -36,11 +37,13 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
     // Interactive connection in progress
     var connectingSourceNodeId by mutableStateOf<String?>(null)
     var connectingSourcePort by mutableStateOf(EdgePort.Auto)
-    var connectingTargetPosition by mutableStateOf<Offset?>(null)
+    var connectingTargetPosition by mutableStateOf<CanvasPoint?>(null)
 
     // Interactive marquee selection in progress
-    var marqueeStart by mutableStateOf<Offset?>(null)
-    var marqueeCurrent by mutableStateOf<Offset?>(null)
+    var marqueeStart by mutableStateOf<CanvasPoint?>(null)
+        private set
+    var marqueeCurrent by mutableStateOf<CanvasPoint?>(null)
+        private set
 
     // History for Undo / Redo
     private val undoStack = mutableListOf<CanvasDocument>()
@@ -50,6 +53,28 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
     val nodes: List<CanvasNode> get() = document.nodes
     val edges: List<CanvasEdge> get() = document.edges
     val viewport: CanvasViewport get() = document.viewport
+
+    fun selectTool(tool: CanvasTool) {
+        if (activeTool == tool) return
+        cancelConnection()
+        cancelMarquee()
+        activeTool = tool
+    }
+
+    fun beginMarquee(screenPosition: CanvasPoint) {
+        marqueeStart = screenPosition
+        marqueeCurrent = screenPosition
+    }
+
+    fun updateMarquee(screenPosition: CanvasPoint, delta: CanvasPoint) {
+        val current = marqueeCurrent ?: marqueeStart ?: screenPosition
+        marqueeCurrent = current + delta
+    }
+
+    fun cancelMarquee() {
+        marqueeStart = null
+        marqueeCurrent = null
+    }
 
     private fun pushHistory() {
         recordHistory(document)
@@ -80,15 +105,17 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
 
     // --- Viewport Operations ---
 
-    fun panBy(delta: Offset) {
+    fun panBy(delta: CanvasPoint) {
+        if (delta == CanvasPoint.Zero) return
         val newVp = viewport.copy(
             panX = viewport.panX + delta.x,
             panY = viewport.panY + delta.y
         )
         document = document.copy(viewport = newVp)
+        isDirty = true
     }
 
-    fun zoomAt(factor: Float, focalPoint: Offset) {
+    fun zoomAt(factor: Float, focalPoint: CanvasPoint) {
         val oldZoom = viewport.zoom
         val newZoom = (oldZoom * factor).coerceIn(CanvasViewport.MIN_ZOOM, CanvasViewport.MAX_ZOOM)
         if (newZoom == oldZoom) return
@@ -103,27 +130,30 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         document = document.copy(
             viewport = CanvasViewport(panX = newPanX, panY = newPanY, zoom = newZoom)
         )
+        isDirty = true
     }
 
-    fun zoomFromWheel(scrollDeltaY: Float, focalPoint: Offset) {
+    fun zoomFromWheel(scrollDeltaY: Float, focalPoint: CanvasPoint) {
         if (scrollDeltaY == 0f) return
         val factor = exp(-scrollDeltaY * 0.12f).coerceIn(0.8f, 1.25f)
         zoomAt(factor, focalPoint)
     }
 
-    fun panFromWheel(scrollDelta: Offset, horizontal: Boolean) {
+    fun panFromWheel(scrollDelta: CanvasPoint, horizontal: Boolean) {
         val panSpeed = 40f
         val primaryDelta = if (scrollDelta.y != 0f) scrollDelta.y else scrollDelta.x
         val pan = if (horizontal) {
-            Offset(-primaryDelta * panSpeed, 0f)
+            CanvasPoint(-primaryDelta * panSpeed, 0f)
         } else {
-            Offset(-scrollDelta.x * panSpeed, -scrollDelta.y * panSpeed)
+            CanvasPoint(-scrollDelta.x * panSpeed, -scrollDelta.y * panSpeed)
         }
         panBy(pan)
     }
 
     fun resetViewport() {
+        if (viewport == CanvasViewport()) return
         document = document.copy(viewport = CanvasViewport(panX = 0f, panY = 0f, zoom = 1f))
+        isDirty = true
     }
 
     fun zoomToFit(screenWidth: Float, screenHeight: Float) {
@@ -161,12 +191,13 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         document = document.copy(
             viewport = CanvasViewport(panX = newPanX, panY = newPanY, zoom = newZoom)
         )
+        isDirty = true
     }
 
     // --- Node Operations ---
 
     fun addNode(
-        canvasPos: Offset,
+        canvasPos: CanvasPoint,
         markdown: String = "## New Card\n\nEnter markdown here...",
         color: NodeColor = NodeColor.Default,
         width: Float = CanvasNode.DEFAULT_WIDTH,
@@ -210,7 +241,7 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         )
     }
 
-    fun moveSelectedNodes(deltaCanvas: Offset) {
+    fun moveSelectedNodes(deltaCanvas: CanvasPoint) {
         if (selectedNodeIds.isEmpty() || (deltaCanvas.x == 0f && deltaCanvas.y == 0f)) return
         document = document.copy(
             nodes = nodes.map { node ->
@@ -272,7 +303,7 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         label: String = "",
         style: EdgeStyle = EdgeStyle.Solid
     ): CanvasEdge? {
-        if (fromId == toId) return null
+        if (fromId == toId || nodes.none { it.id == fromId } || nodes.none { it.id == toId }) return null
         // Avoid duplicate identical edge
         val exists = edges.any { it.fromNodeId == fromId && it.toNodeId == toId }
         if (exists) return null
@@ -292,14 +323,14 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         return newEdge
     }
 
-    fun beginConnection(sourceNodeId: String, sourcePort: EdgePort, pointerScreenPosition: Offset) {
+    fun beginConnection(sourceNodeId: String, sourcePort: EdgePort, pointerScreenPosition: CanvasPoint) {
         if (nodes.none { it.id == sourceNodeId }) return
         connectingSourceNodeId = sourceNodeId
         connectingSourcePort = sourcePort
         connectingTargetPosition = pointerScreenPosition
     }
 
-    fun moveConnectionPointerBy(screenDelta: Offset) {
+    fun moveConnectionPointerBy(screenDelta: CanvasPoint) {
         connectingTargetPosition = connectingTargetPosition?.plus(screenDelta)
     }
 
@@ -355,6 +386,7 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
     }
 
     fun deleteEdge(edgeId: String) {
+        if (edges.none { it.id == edgeId }) return
         pushHistory()
         document = document.copy(edges = edges.filterNot { it.id == edgeId })
         if (selectedEdgeId == edgeId) selectedEdgeId = null
@@ -362,7 +394,7 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
 
     // --- Hit-Testing Operations ---
 
-    fun findEdgeAt(screenPoint: Offset, threshold: Float = 14f): CanvasEdge? {
+    fun findEdgeAt(screenPoint: CanvasPoint, threshold: Float = 14f): CanvasEdge? {
         val nodeMap = nodes.associateBy { it.id }
         for (edge in edges.reversed()) {
             val fromNode = nodeMap[edge.fromNodeId] ?: continue
@@ -379,7 +411,7 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         return null
     }
 
-    fun findNodeAt(canvasPoint: Offset): CanvasNode? {
+    fun findNodeAt(canvasPoint: CanvasPoint): CanvasNode? {
         return nodes.filter { it.bounds.contains(canvasPoint) }
             .maxByOrNull { it.zIndex }
     }
@@ -416,10 +448,10 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         editingNodeId = null
     }
 
-    fun applyMarqueeSelection(screenRect: Rect) {
+    fun applyMarqueeSelection(screenRect: CanvasRect) {
         val canvasTopLeft = viewport.screenToCanvas(screenRect.topLeft)
         val canvasBottomRight = viewport.screenToCanvas(screenRect.bottomRight)
-        val canvasRect = Rect(
+        val canvasRect = CanvasRect(
             minOf(canvasTopLeft.x, canvasBottomRight.x),
             minOf(canvasTopLeft.y, canvasBottomRight.y),
             maxOf(canvasTopLeft.x, canvasBottomRight.x),
@@ -438,6 +470,31 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
             .sortedBy { it.zIndex }
     }
 
+    /** Edges whose complete Bézier control bounds intersect the padded visible viewport. */
+    fun getVisibleEdges(screenWidth: Float, screenHeight: Float, margin: Float = 100f): List<CanvasEdge> {
+        val visible = viewport.visibleCanvasRect(screenWidth, screenHeight)
+        val padded = CanvasRect(
+            visible.left - margin,
+            visible.top - margin,
+            visible.right + margin,
+            visible.bottom + margin
+        )
+        val nodeMap = nodes.associateBy { it.id }
+        return edges.filter { edge ->
+            val from = nodeMap[edge.fromNodeId] ?: return@filter false
+            val to = nodeMap[edge.toNodeId] ?: return@filter false
+            val (start, end) = CanvasGeometry.resolvePorts(from, to, edge.fromPort, edge.toPort)
+            val curve = CanvasGeometry.bezierBetween(start, end)
+            val curveBounds = CanvasRect(
+                left = minOf(curve.start.x, curve.control1.x, curve.control2.x, curve.end.x),
+                top = minOf(curve.start.y, curve.control1.y, curve.control2.y, curve.end.y),
+                right = maxOf(curve.start.x, curve.control1.x, curve.control2.x, curve.end.x),
+                bottom = maxOf(curve.start.y, curve.control1.y, curve.control2.y, curve.end.y)
+            )
+            curveBounds.overlaps(padded)
+        }
+    }
+
     // --- File & Document Management ---
 
     fun loadDocument(doc: CanvasDocument, filePath: String? = null) {
@@ -450,6 +507,12 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         nodeTransformStart = null
         undoStack.clear()
         redoStack.clear()
+    }
+
+    /** Called only after durable storage has completed successfully. */
+    fun markSaved(filePath: String) {
+        currentFilePath = filePath
+        isDirty = false
     }
 
     companion object {

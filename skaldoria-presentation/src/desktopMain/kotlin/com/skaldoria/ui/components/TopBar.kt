@@ -37,11 +37,11 @@ fun TopBar(
     }
 
     if (state.isUnlockThemeDialogOpen) {
-        UnlockCorporateThemeDialog(state = state, onDismiss = { state.isUnlockThemeDialogOpen = false })
+        UnlockCorporateThemeDialog(state = state, onDismiss = state::closeUnlockThemeDialog)
     }
 
     if (state.isGridOverviewOpen) {
-        SlideGridOverviewDialog(state = state, onDismiss = { state.isGridOverviewOpen = false })
+        SlideGridOverviewDialog(state = state, onDismiss = state::closeGridOverview)
     }
 
     Row(
@@ -293,7 +293,7 @@ fun TopBar(
             // Quick Spotlight Search Button
             AppTooltip(text = "Spotlight Quick Slide Search", theme = state.currentTheme, shortcut = "Ctrl+K") {
                 Button(
-                    onClick = { state.isCommandPaletteOpen = true },
+                    onClick = state::openCommandPalette,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = state.currentTheme.surfaceVariant,
                         contentColor = state.currentTheme.textPrimary
@@ -346,7 +346,7 @@ fun TopBar(
                         DropdownMenuItem(
                             text = { Text(trans.displayName) },
                             onClick = {
-                                state.transition = trans
+                                state.selectTransition(trans)
                                 transitionMenuExpanded = false
                             }
                         )
@@ -411,7 +411,7 @@ fun TopBar(
                                     )
                                 },
                                 onClick = {
-                                    state.currentTheme = theme
+                                    state.selectTheme(theme)
                                     themeMenuExpanded = false
                                 }
                             )
@@ -438,7 +438,7 @@ fun TopBar(
                                 },
                                 onClick = {
                                     themeMenuExpanded = false
-                                    state.isUnlockThemeDialogOpen = true
+                                    state.openUnlockThemeDialog()
                                 }
                             )
                         } else {

@@ -1,5 +1,8 @@
 package com.skaldoria.project
 
+import com.skaldoria.core.models.DeckProject
+import com.skaldoria.core.models.SlideFileEntry
+import com.skaldoria.markdown.models.SlideTransition
 import com.skaldoria.markdown.parser.MarkdownSlideParser
 import java.io.File
 import kotlin.test.Test
@@ -131,6 +134,35 @@ class DeckProjectManagerTest {
             assertEquals("Second Modular Slide", slides[1].title)
         } finally {
             tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `manifest save and load round trips escaped metadata and transition`() {
+        val root = File.createTempFile("manifest_roundtrip_", "").apply { delete(); mkdirs() }
+        try {
+            val slide = File(root, "slide.md").apply { writeText("# Round Trip") }
+            val manifest = File(root, "deck.mdpres")
+            val project = DeckProject(
+                name = "A \"Quoted\" Deck",
+                rootDir = root.absolutePath,
+                manifestPath = manifest.absolutePath,
+                slideFiles = mutableListOf(
+                    SlideFileEntry("slide.md", slide.absolutePath, slide.readText())
+                ),
+                themeName = "Night \\ Blue",
+                transition = SlideTransition.ZOOM
+            )
+
+            DeckProjectManager.saveProject(project)
+            val loaded = DeckProjectManager.loadProjectFromManifest(manifest)
+
+            assertEquals(project.name, loaded.name)
+            assertEquals(project.themeName, loaded.themeName)
+            assertEquals(SlideTransition.ZOOM, loaded.transition)
+            assertEquals(listOf("slide.md"), loaded.slideFiles.map { it.relativePath })
+        } finally {
+            root.deleteRecursively()
         }
     }
 }

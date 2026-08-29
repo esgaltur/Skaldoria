@@ -72,56 +72,32 @@ class CvStore(
     fun dispatch(event: CvEvent) {
         state = when (event) {
             is CvEvent.SourceChanged -> {
-                val document = adapter.parse(event.value.text)
-                // Push the current source to undo stack if it changed
-                val newUndoStack = if (state.source.text != event.value.text) {
-                    state.undoStack + state.source
-                } else state.undoStack
-                
-                state.copy(
+                val changed = state.source.text != event.value.text
+                applySource(
+                    current = state,
                     source = event.value,
-                    document = document,
-                    templateId = if (state.hasTemplateOverride) {
-                        state.templateId
-                    } else {
-                        CvTemplateCatalog.fromMetadata(document.metadata["template"])
-                            ?: CvTemplateCatalog.default
-                    },
-                    themeId = if (state.hasThemeOverride) {
-                        state.themeId
-                    } else {
-                        themeFrom(document)
-                    },
-                    fontId = if (state.hasFontOverride) {
-                        state.fontId
-                    } else {
-                        CvFontCatalog.fromMetadata(document.metadata["font"]) ?: CvFontCatalog.default
-                    },
-                    errorMessage = null,
-                    undoStack = newUndoStack,
-                    redoStack = if (state.source.text != event.value.text) emptyList() else state.redoStack
+                    undoStack = if (changed) state.undoStack.appendBounded(state.source) else state.undoStack,
+                    redoStack = if (changed) emptyList() else state.redoStack
                 )
             }
             CvEvent.Undo -> {
                 if (state.undoStack.isNotEmpty()) {
                     val prevSource = state.undoStack.last()
-                    val document = adapter.parse(prevSource.text)
-                    state.copy(
+                    applySource(
+                        current = state,
                         source = prevSource,
-                        document = document,
                         undoStack = state.undoStack.dropLast(1),
-                        redoStack = state.redoStack + state.source
+                        redoStack = state.redoStack.appendBounded(state.source)
                     )
                 } else state
             }
             CvEvent.Redo -> {
                 if (state.redoStack.isNotEmpty()) {
                     val nextSource = state.redoStack.last()
-                    val document = adapter.parse(nextSource.text)
-                    state.copy(
+                    applySource(
+                        current = state,
                         source = nextSource,
-                        document = document,
-                        undoStack = state.undoStack + state.source,
+                        undoStack = state.undoStack.appendBounded(state.source),
                         redoStack = state.redoStack.dropLast(1)
                     )
                 } else state
@@ -201,4 +177,47 @@ class CvStore(
         CvThemeCatalog.fromMetadata(document.metadata["theme"])
             ?: CvThemeCatalog.fromMetadata(document.metadata["template"])
             ?: CvThemeCatalog.default
+
+    /**
+     * Applies a source snapshot and every value derived from it as one reducer operation.
+     *
+     * SourceChanged, undo and redo previously duplicated only part of this transition. Undo
+     * restored the Markdown and semantic document but left metadata-derived theme, font and
+     * template values from the newer source, so state ceased to describe one document.
+     */
+    private fun applySource(
+        current: CvEditorState,
+        source: TextFieldValue,
+        undoStack: List<TextFieldValue>,
+        redoStack: List<TextFieldValue>
+    ): CvEditorState {
+        val document = adapter.parse(source.text)
+        return current.copy(
+            source = source,
+            document = document,
+            templateId = if (current.hasTemplateOverride) {
+                current.templateId
+            } else {
+                CvTemplateCatalog.fromMetadata(document.metadata["template"])
+                    ?: CvTemplateCatalog.default
+            },
+            themeId = if (current.hasThemeOverride) current.themeId else themeFrom(document),
+            fontId = if (current.hasFontOverride) {
+                current.fontId
+            } else {
+                CvFontCatalog.fromMetadata(document.metadata["font"]) ?: CvFontCatalog.default
+            },
+            errorMessage = null,
+            undoStack = undoStack,
+            redoStack = redoStack
+        )
+    }
+
+    private fun List<TextFieldValue>.appendBounded(value: TextFieldValue): List<TextFieldValue> =
+        (this + value).takeLast(HISTORY_LIMIT)
+
+    companion object {
+        /** Full source snapshots are intentionally bounded against long editing sessions. */
+        internal const val HISTORY_LIMIT = 50
+    }
 }

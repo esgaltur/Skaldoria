@@ -41,6 +41,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 
+/** Breathing room inside the shape's own geometry, so glyphs never touch the outline. */
+private val BASE_CONTENT_PADDING = 8.dp
+
 /**
  * Interactive spatial whiteboard card supporting rich Markdown, live code blocks,
  * LaTeX formulas, Mermaid diagrams, resizing, color customization, and edge port linking.
@@ -58,7 +61,7 @@ fun CanvasNodeCard(
     val density = LocalDensity.current
 
     // Screen-space position
-    val screenPos = state.viewport.canvasToScreen(Offset(node.x, node.y))
+    val screenPos = state.viewport.canvasToScreen(CanvasPoint(node.x, node.y))
 
     var showColorMenu by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
@@ -124,7 +127,7 @@ fun CanvasNodeCard(
                 if (!isEditing) {
                     detectCanvasGestures(
                         onMiddleDrag = { delta ->
-                            state.panBy(delta)
+                            state.panBy(delta.toCanvasPoint())
                         },
                         onTap = {
                             if (state.activeTool != CanvasTool.Pan) {
@@ -147,16 +150,16 @@ fun CanvasNodeCard(
                                 CanvasTool.Connect -> state.beginConnection(
                                     sourceNodeId = node.id,
                                     sourcePort = EdgePort.Auto,
-                                    pointerScreenPosition = screenPos + localPointerPosition
+                                    pointerScreenPosition = screenPos + localPointerPosition.toCanvasPoint()
                                 )
                                 CanvasTool.Pan -> Unit
                             }
                         },
                         onDrag = { _, dragAmount ->
                             when (state.activeTool) {
-                                CanvasTool.Select -> state.moveSelectedNodes(dragAmount / zoom)
-                                CanvasTool.Connect -> state.moveConnectionPointerBy(dragAmount)
-                                CanvasTool.Pan -> state.panBy(dragAmount)
+                                CanvasTool.Select -> state.moveSelectedNodes((dragAmount / zoom).toCanvasPoint())
+                                CanvasTool.Connect -> state.moveConnectionPointerBy(dragAmount.toCanvasPoint())
+                                CanvasTool.Pan -> state.panBy(dragAmount.toCanvasPoint())
                             }
                         },
                         onDragEnd = {
@@ -219,12 +222,23 @@ fun CanvasNodeCard(
                     )
                 }
 
-                // Content Area
+                // Content Area.
+                //
+                // The inset comes from the shape's own geometry rather than a flat padding: a
+                // diamond's usable rectangle is a quarter of its bounding box by area, so laying
+                // content across the full width and clipping to the outline sliced the corners
+                // off. See NodeShapeGeometry.contentInset.
+                val inset = node.shape.contentInset()
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .padding(if (node.shape == NodeShape.Card) 8.dp else 16.dp),
+                        .padding(
+                            start = with(density) { (node.width * inset.left).toDp() } + BASE_CONTENT_PADDING,
+                            top = with(density) { (node.height * inset.top).toDp() } + BASE_CONTENT_PADDING,
+                            end = with(density) { (node.width * inset.right).toDp() } + BASE_CONTENT_PADDING,
+                            bottom = with(density) { (node.height * inset.bottom).toDp() } + BASE_CONTENT_PADDING
+                        ),
                     contentAlignment = if (node.shape == NodeShape.Card) Alignment.TopStart else Alignment.Center
                 ) {
                     if (isEditing) {
@@ -431,6 +445,14 @@ private fun CardEditMode(
     }
 }
 
+/**
+ * Renders the node's markdown, shrinking it to fit rather than letting it run past the outline.
+ *
+ * [FitToCanvas] is the same overflow policy slides use, and [FitMode.Height] is the right measure
+ * here because the content reflows: only genuine vertical overflow drives the scale down. The
+ * content column must size itself naturally — a `fillMaxSize` wrapper collapses to nothing under
+ * the unbounded height the fit pipeline measures with, which is why the old outer `Box` is gone.
+ */
 @Composable
 private fun CardPreviewMode(
     markdown: String,
@@ -440,44 +462,46 @@ private fun CardPreviewMode(
         MarkdownSlideParser.parse(markdown)
     }
 
-    Box(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        if (markdown.isBlank()) {
-            Text(
-                text = "Double-click to write Markdown...",
-                style = TextStyle(color = theme.textMuted, fontSize = 12.sp)
-            )
-        } else {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                slides.forEach { slide ->
-                    if (slide.title.isNotBlank()) {
-                        Text(
-                            text = slide.title,
-                            style = TextStyle(
-                                color = theme.textPrimary,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        )
-                    }
-                    if (!slide.subtitle.isNullOrBlank()) {
-                        Text(
-                            text = slide.subtitle!!,
-                            style = TextStyle(
-                                color = theme.textSecondary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        )
-                    }
+    if (markdown.isBlank()) {
+        Text(
+            text = "Double-click to write Markdown...",
+            style = TextStyle(color = theme.textMuted, fontSize = 12.sp)
+        )
+        return
+    }
 
-                    slide.elements.forEach { elem ->
-                        RenderSlideElement(elem = elem, theme = theme)
-                    }
+    FitToCanvas(
+        modifier = Modifier.fillMaxSize(),
+        fitMode = FitMode.Height
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            slides.forEach { slide ->
+                if (slide.title.isNotBlank()) {
+                    Text(
+                        text = slide.title,
+                        style = TextStyle(
+                            color = theme.textPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+                if (!slide.subtitle.isNullOrBlank()) {
+                    Text(
+                        text = slide.subtitle!!,
+                        style = TextStyle(
+                            color = theme.textSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    )
+                }
+
+                slide.elements.forEach { elem ->
+                    RenderSlideElement(elem = elem, theme = theme)
                 }
             }
         }
@@ -609,7 +633,7 @@ private fun BoxScope.PortHandle(
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        state.moveConnectionPointerBy(dragAmount)
+                        state.moveConnectionPointerBy(dragAmount.toCanvasPoint())
                     },
                     onDragEnd = { state.finishConnection() },
                     onDragCancel = state::cancelConnection,

@@ -28,4 +28,19 @@ class ConfigManagerTest {
         assertEquals("Test Deck Title", found.title)
         assertEquals(5, found.slideCount)
     }
+
+    @Test
+    fun `config JSON round trips escaped recent project text`() {
+        val expected = AppConfig(
+            recentProjects = listOf(
+                RecentProject("C:/decks/back\\slash.md", "A \"Quoted\"\tDeck", 42L, 7)
+            ),
+            lastThemeId = "theme\tvariant",
+            lastTransition = "slide_horizontal",
+            editorFontSize = 18,
+            hudVisibility = "pinned"
+        )
+
+        assertEquals(expected, ConfigManager.parseConfigJson(ConfigManager.serializeConfigJson(expected)))
+    }
 }

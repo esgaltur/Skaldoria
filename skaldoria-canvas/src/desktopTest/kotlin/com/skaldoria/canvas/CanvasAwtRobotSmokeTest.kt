@@ -25,7 +25,7 @@ class CanvasAwtRobotSmokeTest {
         if (GraphicsEnvironment.isHeadless()) return
         if (System.getProperty("skaldoria.skipRobotTests") == "true") return
 
-        val state = CanvasState(CanvasDocument()).apply { activeTool = CanvasTool.Pan }
+        val state = CanvasState(CanvasDocument()).apply { selectTool(CanvasTool.Pan) }
         val compositionReady = CountDownLatch(1)
         lateinit var window: ComposeWindow
 

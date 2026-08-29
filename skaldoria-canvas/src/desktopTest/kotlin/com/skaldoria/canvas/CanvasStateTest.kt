@@ -1,7 +1,7 @@
 package com.skaldoria.canvas
 
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
+import com.skaldoria.canvas.model.CanvasPoint as Offset
+import com.skaldoria.canvas.model.CanvasRect as Rect
 import com.skaldoria.canvas.model.*
 import com.skaldoria.canvas.state.CanvasState
 import com.skaldoria.canvas.state.CanvasTool
@@ -190,10 +190,10 @@ class CanvasStateTest {
         val state = CanvasState(CanvasDocument())
         assertEquals(CanvasTool.Select, state.activeTool)
 
-        state.activeTool = CanvasTool.Connect
+        state.selectTool(CanvasTool.Connect)
         assertEquals(CanvasTool.Connect, state.activeTool)
 
-        state.activeTool = CanvasTool.Pan
+        state.selectTool(CanvasTool.Pan)
         assertEquals(CanvasTool.Pan, state.activeTool)
     }
 
@@ -228,5 +228,20 @@ class CanvasStateTest {
 
         assertEquals(node.x, state.nodes.single().x)
         assertEquals(node.y, state.nodes.single().y)
+    }
+
+    @Test
+    fun `edge culling excludes connections wholly outside the viewport`() {
+        val state = CanvasState(CanvasDocument())
+        val nearA = state.addNode(Offset(10f, 10f), width = 100f, height = 100f)
+        val nearB = state.addNode(Offset(400f, 10f), width = 100f, height = 100f)
+        val farA = state.addNode(Offset(5_000f, 5_000f), width = 100f, height = 100f)
+        val farB = state.addNode(Offset(5_500f, 5_000f), width = 100f, height = 100f)
+        val near = state.addEdge(nearA.id, nearB.id)!!
+        state.addEdge(farA.id, farB.id)!!
+
+        val visible = state.getVisibleEdges(screenWidth = 1_000f, screenHeight = 800f)
+
+        assertEquals(listOf(near.id), visible.map { it.id })
     }
 }

@@ -104,7 +104,7 @@ fun FullscreenDeck(
     val isHudOnScreen = hudVisibility.isOnScreen(isIdle = isPointerIdle)
 
     if (state.isGridOverviewOpen) {
-        SlideGridOverviewDialog(state = state, onDismiss = { state.isGridOverviewOpen = false })
+        SlideGridOverviewDialog(state = state, onDismiss = state::closeGridOverview)
     }
 
     // THM-05: the OS pointer is drawn by the window system in the user's desktop colour, so a
@@ -159,9 +159,9 @@ fun FullscreenDeck(
                     // speaker out of fullscreen while a dialog is still covering the deck.
                     when {
                         !numberEntry.isEmpty -> numberEntry = numberEntry.cleared()
-                        state.isCommandPaletteOpen -> state.isCommandPaletteOpen = false
-                        state.isGridOverviewOpen -> state.isGridOverviewOpen = false
-                        else -> state.isFullscreen = false
+                        state.isCommandPaletteOpen -> state.closeCommandPalette()
+                        state.isGridOverviewOpen -> state.closeGridOverview()
+                        else -> state.exitFullscreen()
                     }
                 }
             },
@@ -423,7 +423,7 @@ fun FullscreenDeck(
             // Close Fullscreen Button
             AppTooltip(text = "Exit Fullscreen", theme = state.currentTheme, shortcut = "Esc") {
                 IconButton(
-                    onClick = { state.isFullscreen = false },
+                    onClick = state::exitFullscreen,
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
@@ -484,7 +484,7 @@ fun FullscreenDeck(
         if (state.isCommandPaletteOpen) {
             CommandPalette(
                 state = state,
-                onClose = { state.isCommandPaletteOpen = false }
+                onClose = state::closeCommandPalette
             )
         }
 

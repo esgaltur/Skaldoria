@@ -6,7 +6,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextRange
-import com.skaldoria.config.ConfigManager
 import com.skaldoria.core.annotation.AnnotationLayer
 import com.skaldoria.core.audience.AudienceSession
 import com.skaldoria.core.deck.DeckDocument
@@ -46,8 +45,10 @@ class PresentationState(
     // name inside method bodies. Defaults keep every existing call site unchanged.
     private val projects: ProjectRepository = DefaultProjectRepository,
     private val fileDialogs: FileDialogs = DefaultFileDialogs,
-    private val companionServer: CompanionServerPort = DefaultCompanionServer
-) : DeckControl {
+    private val companionServer: CompanionServerPort = DefaultCompanionServer,
+    private val preferences: PreferencesRepository = DefaultPreferencesRepository,
+    private val htmlExporter: HtmlDeckExporter = DefaultHtmlDeckExporter
+) : DeckControl, HtmlDeckSource {
     private val scope = CoroutineScope(backgroundContext)
 
     /**
@@ -64,7 +65,7 @@ class PresentationState(
 
     val markdownText: String get() = deck.markdown
 
-    val slides: List<Slide> get() = deck.slides
+    override val slides: List<Slide> get() = deck.slides
 
     /**
      * F-13: the cursor lives in [SlideNavigator]. Reading the deck length through a lambda
@@ -148,7 +149,7 @@ class PresentationState(
         editor.requestReveal(TextRange(offset))
     }
 
-    var currentTheme by mutableStateOf<PresentationTheme>(BuiltinThemes.SkaldoriaDark)
+    override var currentTheme by mutableStateOf<PresentationTheme>(BuiltinThemes.SkaldoriaDark)
 
     var isFullscreen by mutableStateOf(false)
 
@@ -165,6 +166,7 @@ class PresentationState(
     var currentPenColor by mutableStateOf(Color(0xFFFF1744))
 
     var transition by mutableStateOf(SlideTransition.FADE)
+        private set
 
     var currentFilePath by mutableStateOf<String?>(null)
 
@@ -249,6 +251,29 @@ class PresentationState(
         currentTheme = themes[(position + 1) % themes.size]
         persistUiPreferences()
     }
+
+    fun selectTheme(theme: PresentationTheme) {
+        if (availableThemes.none { it.id == theme.id }) return
+        currentTheme = theme
+        persistUiPreferences()
+    }
+
+    fun selectTransition(value: SlideTransition) {
+        transition = value
+        persistUiPreferences()
+    }
+
+    fun openCommandPalette() { isCommandPaletteOpen = true }
+    fun closeCommandPalette() { isCommandPaletteOpen = false }
+    fun toggleCommandPalette() { isCommandPaletteOpen = !isCommandPaletteOpen }
+    fun closeGridOverview() { isGridOverviewOpen = false }
+    fun closeParkingLotDrawer() { isParkingLotDrawerOpen = false }
+    fun openUnlockThemeDialog() { isUnlockThemeDialogOpen = true }
+    fun closeUnlockThemeDialog() { isUnlockThemeDialogOpen = false }
+    fun exitFullscreen() { isFullscreen = false }
+    fun closePresenterMode() { isPresenterModeActive = false }
+    fun togglePerSlideEditorMode() { isPerSlideEditorMode = !isPerSlideEditorMode }
+    fun toggleFollowCaret() { isFollowCaretEnabled = !isFollowCaretEnabled }
 
     fun unlockCorporateTheme(code: String): Boolean {
         if (BuiltinThemes.isCorporateCode(code)) {
@@ -356,19 +381,24 @@ class PresentationState(
 
     var replaceQuery: String
         get() = findReplace.replacement
-        set(value) { findReplace.replacement = value }
+        private set(value) { findReplace.replacement = value }
 
     var isFindCaseSensitive: Boolean
         get() = findReplace.isCaseSensitive
-        set(value) { findReplace.isCaseSensitive = value }
+        private set(value) { findReplace.isCaseSensitive = value }
 
     var isFindWholeWord: Boolean
         get() = findReplace.isWholeWord
-        set(value) { findReplace.isWholeWord = value }
+        private set(value) { findReplace.isWholeWord = value }
 
     var isFindRegex: Boolean
         get() = findReplace.isRegex
-        set(value) { findReplace.isRegex = value }
+        private set(value) { findReplace.isRegex = value }
+
+    fun updateReplaceQuery(value: String) { replaceQuery = value }
+    fun toggleFindCaseSensitivity() { isFindCaseSensitive = !isFindCaseSensitive }
+    fun toggleFindWholeWord() { isFindWholeWord = !isFindWholeWord }
+    fun toggleFindRegex() { isFindRegex = !isFindRegex }
 
     var currentMatchIndex: Int
         get() = findReplace.currentMatchIndex
@@ -563,7 +593,7 @@ class PresentationState(
         draftSaveJob?.cancel()
         draftSaveJob = scope.launch(Dispatchers.IO) {
             delay(DRAFT_SAVE_DEBOUNCE_MS.milliseconds)
-            ConfigManager.saveDraft(content)
+            preferences.saveDraft(content)
         }
     }
 
@@ -576,7 +606,7 @@ class PresentationState(
      * anything is not prompted.
      */
     fun recoverableDraft(): String? {
-        val draft = ConfigManager.loadDraft()?.takeIf { it.isNotBlank() } ?: return null
+        val draft = preferences.loadDraft()?.takeIf { it.isNotBlank() } ?: return null
         if (draft.trim() == DEFAULT_SAMPLE_MARKDOWN.trim()) return null
         if (draft.trim() == BLANK_STARTER_MARKDOWN.trim()) return null
         return draft
@@ -592,7 +622,7 @@ class PresentationState(
 
     /** DED-1: forget the recovered draft so it stops being offered. */
     fun discardDraft() {
-        ConfigManager.clearDraft()
+        preferences.clearDraft()
     }
 
     /**
@@ -611,15 +641,24 @@ class PresentationState(
 
     /** DED-2: persist the settings that were modelled and parsed but never actually saved. */
     fun persistUiPreferences() {
-        ConfigManager.saveUiPreferences(currentTheme.id, editorFontSize, hudVisibility.storageValue)
+        preferences.saveUiPreferences(
+            UiPreferences(
+                themeId = currentTheme.id,
+                editorFontSize = editorFontSize,
+                hudVisibility = hudVisibility.storageValue,
+                transition = transition.name
+            )
+        )
     }
 
     /** DED-2: restore them at startup. Unknown theme ids fall back to the default. */
     fun restoreUiPreferences() {
-        val config = ConfigManager.loadConfig()
+        val config = preferences.loadUiPreferences()
         editorFontSize = config.editorFontSize.coerceIn(10, 32)
-        BuiltinThemes.allWithCorporate.firstOrNull { it.id == config.lastThemeId }?.let { currentTheme = it }
+        BuiltinThemes.allWithCorporate.firstOrNull { it.id == config.themeId }?.let { currentTheme = it }
         hudVisibility = HudVisibility.fromStorage(config.hudVisibility)
+        SlideTransition.entries.firstOrNull { it.name.equals(config.transition, ignoreCase = true) }
+            ?.let { transition = it }
     }
 
     /** Releases the background timer and flushes preferences. Call when the app shuts down. */
@@ -784,7 +823,7 @@ class PresentationState(
         deck.adopt(proj)
         navigator.reset()
         showWelcome = false
-        ConfigManager.addRecentProject(proj.rootDir, proj.name, slides.size)
+        preferences.addRecentProject(proj.rootDir, proj.name, slides.size)
     }
 
     fun loadMarkdownFromFile(path: String, content: String) {
@@ -794,7 +833,7 @@ class PresentationState(
         navigator.reset()
         showWelcome = false
         val firstTitle = slides.firstOrNull()?.title ?: "Presentation"
-        ConfigManager.addRecentProject(path, firstTitle, slides.size)
+        preferences.addRecentProject(path, firstTitle, slides.size)
     }
 
     /**
@@ -918,7 +957,7 @@ class PresentationState(
         fileDialogs.saveMarkdownFile(currentFilePath, markdownText) { path ->
             currentFilePath = path
             val firstTitle = slides.firstOrNull()?.title ?: "Presentation"
-            ConfigManager.addRecentProject(path, firstTitle, slides.size)
+            preferences.addRecentProject(path, firstTitle, slides.size)
         }
     }
 
@@ -926,12 +965,12 @@ class PresentationState(
         fileDialogs.saveAsMarkdownFile(markdownText) { path ->
             currentFilePath = path
             val firstTitle = slides.firstOrNull()?.title ?: "Presentation"
-            ConfigManager.addRecentProject(path, firstTitle, slides.size)
+            preferences.addRecentProject(path, firstTitle, slides.size)
         }
     }
 
     fun exportHtml() = reportFailure("Could not export the presentation") {
-        com.skaldoria.export.FileManager.exportStandaloneHtmlDeck(this) { _ -> }
+        htmlExporter.export(this)
     }
 
     override fun toggleTimer() = timer.toggle()
@@ -1098,8 +1137,17 @@ class PresentationState(
         slideFiles = activeProject?.slideFiles?.toList()
     )
 
-    /** Records the current state before a structural edit. */
-    private fun rememberForUndo() = history.record(snapshot())
+    /**
+     * Applies one structural command and records its before-image only when it changed the deck.
+     * DeckDocument reports rejected/no-op commands as null; recording before that result was
+     * known made Undo appear available after moving a slide onto itself or targeting a bad index.
+     */
+    private inline fun applyStructuralEdit(edit: () -> Int?) {
+        val before = snapshot()
+        val destination = edit() ?: return
+        history.record(before)
+        navigator.moveTo(destination)
+    }
 
     private fun restore(snapshot: DeckSnapshot) {
         val proj = activeProject
@@ -1122,23 +1170,19 @@ class PresentationState(
     }
 
     fun moveSlide(fromIndex: Int, toIndex: Int) {
-        rememberForUndo()
-        deck.move(fromIndex, toIndex)?.let(navigator::moveTo)
+        applyStructuralEdit { deck.move(fromIndex, toIndex) }
     }
 
     fun duplicateSlide(index: Int) {
-        rememberForUndo()
-        deck.duplicate(index)?.let(navigator::moveTo)
+        applyStructuralEdit { deck.duplicate(index) }
     }
 
     fun deleteSlide(index: Int) {
-        rememberForUndo()
-        deck.delete(index)?.let(navigator::moveTo)
+        applyStructuralEdit { deck.delete(index) }
     }
 
     fun insertSlide(afterIndex: Int, layout: SlideLayoutType) {
-        rememberForUndo()
-        deck.insert(afterIndex, SlideTemplates.forLayout(layout))?.let(navigator::moveTo)
+        applyStructuralEdit { deck.insert(afterIndex, SlideTemplates.forLayout(layout)) }
     }
 
     fun resetToSample() {

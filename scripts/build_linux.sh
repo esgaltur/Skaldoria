@@ -4,6 +4,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+RELEASE_BUILD_ROOT="build/release/linux"
+RELEASE_BUILD_ROOT_PATH="${PROJECT_ROOT}/${RELEASE_BUILD_ROOT}"
 
 VERSION=""
 OUTPUT_DIRECTORY="dist/linux"
@@ -133,7 +135,7 @@ echo "Preparing clean Linux build outputs..."
     :skaldoria-writer:clean \
     :skaldoria-canvas:clean \
     :skaldoria-cv:clean \
-    --no-daemon --console=plain
+    "-PreleaseBuildRoot=${RELEASE_BUILD_ROOT}" --no-daemon --console=plain
 
 if [[ "${SKIP_TESTS}" == false ]]; then
     echo
@@ -151,7 +153,7 @@ if [[ "${SKIP_TESTS}" == false ]]; then
         :skaldoria-canvas:desktopTest \
         :skaldoria-cv-core:test \
         :skaldoria-cv:desktopTest \
-        --no-daemon --console=plain "${RENDER_ARGS[@]}"
+        -PwarningsAsErrors "-PreleaseBuildRoot=${RELEASE_BUILD_ROOT}" --no-daemon --console=plain "${RENDER_ARGS[@]}"
     ./gradlew \
         :skaldoria-presentation:compileKotlinDesktop \
         :skaldoria-presentation:compileTestKotlinDesktop \
@@ -165,7 +167,7 @@ if [[ "${SKIP_TESTS}" == false ]]; then
         :skaldoria-cv-core:compileTestKotlin \
         :skaldoria-cv:compileKotlinDesktop \
         :skaldoria-cv:compileTestKotlinDesktop \
-        -PwarningsAsErrors --no-daemon --console=plain
+        -PwarningsAsErrors "-PreleaseBuildRoot=${RELEASE_BUILD_ROOT}" --no-daemon --console=plain
 else
     echo
     echo "[1/4] Verification skipped by request."
@@ -193,7 +195,7 @@ if [[ "${SKIP_INSTALLERS}" == false ]]; then
         echo "  -> RPM installers skipped: install 'rpm' in WSL to enable them."
     fi
 fi
-./gradlew "${GRADLE_TASKS[@]}" --no-daemon --console=plain
+./gradlew "${GRADLE_TASKS[@]}" -PwarningsAsErrors "-PreleaseBuildRoot=${RELEASE_BUILD_ROOT}" --no-daemon --console=plain
 
 # jpackage formats share temporary runtime inputs. Build each installer format in a separate
 # Gradle invocation so one format cannot clean files still needed by another.
@@ -203,7 +205,7 @@ if [[ "${BUILD_DEB}" == true ]]; then
         IFS='|' read -r module _ _ <<< "${app}"
         DEB_TASKS+=(":${module}:packageDeb")
     done
-    ./gradlew "${DEB_TASKS[@]}" --no-daemon --console=plain
+    ./gradlew "${DEB_TASKS[@]}" -PwarningsAsErrors "-PreleaseBuildRoot=${RELEASE_BUILD_ROOT}" --no-daemon --console=plain
 fi
 if [[ "${BUILD_RPM}" == true ]]; then
     RPM_TASKS=()
@@ -211,7 +213,7 @@ if [[ "${BUILD_RPM}" == true ]]; then
         IFS='|' read -r module _ _ <<< "${app}"
         RPM_TASKS+=(":${module}:packageRpm")
     done
-    ./gradlew "${RPM_TASKS[@]}" --no-daemon --console=plain
+    ./gradlew "${RPM_TASKS[@]}" -PwarningsAsErrors "-PreleaseBuildRoot=${RELEASE_BUILD_ROOT}" --no-daemon --console=plain
 fi
 
 copy_latest() {
@@ -231,7 +233,7 @@ echo
 echo "[3/4] Collecting artifacts..."
 for app in "${APPLICATIONS[@]}"; do
     IFS='|' read -r module product package_name <<< "${app}"
-    compose_dir="${PROJECT_ROOT}/${module}/build/compose"
+    compose_dir="${RELEASE_BUILD_ROOT_PATH}/${module}/compose"
     app_dir="${compose_dir}/binaries/main/app/${package_name}"
     [[ -d "${app_dir}" ]] || { echo "Error: distributable was not produced: ${app_dir}" >&2; exit 1; }
 

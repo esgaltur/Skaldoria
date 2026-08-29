@@ -1,19 +1,12 @@
 package com.skaldoria.project
 
+import com.skaldoria.core.json.Json
 import com.skaldoria.core.models.DeckProject
 import com.skaldoria.core.models.SlideFileEntry
 import com.skaldoria.markdown.models.SlideTransition
 import java.io.File
 
 object DeckProjectManager {
-
-    /** COR-7: manifest values must be escaped or a quote in them produces unparseable JSON. */
-    private fun escapeJson(value: String): String =
-        value.replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
 
     /**
      * COR-9: orders `2_intro.md` before `10_intro.md`. Plain lexicographic sorting put
@@ -115,34 +108,25 @@ object DeckProjectManager {
         var transition = SlideTransition.FADE
 
         if (extension == "json" || extension == "mdpres") {
-            // Simple robust line-based / key-value extraction without requiring external heavy json dependencies
-            val slidePathRegex = Regex("\"slides\"\\s*:\\s*\\[([^" +
-                "\\]]+)\\]", RegexOption.DOT_MATCHES_ALL)
-            val slideMatch = slidePathRegex.find(text)
-
-            if (slideMatch != null) {
-                val arrayContent = slideMatch.groupValues[1]
-                val itemRegex = Regex("\"([^\"]+)\"")
-                itemRegex.findAll(arrayContent).forEach { itemMatch ->
-                    val relPath = itemMatch.groupValues[1]
+            val manifest = Json.parseObject(text)
+            manifest?.array("slides").orEmpty()
+                .filterIsInstance<Json.StringValue>()
+                .forEach { item ->
+                    val relPath = item.value
                     val slideFile = resolveWithinRoot(rootDir, relPath)
                     if (slideFile != null && slideFile.isFile) {
-                        slideEntries.add(
-                            SlideFileEntry(
-                                relativePath = relPath,
-                                absolutePath = slideFile.absolutePath,
-                                content = slideFile.readText()
-                            )
+                        slideEntries += SlideFileEntry(
+                            relativePath = relPath,
+                            absolutePath = slideFile.absolutePath,
+                            content = slideFile.readText()
                         )
                     }
                 }
-            }
-
-            val nameRegex = Regex("\"name\"\\s*:\\s*\"([^\"]+)\"")
-            nameRegex.find(text)?.let { projectName = it.groupValues[1] }
-
-            val themeRegex = Regex("\"theme\"\\s*:\\s*\"([^\"]+)\"")
-            themeRegex.find(text)?.let { themeName = it.groupValues[1] }
+            manifest?.string("name")?.let { projectName = it }
+            manifest?.string("theme")?.let { themeName = it }
+            manifest?.string("transition")
+                ?.let(::parseTransition)
+                ?.let { transition = it }
         } else {
             // Standard Markdown Index with <!-- include: path --> or - [Link](path.md)
             val includeRegex = Regex("(?:<!--\\s*include:\\s*([^\\s>]+)\\s*-->)|(?:\\[.*?\\]\\((.*?\\.md)\\))")
@@ -250,18 +234,23 @@ object DeckProjectManager {
         // manifest that could no longer be parsed back.
         val jsonBuilder = StringBuilder()
         jsonBuilder.append("{\n")
-        jsonBuilder.append("  \"name\": \"${escapeJson(project.name)}\",\n")
-        jsonBuilder.append("  \"theme\": \"${escapeJson(project.themeName)}\",\n")
-        jsonBuilder.append("  \"transition\": \"${escapeJson(project.transition.name)}\",\n")
+        jsonBuilder.append("  \"name\": ${Json.string(project.name)},\n")
+        jsonBuilder.append("  \"theme\": ${Json.string(project.themeName)},\n")
+        jsonBuilder.append("  \"transition\": ${Json.string(project.transition.name)},\n")
         jsonBuilder.append("  \"slides\": [\n")
         project.slideFiles.forEachIndexed { index, entry ->
             val comma = if (index < project.slideFiles.size - 1) "," else ""
-            jsonBuilder.append("    \"${escapeJson(entry.relativePath.replace("\\", "/"))}\"$comma\n")
+            jsonBuilder.append("    ${Json.string(entry.relativePath.replace("\\", "/"))}$comma\n")
         }
         jsonBuilder.append("  ]\n")
         jsonBuilder.append("}\n")
 
         manifestFile.writeText(jsonBuilder.toString())
+    }
+
+    private fun parseTransition(value: String): SlideTransition? {
+        val normalized = value.trim().replace('-', '_')
+        return SlideTransition.entries.firstOrNull { it.name.equals(normalized, ignoreCase = true) }
     }
 
     /**

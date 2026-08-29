@@ -14,13 +14,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.skaldoria.canvas.model.CanvasPoint
 import com.skaldoria.canvas.state.CanvasState
 import com.skaldoria.shared.ui.components.EditorTooltip
 import com.skaldoria.theme.BuiltinThemes
@@ -104,7 +104,7 @@ fun CanvasToolbar(
                 tooltip = "Select Tool (V) — Click & Marquee select",
                 tint = if (state.activeTool == com.skaldoria.canvas.state.CanvasTool.Select) currentTheme.primary else currentTheme.textSecondary,
                 isDark = currentTheme.isDark,
-                onClick = { state.activeTool = com.skaldoria.canvas.state.CanvasTool.Select }
+                onClick = { state.selectTool(com.skaldoria.canvas.state.CanvasTool.Select) }
             )
 
             ToolbarIconButton(
@@ -112,7 +112,7 @@ fun CanvasToolbar(
                 tooltip = "Connect Tool (C) — Drag between cards to link",
                 tint = if (state.activeTool == com.skaldoria.canvas.state.CanvasTool.Connect) currentTheme.primary else currentTheme.textSecondary,
                 isDark = currentTheme.isDark,
-                onClick = { state.activeTool = com.skaldoria.canvas.state.CanvasTool.Connect }
+                onClick = { state.selectTool(com.skaldoria.canvas.state.CanvasTool.Connect) }
             )
 
             ToolbarIconButton(
@@ -120,7 +120,7 @@ fun CanvasToolbar(
                 tooltip = "Pan Tool (H / Space) — Drag to move around infinite canvas",
                 tint = if (state.activeTool == com.skaldoria.canvas.state.CanvasTool.Pan) currentTheme.primary else currentTheme.textSecondary,
                 isDark = currentTheme.isDark,
-                onClick = { state.activeTool = com.skaldoria.canvas.state.CanvasTool.Pan }
+                onClick = { state.selectTool(com.skaldoria.canvas.state.CanvasTool.Pan) }
             )
 
             VerticalDivider(color = currentTheme.cardBorder, modifier = Modifier.height(20.dp))
@@ -143,7 +143,7 @@ fun CanvasToolbar(
                         DropdownMenuItem(
                             text = { Text(shape.name) },
                             onClick = {
-                                val centerCanvas = state.viewport.screenToCanvas(Offset(screenWidth / 2f, screenHeight / 2f))
+                                val centerCanvas = state.viewport.screenToCanvas(CanvasPoint(screenWidth / 2f, screenHeight / 2f))
                                 state.addNode(centerCanvas, shape = shape)
                                 showAddNodeMenu = false
                             }
@@ -204,7 +204,7 @@ fun CanvasToolbar(
                 tint = currentTheme.textSecondary,
                 isDark = currentTheme.isDark,
                 onClick = {
-                    state.zoomAt(1.2f, Offset(screenWidth / 2f, screenHeight / 2f))
+                    state.zoomAt(1.2f, CanvasPoint(screenWidth / 2f, screenHeight / 2f))
                 }
             )
 
@@ -214,7 +214,7 @@ fun CanvasToolbar(
                 tint = currentTheme.textSecondary,
                 isDark = currentTheme.isDark,
                 onClick = {
-                    state.zoomAt(0.83f, Offset(screenWidth / 2f, screenHeight / 2f))
+                    state.zoomAt(0.83f, CanvasPoint(screenWidth / 2f, screenHeight / 2f))
                 }
             )
 

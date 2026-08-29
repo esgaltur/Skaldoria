@@ -1,7 +1,7 @@
 package com.skaldoria.export
 
 import com.skaldoria.markdown.models.SlideElement
-import com.skaldoria.state.PresentationState
+import com.skaldoria.core.ports.HtmlDeckSource
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
@@ -52,7 +52,7 @@ object FileManager {
         }
     }
 
-    fun exportStandaloneHtmlDeck(state: PresentationState, onExportCompleted: (String) -> Unit) {
+    fun exportStandaloneHtmlDeck(state: HtmlDeckSource, onExportCompleted: (String) -> Unit) {
         val dialog = FileDialog(null as Frame?, "Export Presentation as HTML Deck", FileDialog.SAVE)
         dialog.file = "presentation.html"
         dialog.isVisible = true
@@ -67,7 +67,7 @@ object FileManager {
         }
     }
 
-    internal fun generateStandaloneHtml(state: PresentationState): String {
+    internal fun generateStandaloneHtml(state: HtmlDeckSource): String {
         val theme = state.currentTheme
         val bgHex = String.format("#%06X", 0xFFFFFF and theme.background.value.toInt())
         val surfaceHex = String.format("#%06X", 0xFFFFFF and theme.surface.value.toInt())

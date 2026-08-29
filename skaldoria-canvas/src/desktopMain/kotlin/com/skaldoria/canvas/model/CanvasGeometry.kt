@@ -1,8 +1,5 @@
 package com.skaldoria.canvas.model
 
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Path
 import kotlin.math.*
 
 /**
@@ -12,17 +9,17 @@ object CanvasGeometry {
 
     /** Complete screen-space geometry for one cubic Bézier edge. */
     data class CubicBezier(
-        val start: Offset,
-        val control1: Offset,
-        val control2: Offset,
-        val end: Offset
+        val start: CanvasPoint,
+        val control1: CanvasPoint,
+        val control2: CanvasPoint,
+        val end: CanvasPoint
     ) {
-        fun pointAt(t: Float): Offset {
+        fun pointAt(t: Float): CanvasPoint {
             val clampedT = t.coerceIn(0f, 1f)
             val u = 1f - clampedT
             val uu = u * u
             val tt = clampedT * clampedT
-            return Offset(
+            return CanvasPoint(
                 x = uu * u * start.x + 3f * uu * clampedT * control1.x +
                     3f * u * tt * control2.x + tt * clampedT * end.x,
                 y = uu * u * start.y + 3f * uu * clampedT * control1.y +
@@ -34,7 +31,7 @@ object CanvasGeometry {
     /**
      * Resolves the best source and destination ports for an edge connecting [from] to [to].
      */
-    fun resolvePorts(from: CanvasNode, to: CanvasNode, fromPort: EdgePort, toPort: EdgePort): Pair<Offset, Offset> {
+    fun resolvePorts(from: CanvasNode, to: CanvasNode, fromPort: EdgePort, toPort: EdgePort): Pair<CanvasPoint, CanvasPoint> {
         val start = if (fromPort == EdgePort.Auto) {
             autoSourcePort(from, to)
         } else {
@@ -50,7 +47,7 @@ object CanvasGeometry {
         return Pair(start, end)
     }
 
-    private fun autoSourcePort(from: CanvasNode, to: CanvasNode): Offset {
+    private fun autoSourcePort(from: CanvasNode, to: CanvasNode): CanvasPoint {
         val dx = to.center.x - from.center.x
         val dy = to.center.y - from.center.y
         return if (abs(dx) >= abs(dy)) {
@@ -60,7 +57,7 @@ object CanvasGeometry {
         }
     }
 
-    private fun autoTargetPort(from: CanvasNode, to: CanvasNode): Offset {
+    private fun autoTargetPort(from: CanvasNode, to: CanvasNode): CanvasPoint {
         val dx = to.center.x - from.center.x
         val dy = to.center.y - from.center.y
         return if (abs(dx) >= abs(dy)) {
@@ -73,60 +70,45 @@ object CanvasGeometry {
     /**
      * Builds a smooth cubic Bezier curve path connecting [start] to [end].
      */
-    fun bezierBetween(start: Offset, end: Offset): CubicBezier {
+    fun bezierBetween(start: CanvasPoint, end: CanvasPoint): CubicBezier {
         val dx = end.x - start.x
         val dy = end.y - start.y
         val dist = hypot(dx, dy)
         val curvature = min(dist * 0.5f, 150f).coerceAtLeast(30f)
 
         val cp1 = if (abs(dx) > abs(dy)) {
-            Offset(start.x + (if (dx >= 0) curvature else -curvature), start.y)
+            CanvasPoint(start.x + (if (dx >= 0) curvature else -curvature), start.y)
         } else {
-            Offset(start.x, start.y + (if (dy >= 0) curvature else -curvature))
+            CanvasPoint(start.x, start.y + (if (dy >= 0) curvature else -curvature))
         }
 
         val cp2 = if (abs(dx) > abs(dy)) {
-            Offset(end.x - (if (dx >= 0) curvature else -curvature), end.y)
+            CanvasPoint(end.x - (if (dx >= 0) curvature else -curvature), end.y)
         } else {
-            Offset(end.x, end.y - (if (dy >= 0) curvature else -curvature))
+            CanvasPoint(end.x, end.y - (if (dy >= 0) curvature else -curvature))
         }
 
         return CubicBezier(start, cp1, cp2, end)
     }
 
-    fun buildBezierPath(start: Offset, end: Offset): Path =
-        buildBezierPath(bezierBetween(start, end))
-
-    fun buildBezierPath(curve: CubicBezier): Path = Path().apply {
-        moveTo(curve.start.x, curve.start.y)
-        cubicTo(
-            curve.control1.x,
-            curve.control1.y,
-            curve.control2.x,
-            curve.control2.y,
-            curve.end.x,
-            curve.end.y
-        )
-    }
-
     /**
      * Calculates the midpoint of a cubic Bezier curve between [start] and [end] for placing edge label pills.
      */
-    fun calculateMidpoint(start: Offset, end: Offset): Offset =
+    fun calculateMidpoint(start: CanvasPoint, end: CanvasPoint): CanvasPoint =
         bezierBetween(start, end).pointAt(0.5f)
 
     /**
      * Computes the 3 vertices of an arrowhead polygon at [target] pointed in the incoming tangent direction.
      */
-    fun computeArrowhead(start: Offset, target: Offset, arrowLength: Float = 12f, arrowAngleDeg: Float = 28f): List<Offset> {
+    fun computeArrowhead(start: CanvasPoint, target: CanvasPoint, arrowLength: Float = 12f, arrowAngleDeg: Float = 28f): List<CanvasPoint> {
         val angle = atan2(target.y - start.y, target.x - start.x)
         val rad = Math.toRadians(arrowAngleDeg.toDouble()).toFloat()
 
-        val leftWing = Offset(
+        val leftWing = CanvasPoint(
             target.x - arrowLength * cos(angle - rad),
             target.y - arrowLength * sin(angle - rad)
         )
-        val rightWing = Offset(
+        val rightWing = CanvasPoint(
             target.x - arrowLength * cos(angle + rad),
             target.y - arrowLength * sin(angle + rad)
         )
@@ -137,7 +119,7 @@ object CanvasGeometry {
     /**
      * Determines whether a point is close to the line segment between [start] and [end].
      */
-    fun isPointNearSegment(point: Offset, start: Offset, end: Offset, threshold: Float = 16f): Boolean {
+    fun isPointNearSegment(point: CanvasPoint, start: CanvasPoint, end: CanvasPoint, threshold: Float = 16f): Boolean {
         val dx = end.x - start.x
         val dy = end.y - start.y
         val lengthSq = dx * dx + dy * dy
@@ -153,7 +135,7 @@ object CanvasGeometry {
     /**
      * Determines whether a point is close to the cubic Bezier curve connecting [start] and [end].
      */
-    fun isPointNearBezier(point: Offset, start: Offset, end: Offset, threshold: Float = 14f): Boolean {
+    fun isPointNearBezier(point: CanvasPoint, start: CanvasPoint, end: CanvasPoint, threshold: Float = 14f): Boolean {
         val curve = bezierBetween(start, end)
         val steps = 20
         var prev = start
@@ -171,8 +153,8 @@ object CanvasGeometry {
     /**
      * Determines if a node's bounding rectangle intersects with the visible viewport rectangle (with padding).
      */
-    fun isNodeVisible(node: CanvasNode, viewportRect: Rect, margin: Float = 100f): Boolean {
-        val paddedViewport = Rect(
+    fun isNodeVisible(node: CanvasNode, viewportRect: CanvasRect, margin: Float = 100f): Boolean {
+        val paddedViewport = CanvasRect(
             viewportRect.left - margin,
             viewportRect.top - margin,
             viewportRect.right + margin,

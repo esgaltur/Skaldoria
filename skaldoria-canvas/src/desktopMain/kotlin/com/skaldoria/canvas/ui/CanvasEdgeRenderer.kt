@@ -23,6 +23,7 @@ import com.skaldoria.theme.PresentationTheme
 @Composable
 fun CanvasEdgeRenderer(
     state: CanvasState,
+    edges: List<CanvasEdge>,
     theme: PresentationTheme,
     modifier: Modifier = Modifier
 ) {
@@ -37,7 +38,7 @@ fun CanvasEdgeRenderer(
         }
 
         // 1. Draw existing edges
-        state.edges.forEach { edge ->
+        edges.forEach { edge ->
             val fromNode = nodeMap[edge.fromNodeId] ?: return@forEach
             val toNode = nodeMap[edge.toNodeId] ?: return@forEach
 
@@ -65,7 +66,7 @@ fun CanvasEdgeRenderer(
 
             // Draw Bezier spline
             val bezier = CanvasGeometry.bezierBetween(startScreen, endScreen)
-            val bezierPath = CanvasGeometry.buildBezierPath(bezier)
+            val bezierPath = bezier.toPath()
             drawPath(
                 path = bezierPath,
                 color = edgeColor,
@@ -96,8 +97,8 @@ fun CanvasEdgeRenderer(
             if (edge.label.isNotBlank()) {
                 drawEdgeLabel(
                     label = edge.label,
-                    start = startScreen,
-                    end = endScreen,
+                    start = startScreen.toOffset(),
+                    end = endScreen.toOffset(),
                     theme = theme,
                     textMeasurer = textMeasurer,
                     zoom = state.viewport.zoom
@@ -115,7 +116,7 @@ fun CanvasEdgeRenderer(
                 val startScreen = state.viewport.canvasToScreen(sourcePortCanvas)
                 val endScreen = connectingTargetPos
 
-                val previewPath = CanvasGeometry.buildBezierPath(startScreen, endScreen)
+                val previewPath = CanvasGeometry.bezierBetween(startScreen, endScreen).toPath()
                 drawPath(
                     path = previewPath,
                     color = theme.primary.copy(alpha = 0.85f),
@@ -129,7 +130,7 @@ fun CanvasEdgeRenderer(
                 drawCircle(
                     color = theme.primary,
                     radius = 6f,
-                    center = endScreen
+                    center = endScreen.toOffset()
                 )
             }
         }
@@ -144,7 +145,7 @@ private fun DrawScope.drawEdgeLabel(
     textMeasurer: TextMeasurer,
     zoom: Float
 ) {
-    val mid = CanvasGeometry.calculateMidpoint(start, end)
+    val mid = CanvasGeometry.calculateMidpoint(start.toCanvasPoint(), end.toCanvasPoint()).toOffset()
     val textStyle = TextStyle(
         color = theme.textPrimary,
         fontSize = (11f * zoom).coerceIn(9f, 15f).sp

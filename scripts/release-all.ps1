@@ -90,6 +90,12 @@ $windowsDir = Join-Path $releaseRoot 'windows'
 $linuxDir = Join-Path $releaseRoot 'linux'
 New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
 
+# Older platform scripts wrote artifacts directly into dist/. Remove only those recognizable
+# legacy release files so they cannot leak into the combined checksum manifest or GitHub upload.
+Get-ChildItem -LiteralPath $releaseRoot -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like 'Skaldoria*-v*' } |
+    Remove-Item -Force
+
 Write-Host ''
 Write-Host '==========================================================' -ForegroundColor Cyan
 Write-Host ' Skaldoria Suite - Windows + Linux Local Release' -ForegroundColor Cyan
