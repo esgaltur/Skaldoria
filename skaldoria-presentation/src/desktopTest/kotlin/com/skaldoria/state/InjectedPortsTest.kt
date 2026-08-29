@@ -5,7 +5,12 @@ import com.skaldoria.core.models.DeckProject
 import com.skaldoria.core.models.SlideFileEntry
 import com.skaldoria.core.ports.CompanionServerPort
 import com.skaldoria.core.ports.FileDialogs
+import com.skaldoria.core.ports.HtmlDeckExporter
+import com.skaldoria.core.ports.HtmlDeckSource
+import com.skaldoria.core.ports.PreferencesRepository
 import com.skaldoria.core.ports.ProjectRepository
+import com.skaldoria.core.ports.UiPreferences
+import com.skaldoria.markdown.models.SlideTransition
 import com.skaldoria.remote.DeckControl
 import java.io.File
 import kotlin.test.Test
@@ -66,6 +71,28 @@ class InjectedPortsTest : PresentationStateTestBase() {
         override fun stop() {
             stopCalls++
             running = false
+        }
+    }
+
+    private class FakePreferences(
+        private val loaded: UiPreferences = UiPreferences("nord-dark", 14, null, "FADE")
+    ) : PreferencesRepository {
+        var lastSaved: UiPreferences? = null
+        var draft: String? = null
+
+        override fun loadUiPreferences() = loaded
+        override fun saveUiPreferences(preferences: UiPreferences) { lastSaved = preferences }
+        override fun saveDraft(content: String) { draft = content }
+        override fun loadDraft() = draft
+        override fun clearDraft() { draft = null }
+        override fun addRecentProject(path: String, title: String, slideCount: Int) = Unit
+    }
+
+    private class FakeHtmlExporter : HtmlDeckExporter {
+        var exported: HtmlDeckSource? = null
+        override fun export(source: HtmlDeckSource, onExportCompleted: (String) -> Unit) {
+            exported = source
+            onExportCompleted("/fake/deck.html")
         }
     }
 
@@ -202,5 +229,34 @@ class InjectedPortsTest : PresentationStateTestBase() {
         assertNotNull(state.remoteServerError)
         assertTrue(state.remoteServerError!!.contains("no network"))
         state.dispose()
+    }
+
+    @Test
+    fun `UI preferences restore and persist transition through the injected port`() {
+        val preferences = FakePreferences(
+            UiPreferences("nord-dark", 18, "always", "ZOOM")
+        )
+        val state = presentationState(preferences = preferences)
+
+        state.restoreUiPreferences()
+        assertEquals(18, state.editorFontSize)
+        assertEquals(SlideTransition.ZOOM, state.transition)
+
+        state.selectTransition(SlideTransition.VERTICAL_SLIDE)
+        assertEquals("VERTICAL_SLIDE", preferences.lastSaved?.transition)
+    }
+
+    @Test
+    fun `HTML export receives only the read-only deck source port`() {
+        val exporter = FakeHtmlExporter()
+        val state = presentationState(
+            initialMarkdown = "# Exported deck",
+            htmlExporter = exporter
+        )
+
+        state.exportHtml()
+
+        assertEquals("Exported deck", exporter.exported?.slides?.single()?.title)
+        assertEquals(state.currentTheme, exporter.exported?.currentTheme)
     }
 }

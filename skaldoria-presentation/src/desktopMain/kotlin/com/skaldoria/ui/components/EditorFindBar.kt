@@ -248,7 +248,7 @@ fun EditorFindBar(
                             if (state.isFindCaseSensitive) state.currentTheme.primary else Color.Transparent,
                             RoundedCornerShape(4.dp)
                         )
-                        .clickable { state.isFindCaseSensitive = !state.isFindCaseSensitive },
+                        .clickable(onClick = state::toggleFindCaseSensitivity),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -273,7 +273,7 @@ fun EditorFindBar(
                             if (state.isFindWholeWord) state.currentTheme.primary else Color.Transparent,
                             RoundedCornerShape(4.dp)
                         )
-                        .clickable { state.isFindWholeWord = !state.isFindWholeWord },
+                        .clickable(onClick = state::toggleFindWholeWord),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -298,7 +298,7 @@ fun EditorFindBar(
                             if (state.isFindRegex) state.currentTheme.primary else Color.Transparent,
                             RoundedCornerShape(4.dp)
                         )
-                        .clickable { state.isFindRegex = !state.isFindRegex },
+                        .clickable(onClick = state::toggleFindRegex),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -383,7 +383,7 @@ fun EditorFindBar(
 
                         BasicTextField(
                             value = state.replaceQuery,
-                            onValueChange = { state.replaceQuery = it },
+                            onValueChange = state::updateReplaceQuery,
                             modifier = Modifier
                                 .weight(1f)
                                 .onKeyEvent { keyEvent ->
@@ -430,7 +430,7 @@ fun EditorFindBar(
                                 tint = state.currentTheme.textSecondary,
                                 modifier = Modifier
                                     .size(14.dp)
-                                    .clickable { state.replaceQuery = "" }
+                                    .clickable { state.updateReplaceQuery("") }
                             )
                         }
                     }

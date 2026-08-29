@@ -138,6 +138,7 @@ class DeckDocument(
     // the index is what keeps the two independent.
 
     fun move(fromIndex: Int, toIndex: Int): Int? {
+        if (fromIndex == toIndex) return null
         if (isProjectMode) {
             val proj = project ?: return null
             // Reordering across files means reordering the files themselves, which is only
