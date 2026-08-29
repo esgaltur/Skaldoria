@@ -1,4 +1,4 @@
-package com.skaldoria.core.editor
+package com.skaldoria.shared.ui.editor
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

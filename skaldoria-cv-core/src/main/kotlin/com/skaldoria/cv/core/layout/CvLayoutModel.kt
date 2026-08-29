@@ -1,6 +1,9 @@
 package com.skaldoria.cv.core.layout
 
+import com.skaldoria.cv.core.CvDiagnostic
 import com.skaldoria.cv.core.CvPaperSize
+import com.skaldoria.cv.core.DiagnosticSeverity
+import com.skaldoria.cv.core.SourceRange
 import com.skaldoria.markdown.parser.InlineRun
 
 /**
@@ -92,11 +95,15 @@ sealed interface CvPageElement {
     /** Offset from the top of the page's content box. */
     val yPt: Double
 
+    /** The Markdown that produced this element, where one line produced it. */
+    val source: SourceRange?
+
     data class TextBlock(
         val xPt: Double,
         override val yPt: Double,
         val text: CvMeasuredText,
-        val style: CvTextStyle
+        val style: CvTextStyle,
+        override val source: SourceRange? = null
     ) : CvPageElement
 
     data class Rule(
@@ -104,9 +111,47 @@ sealed interface CvPageElement {
         override val yPt: Double,
         val widthPt: Double,
         val thicknessPt: Double,
-        val color: CvColorRole = CvColorRole.Divider
+        val color: CvColorRole = CvColorRole.Divider,
+        override val source: SourceRange? = null
     ) : CvPageElement
 }
+
+/**
+ * Content the printable box cannot hold — CV-FR-046.
+ *
+ * A flow item taller than the content box is the one case [com.skaldoria.cv.core.PagePacker]
+ * cannot solve by starting another page: moving it changes which page truncates it, not whether
+ * one does. Preview clips such an item at the sheet edge and the PDF draws it below the page,
+ * so without this report the text simply disappears from both outputs — the silent omission the
+ * requirement forbids. Reporting is the honest outcome; the engine never scales or crops to hide
+ * the problem.
+ *
+ * @param requiredPt the item's measured height, and [availablePt] the content box it must fit.
+ */
+data class CvLayoutOverflow(
+    val pageNumber: Int,
+    val label: String,
+    val source: SourceRange?,
+    val requiredPt: Double,
+    val availablePt: Double
+) {
+    /** How much taller than one page the item is. Always positive for a reported overflow. */
+    val excessPt: Double get() = requiredPt - availablePt
+
+    /**
+     * Rendered into the same panel as the parser's findings, because to a user "this will not fit
+     * on the page" is the same kind of problem as "this heading has no section".
+     */
+    fun toDiagnostic(): CvDiagnostic = CvDiagnostic(
+        code = "CV_CONTENT_OVERFLOW",
+        severity = DiagnosticSeverity.Error,
+        message = "$label is ${excessPt.roundedPoints()} pt taller than page $pageNumber can hold.",
+        action = "Split it into shorter paragraphs or list items, widen the margins, or reduce the font size.",
+        source = source ?: SourceRange(1)
+    )
+}
+
+private fun Double.roundedPoints(): String = kotlin.math.round(this).toInt().toString()
 
 /**
  * @param elements in reading order — CV-FR-061 is satisfied by preserving this order when writing
@@ -122,7 +167,9 @@ data class CvResolvedLayout(
     val paper: CvPaperSize,
     val pages: List<CvLayoutPage>,
     val title: String,
-    val author: String?
+    val author: String?,
+    /** Empty when every item fits. See [CvLayoutOverflow]. */
+    val overflows: List<CvLayoutOverflow> = emptyList()
 ) {
     val pageCount: Int get() = pages.size
 
@@ -131,4 +178,17 @@ data class CvResolvedLayout(
         page.elements.filterIsInstance<CvPageElement.TextBlock>()
             .joinToString("\n") { it.text.plainText }
     }
+
+    /**
+     * The one-based page showing the Markdown at [line], or null when nothing on any page came
+     * from it. Blank lines and content the preview omits legitimately have no page.
+     *
+     * Outline navigation (CV-FR-024) uses this to move the preview to the section the user picked,
+     * which is only possible because elements carry the source range they were built from.
+     */
+    fun pageContaining(line: Int): Int? = pages.firstOrNull { page ->
+        page.elements.any { element ->
+            element.source?.let { line >= it.startLine && line <= it.endLine } == true
+        }
+    }?.pageNumber
 }

@@ -18,9 +18,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.automirrored.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.FormatSize
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.PushPin
@@ -60,6 +62,7 @@ import com.skaldoria.cv.core.CvTemplateCatalog
 import com.skaldoria.cv.core.CvTemplateId
 import com.skaldoria.cv.core.CvThemeCatalog
 import com.skaldoria.cv.core.CvThemeId
+import com.skaldoria.cv.core.CvDiagnostic
 import com.skaldoria.cv.core.DiagnosticSeverity
 
 /**
@@ -85,15 +88,30 @@ import com.skaldoria.cv.core.DiagnosticSeverity
 internal fun CvToolbar(
     state: CvEditorState,
     dispatch: (CvEvent) -> Unit,
+    /**
+     * Every finding on the document, parse-time and layout-time alike. Passed in rather than read
+     * off [state] because an overflow (CV-FR-046) is only known once the page has been resolved,
+     * and a badge that counted half of them would be worse than none.
+     */
+    diagnostics: List<CvDiagnostic>,
     onOpenRequest: () -> Unit,
     onSaveRequest: () -> Unit,
     onSaveAsRequest: () -> Unit,
-    onExportPdfRequest: () -> Unit
+    onExportPdfRequest: () -> Unit,
+    onFindRequest: () -> Unit
 ) {
     Surface(shadowElevation = 3.dp) {
         Column {
-            FileTier(state, dispatch, onOpenRequest, onSaveRequest, onSaveAsRequest, onExportPdfRequest)
-            SettingsTier(state, dispatch)
+            FileTier(
+                state,
+                dispatch,
+                onOpenRequest,
+                onSaveRequest,
+                onSaveAsRequest,
+                onExportPdfRequest,
+                onFindRequest
+            )
+            SettingsTier(state, dispatch, diagnostics)
         }
     }
 }
@@ -105,7 +123,8 @@ private fun FileTier(
     onOpenRequest: () -> Unit,
     onSaveRequest: () -> Unit,
     onSaveAsRequest: () -> Unit,
-    onExportPdfRequest: () -> Unit
+    onExportPdfRequest: () -> Unit,
+    onFindRequest: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp),
@@ -113,6 +132,21 @@ private fun FileTier(
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         DocumentIdentity(state, Modifier.weight(1f))
+
+        ToolbarIconButton(
+            icon = Icons.AutoMirrored.Outlined.FormatListBulleted,
+            description = if (state.isOutlineVisible) "Hide outline" else "Show outline",
+            shortcut = "Ctrl+Shift+O",
+            onClick = { dispatch(CvEvent.ToggleOutline) }
+        )
+        ToolbarIconButton(
+            icon = Icons.Outlined.Search,
+            description = "Find and replace",
+            shortcut = "Ctrl+F",
+            onClick = onFindRequest
+        )
+
+        ToolbarSeparator()
 
         ToolbarIconButton(
             icon = Icons.AutoMirrored.Outlined.Undo,
@@ -209,7 +243,11 @@ private fun DocumentIdentity(state: CvEditorState, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun SettingsTier(state: CvEditorState, dispatch: (CvEvent) -> Unit) {
+private fun SettingsTier(
+    state: CvEditorState,
+    dispatch: (CvEvent) -> Unit,
+    diagnostics: List<CvDiagnostic>
+) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
         Row(
             modifier = Modifier.fillMaxWidth().height(46.dp).padding(horizontal = 16.dp),
@@ -242,7 +280,7 @@ private fun SettingsTier(state: CvEditorState, dispatch: (CvEvent) -> Unit) {
 
             Spacer(Modifier.weight(1f))
 
-            DiagnosticsSummary(state)
+            DiagnosticsSummary(diagnostics)
 
             // Zoom only means anything when a page is on screen.
             if (state.viewMode != CvViewMode.Source) {
@@ -263,8 +301,7 @@ private fun SettingsTier(state: CvEditorState, dispatch: (CvEvent) -> Unit) {
  * whether it was worth looking at.
  */
 @Composable
-private fun DiagnosticsSummary(state: CvEditorState) {
-    val diagnostics = state.document.diagnostics
+private fun DiagnosticsSummary(diagnostics: List<CvDiagnostic>) {
     if (diagnostics.isEmpty()) return
 
     val errors = diagnostics.count { it.severity == DiagnosticSeverity.Error }

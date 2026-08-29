@@ -14,7 +14,7 @@ class CvFileControllerTest {
             val destination = directory.resolve("résumé.md")
             val source = "# Jiří Novák\r\n\r\n## Dovednosti\r\n\r\n- Kotlin 🟣"
 
-            CvFileController().writeAtomically(destination.toFile(), source)
+            writeAtomically(destination.toFile(), source)
 
             assertEquals(source, Files.readString(destination))
             assertFalse(directory.toFile().listFiles().orEmpty().any { it.extension == "tmp" })

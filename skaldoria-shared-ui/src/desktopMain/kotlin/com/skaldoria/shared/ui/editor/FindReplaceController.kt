@@ -1,4 +1,4 @@
-package com.skaldoria.core.editor
+package com.skaldoria.shared.ui.editor
 
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue

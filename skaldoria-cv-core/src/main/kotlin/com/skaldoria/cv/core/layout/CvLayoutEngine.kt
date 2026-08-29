@@ -7,6 +7,7 @@ import com.skaldoria.cv.core.CvPaperSize
 import com.skaldoria.cv.core.CvTemplateLayout
 import com.skaldoria.cv.core.MeasuredPageItem
 import com.skaldoria.cv.core.PagePacker
+import com.skaldoria.cv.core.SourceRange
 import com.skaldoria.markdown.parser.InlineRun
 import com.skaldoria.markdown.parser.InlineRuns
 
@@ -30,20 +31,37 @@ data class CvLayoutOptions(
  * - `keepWithNext` on section and entry headings, so a heading cannot end a page alone (CV-FR-042).
  * - `keepTogetherGroup` per section, so a short section moves whole rather than leaving a single
  *   trailing bullet stranded on an otherwise empty page (CV-FR-043).
+ *
+ * **Overflow** is reported rather than hidden (CV-FR-046). See [CvLayoutOverflow] for why an item
+ * taller than the content box is the one thing pagination cannot fix.
  */
 object CvLayoutEngine {
+
+    /**
+     * Rounding slack before an item counts as overflowing.
+     *
+     * Measured heights are sums of floating-point line heights, so an item that exactly fills the
+     * box can land a fraction of a point over it. Reporting that as content loss would put a red
+     * card on a page that renders perfectly.
+     */
+    private const val OVERFLOW_TOLERANCE_PT = 0.5
 
     /**
      * One item in the vertical flow, before it is assigned to a page.
      *
      * [elements] are positioned relative to the item's own top, so packing can move an item to
      * another page by shifting a single offset rather than re-measuring anything.
+     *
+     * [label] and [source] exist for the two features that have to point back at the Markdown:
+     * overflow reporting (CV-FR-046) and outline navigation (CV-FR-024).
      */
     private data class FlowItem(
         val elements: List<CvPageElement>,
         val heightPt: Double,
         val keepWithNext: Boolean = false,
-        val group: String? = null
+        val group: String? = null,
+        val label: String = "Content",
+        val source: SourceRange? = null
     )
 
     fun resolve(
@@ -73,11 +91,27 @@ object CvLayoutEngine {
             pageExtent = contentHeight
         )
 
+        val overflows = mutableListOf<CvLayoutOverflow>()
+
         val pages = packed.mapIndexed { pageIndex, itemIndices ->
             var cursor = 0.0
             val elements = ArrayList<CvPageElement>()
             for (itemIndex in itemIndices) {
                 val item = flow[itemIndex]
+
+                // Reported where it landed, not where it was authored: "page 3 cannot hold this"
+                // is what the user sees on screen, and the source range carries them back to the
+                // line regardless.
+                if (item.heightPt > contentHeight + OVERFLOW_TOLERANCE_PT) {
+                    overflows += CvLayoutOverflow(
+                        pageNumber = pageIndex + 1,
+                        label = item.label,
+                        source = item.source,
+                        requiredPt = item.heightPt,
+                        availablePt = contentHeight
+                    )
+                }
+
                 for (element in item.elements) {
                     elements += when (element) {
                         is CvPageElement.TextBlock -> element.copy(yPt = cursor + element.yPt)
@@ -102,7 +136,8 @@ object CvLayoutEngine {
             paper = paper,
             pages = pages,
             title = document.candidateName?.let { "$it — CV" } ?: "Curriculum Vitae",
-            author = document.candidateName
+            author = document.candidateName,
+            overflows = overflows
         )
     }
 
@@ -137,7 +172,8 @@ object CvLayoutEngine {
                             CvColorRole.PrimaryText
                         }
                     ),
-                    group = header
+                    group = header,
+                    label = "The candidate name"
                 )
             )
 
@@ -153,7 +189,8 @@ object CvLayoutEngine {
                             color = CvColorRole.Accent
                         ),
                         spaceBefore = layout.headlineSpaceBefore,
-                        group = header
+                        group = header,
+                        label = "The professional headline"
                     )
                 )
             }
@@ -169,7 +206,9 @@ object CvLayoutEngine {
                         runs = runs,
                         style = bodyStyle.copy(color = CvColorRole.SecondaryText),
                         spaceBefore = layout.contactsSpaceBefore,
-                        group = header
+                        group = header,
+                        label = "The contact line",
+                        source = document.contacts.first().source
                     )
                 )
             }
@@ -181,7 +220,9 @@ object CvLayoutEngine {
                 add(
                     sectionHeadingItem(
                         title = if (options.uppercaseSections) section.title.uppercase() else section.title,
-                        group = group
+                        group = group,
+                        label = "Section " + quoted(section.title),
+                        source = section.source
                     )
                 )
                 section.introduction.forEach { block -> addBlock(block, group) }
@@ -197,13 +238,17 @@ object CvLayoutEngine {
                             ),
                             spaceBefore = layout.entrySpaceBefore,
                             keepWithNext = true,
-                            group = group
+                            group = group,
+                            label = "Entry " + quoted(entry.title),
+                            source = entry.source
                         )
                     )
                     entry.content.forEach { block -> addBlock(block, group) }
                 }
             }
         }
+
+        private fun quoted(title: String): String = "‘" + title + "’"
 
         private fun MutableList<FlowItem>.addBlock(block: CvBlock, group: String) {
             when (block.kind) {
@@ -217,11 +262,14 @@ object CvLayoutEngine {
                                 xPt = 0.0,
                                 yPt = layout.dividerSpaceAround,
                                 widthPt = contentWidth,
-                                thicknessPt = layout.ruleThickness
+                                thicknessPt = layout.ruleThickness,
+                                source = block.source
                             )
                         ),
                         heightPt = layout.dividerSpaceAround * 2 + layout.ruleThickness,
-                        group = group
+                        group = group,
+                        label = "The divider on line ${block.source.startLine}",
+                        source = block.source
                     )
                 )
 
@@ -230,7 +278,9 @@ object CvLayoutEngine {
                         runs = InlineRuns.parse(block.markdown),
                         style = bodyStyle,
                         spaceBefore = layout.paragraphSpaceBefore,
-                        group = group
+                        group = group,
+                        label = "The paragraph on line ${block.source.startLine}",
+                        source = block.source
                     )
                 )
 
@@ -260,15 +310,34 @@ object CvLayoutEngine {
 
             return FlowItem(
                 elements = listOf(
-                    CvPageElement.TextBlock(xPt = 0.0, yPt = top, text = markerText, style = bodyStyle),
-                    CvPageElement.TextBlock(xPt = textInset, yPt = top, text = body, style = bodyStyle)
+                    CvPageElement.TextBlock(
+                        xPt = 0.0,
+                        yPt = top,
+                        text = markerText,
+                        style = bodyStyle,
+                        source = block.source
+                    ),
+                    CvPageElement.TextBlock(
+                        xPt = textInset,
+                        yPt = top,
+                        text = body,
+                        style = bodyStyle,
+                        source = block.source
+                    )
                 ),
                 heightPt = top + maxOf(body.heightPt, markerText.heightPt),
-                group = group
+                group = group,
+                label = "The list item on line ${block.source.startLine}",
+                source = block.source
             )
         }
 
-        private fun sectionHeadingItem(title: String, group: String): FlowItem {
+        private fun sectionHeadingItem(
+            title: String,
+            group: String,
+            label: String,
+            source: SourceRange
+        ): FlowItem {
             val style = CvTextStyle(
                 fontRole = CvFontRole.Heading,
                 sizePt = layout.sectionSize,
@@ -283,18 +352,27 @@ object CvLayoutEngine {
 
             return FlowItem(
                 elements = listOf(
-                    CvPageElement.TextBlock(xPt = 0.0, yPt = top, text = measured, style = style),
+                    CvPageElement.TextBlock(
+                        xPt = 0.0,
+                        yPt = top,
+                        text = measured,
+                        style = style,
+                        source = source
+                    ),
                     CvPageElement.Rule(
                         xPt = 0.0,
                         yPt = ruleY,
                         widthPt = contentWidth,
-                        thicknessPt = layout.ruleThickness
+                        thicknessPt = layout.ruleThickness,
+                        source = source
                     )
                 ),
                 heightPt = ruleY + layout.ruleThickness + layout.sectionRuleSpaceAfter,
                 // The divider must never be the last thing on a page.
                 keepWithNext = true,
-                group = group
+                group = group,
+                label = label,
+                source = source
             )
         }
 
@@ -303,16 +381,26 @@ object CvLayoutEngine {
             style: CvTextStyle,
             spaceBefore: Double = 0.0,
             keepWithNext: Boolean = false,
-            group: String? = null
+            group: String? = null,
+            label: String = "Content",
+            source: SourceRange? = null
         ): FlowItem {
             val measured = measurer.measure(runs, style, contentWidth)
             return FlowItem(
                 elements = listOf(
-                    CvPageElement.TextBlock(xPt = 0.0, yPt = spaceBefore, text = measured, style = style)
+                    CvPageElement.TextBlock(
+                        xPt = 0.0,
+                        yPt = spaceBefore,
+                        text = measured,
+                        style = style,
+                        source = source
+                    )
                 ),
                 heightPt = spaceBefore + measured.heightPt,
                 keepWithNext = keepWithNext,
-                group = group
+                group = group,
+                label = label,
+                source = source
             )
         }
 

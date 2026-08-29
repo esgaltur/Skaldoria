@@ -3,6 +3,7 @@ package com.skaldoria.cv
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,16 +21,42 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.skaldoria.shared.ui.util.loadClasspathPainter
+import kotlinx.coroutines.delay
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
 
+/**
+ * How long typing has to pause before unsaved work is snapshotted — CV-FR-026.
+ *
+ * Long enough that ordinary typing writes nothing, short enough that a crash costs a sentence
+ * rather than a session.
+ */
+private const val RECOVERY_DEBOUNCE_MILLIS = 2_000L
+
 fun main() = application {
     val store = remember { CvStore() }
     val files = remember { CvFileController() }
+    val recovery = remember { CvRecoveryStore() }
     val appIcon = remember { loadClasspathPainter("icons/cv.png") }
     val windowState = rememberWindowState(width = 1360.dp, height = 900.dp)
     var confirmClose by remember { mutableStateOf(false) }
+
+    // Read once, at startup: this is the previous session's work, and nothing during this session
+    // can change what the last one left behind.
+    var pendingRecovery by remember {
+        mutableStateOf(
+            recovery.read()?.let { snapshot ->
+                CvRecovery.offer(snapshot, CvRecovery.diskSourceFor(snapshot))
+            }
+        )
+    }
+
+    fun exitCleanly() {
+        // A clean exit means nothing was lost, so there is nothing to offer next time.
+        recovery.clear()
+        exitApplication()
+    }
 
     fun open(parent: Frame?) {
         chooseMarkdownToOpen(parent)?.let { files.open(store, it) }
@@ -77,7 +104,7 @@ fun main() = application {
     }
 
     Window(
-        onCloseRequest = { if (store.state.isDirty) confirmClose = true else exitApplication() },
+        onCloseRequest = { if (store.state.isDirty) confirmClose = true else exitCleanly() },
         title = cvWindowTitle(store.state),
         icon = appIcon,
         state = windowState,
@@ -85,6 +112,25 @@ fun main() = application {
             handleCvKeyEvent(event, store, { open(null) }, { save(null) }, { saveAs(null) }, { exportPdf(null) })
         }
     ) {
+        /**
+         * CV-FR-026. Keyed on the text so each pause in typing replaces the snapshot, and on the
+         * dirty flag so a save clears it — the file on disk is the recovery once it matches.
+         */
+        LaunchedEffect(store.state.source.text, store.state.isDirty, store.state.currentFile) {
+            if (!store.state.isDirty) {
+                recovery.clear()
+                return@LaunchedEffect
+            }
+            delay(RECOVERY_DEBOUNCE_MILLIS)
+            recovery.write(
+                CvRecoverySnapshot(
+                    source = store.state.source.text,
+                    originalPath = store.state.currentFile?.absolutePath,
+                    savedAtEpochMillis = System.currentTimeMillis()
+                )
+            )
+        }
+
         CvEditor(
             store = store,
             onOpenRequest = { open(window) },
@@ -117,8 +163,52 @@ fun main() = application {
                 onDismissRequest = { confirmClose = false },
                 title = { Text("Discard unsaved changes?") },
                 text = { Text("Your Markdown CV has changes that have not been saved.") },
-                confirmButton = { TextButton(onClick = ::exitApplication) { Text("Discard") } },
+                confirmButton = { TextButton(onClick = ::exitCleanly) { Text("Discard") } },
                 dismissButton = { TextButton(onClick = { confirmClose = false }) { Text("Keep editing") } }
+            )
+        }
+
+        /**
+         * CV-FR-026: recovery is *offered*, never applied on the user's behalf, and the original
+         * file is untouched either way — restoring only loads the text into the editor, leaving
+         * the document dirty so that saving it stays their decision.
+         */
+        pendingRecovery?.let { snapshot ->
+            AlertDialog(
+                onDismissRequest = { pendingRecovery = null },
+                title = { Text("Restore unsaved changes?") },
+                text = {
+                    Text(
+                        buildString {
+                            append("Skaldoria CV closed unexpectedly with unsaved edits to ")
+                            append(snapshot.originalPath?.let { File(it).name } ?: "an untitled CV")
+                            append(".\n\nRestoring opens them in the editor. ")
+                            append("Nothing is written to disk until you save.")
+                        }
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            store.dispatch(
+                                CvEvent.DocumentRecovered(
+                                    file = snapshot.originalPath?.let(::File),
+                                    source = snapshot.source,
+                                    savedSource = CvRecovery.diskSourceFor(snapshot) ?: ""
+                                )
+                            )
+                            pendingRecovery = null
+                        }
+                    ) { Text("Restore") }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            recovery.clear()
+                            pendingRecovery = null
+                        }
+                    ) { Text("Discard them") }
+                }
             )
         }
     }
@@ -143,7 +233,15 @@ internal fun handleCvKeyEvent(
     return when {
         command && shift && event.key == Key.E -> onExportPdf().let { true }
         command && shift && event.key == Key.S -> onSaveAs().let { true }
+        command && shift && event.key == Key.O -> store.dispatch(CvEvent.ToggleOutline).let { true }
         command && !shift && event.key == Key.O -> onOpen().let { true }
+
+        // Find and replace — CV-FR-025. Opening searches forward from the caret rather than
+        // jumping to match one, so a search starts where the user is looking.
+        command && event.key == Key.F -> openFind(store, withReplace = false)
+        command && event.key == Key.H -> openFind(store, withReplace = true)
+        event.key == Key.Escape && store.findReplace.isOpen ->
+            store.findReplace.close().let { true }
         command && !shift && event.key == Key.S -> onSave().let { true }
         command && shift && event.key == Key.Z -> store.dispatch(CvEvent.Redo).let { true }
         command && !shift && event.key == Key.Z -> store.dispatch(CvEvent.Undo).let { true }
@@ -158,6 +256,20 @@ internal fun handleCvKeyEvent(
             store.dispatch(CvEvent.ZoomReset).let { true }
         else -> false
     }
+}
+
+/**
+ * Toggles the find bar and, when it opens, seeds the search from the caret.
+ *
+ * @return always true: the shortcut is handled either way, and letting Ctrl+F fall through to the
+ *   text field would type an "f" into the CV.
+ */
+private fun openFind(store: CvStore, withReplace: Boolean): Boolean {
+    store.findReplace.toggle(withReplace)
+    if (store.findReplace.isOpen && store.findReplace.focusFrom(store.state.source.selection.start)) {
+        store.dispatch(CvEvent.FindMatchRevealed)
+    }
+    return true
 }
 
 private fun chooseMarkdownToOpen(parent: Frame?): File? {

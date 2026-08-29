@@ -2,6 +2,7 @@ package com.skaldoria.cv
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
@@ -21,10 +22,14 @@ class CvZoomRenderingTest {
         val zoomPercent = mutableStateOf(100)
         val scene = ImageComposeScene(width = 1000, height = 1000, density = Density(1f)) {
             CvPreview(
-                document = document,
-                templateId = CvTemplateId.SoftwareEngineerAts,
-                themeId = CvThemeId.ModernBlue,
-                fontId = CvFontId.Roboto,
+                layout = remember {
+                    resolveCvLayout(
+                        document = document,
+                        templateId = CvTemplateId.SoftwareEngineerAts,
+                        themeId = CvThemeId.ModernBlue,
+                        fontId = CvFontId.Roboto
+                    )
+                },
                 zoomPercent = zoomPercent.value,
                 modifier = Modifier.fillMaxSize()
             )

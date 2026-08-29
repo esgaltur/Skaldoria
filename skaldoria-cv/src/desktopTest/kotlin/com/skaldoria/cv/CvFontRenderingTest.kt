@@ -2,6 +2,7 @@ package com.skaldoria.cv
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
@@ -40,10 +41,14 @@ class CvFontRenderingTest {
         val selectedFont = mutableStateOf(CvFontId.Roboto)
         val scene = ImageComposeScene(width = 900, height = 1000, density = Density(1f)) {
             CvPreview(
-                document = document,
-                templateId = CvTemplateId.SoftwareEngineerAts,
-                themeId = CvThemeId.ModernBlue,
-                fontId = selectedFont.value,
+                layout = remember(selectedFont.value) {
+                    resolveCvLayout(
+                        document = document,
+                        templateId = CvTemplateId.SoftwareEngineerAts,
+                        themeId = CvThemeId.ModernBlue,
+                        fontId = selectedFont.value
+                    )
+                },
                 modifier = Modifier.fillMaxSize()
             )
         }

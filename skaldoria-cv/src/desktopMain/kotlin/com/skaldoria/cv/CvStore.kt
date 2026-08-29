@@ -3,18 +3,31 @@ package com.skaldoria.cv
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import com.skaldoria.cv.core.CvDocument
 import com.skaldoria.cv.core.CvMarkdownAdapter
 import com.skaldoria.cv.core.CvFontCatalog
 import com.skaldoria.cv.core.CvFontId
+import com.skaldoria.cv.core.CvOutline
+import com.skaldoria.cv.core.CvOutlineItem
 import com.skaldoria.cv.core.CvTemplateCatalog
 import com.skaldoria.cv.core.CvTemplateId
 import com.skaldoria.cv.core.CvThemeCatalog
 import com.skaldoria.cv.core.CvThemeId
+import com.skaldoria.shared.ui.editor.FindReplaceController
 import java.io.File
 
 enum class CvViewMode { Source, Split, Preview }
+
+/**
+ * A request to bring one Markdown line into view — CV-FR-024.
+ *
+ * [serial] makes repeated selections of the same outline row distinct values, so the preview's
+ * effect fires again. Without it, picking the same section twice after scrolling away would be a
+ * no-op, which reads as the outline being broken.
+ */
+data class CvNavigationRequest(val line: Int, val serial: Long)
 
 data class CvEditorState(
     val source: TextFieldValue,
@@ -26,8 +39,11 @@ data class CvEditorState(
     val fontId: CvFontId,
     val hasFontOverride: Boolean,
     val zoomPercent: Int,
+    val zoomFit: CvZoomFit,
     val showZoomControls: Boolean,
     val viewMode: CvViewMode,
+    val isOutlineVisible: Boolean,
+    val navigation: CvNavigationRequest?,
     val currentFile: File?,
     val savedSource: String,
     val errorMessage: String?,
@@ -39,6 +55,15 @@ data class CvEditorState(
     val isDirty: Boolean get() = source.text != savedSource
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
+
+    /**
+     * Derived once per state value rather than stored beside [document], because two fields set
+     * from the same parse in three different reducer branches is exactly how they drift apart.
+     */
+    val outline: List<CvOutlineItem> by lazy(LazyThreadSafetyMode.NONE) { CvOutline.of(document) }
+
+    /** The one-based line the caret sits on, which is what the outline highlights. */
+    val caretLine: Int get() = lineOfOffset(source.text, source.selection.start)
 }
 
 sealed interface CvEvent {
@@ -52,9 +77,35 @@ sealed interface CvEvent {
     data object ZoomIn : CvEvent
     data object ZoomOut : CvEvent
     data object ZoomReset : CvEvent
+    data object ZoomFitPage : CvEvent
+    data object ZoomFitWidth : CvEvent
+
+    /**
+     * The percentage a fit mode worked out for the current viewport, reported back so that the
+     * next Ctrl+= continues from what the user is looking at rather than from the last explicit
+     * value they set.
+     */
+    data class ZoomResolved(val percent: Int) : CvEvent
     data object ToggleZoomControls : CvEvent
+    data object ToggleOutline : CvEvent
+    data class OutlineItemSelected(val item: CvOutlineItem) : CvEvent
+
+    /** Puts the caret on the active find match so the text field scrolls it into view. */
+    data object FindMatchRevealed : CvEvent
     data class DocumentOpened(val file: File, val source: String) : CvEvent
     data class DocumentSaved(val file: File) : CvEvent
+
+    /**
+     * Unsaved work restored from a recovery snapshot — CV-FR-026.
+     *
+     * [savedSource] is what the original file holds, not the restored text, so the document opens
+     * *dirty*: the recovered edits are not on disk until the user saves them.
+     */
+    data class DocumentRecovered(
+        val file: File?,
+        val source: String,
+        val savedSource: String
+    ) : CvEvent
     data class FailureReported(val message: String) : CvEvent
     data class PdfExported(val result: CvExportResult) : CvEvent
     data object ErrorDismissed : CvEvent
@@ -68,6 +119,31 @@ class CvStore(
 ) {
     var state by mutableStateOf(initialState(initialSource))
         private set
+
+    private var navigationSerial = 0L
+
+    /**
+     * Find & replace over the Markdown source — CV-FR-025.
+     *
+     * The verified controller from `:skaldoria-shared-ui`, the same one the presentation editor
+     * uses. Its own Compose state stays outside [CvEditorState] because a search is a view on the
+     * document rather than part of it: nothing here belongs in a saved file or the undo history.
+     */
+    val findReplace: FindReplaceController = FindReplaceController(
+        text = { state.source.text },
+        onTextChanged = { replaced ->
+            dispatch(
+                CvEvent.SourceChanged(
+                    state.source.copy(
+                        text = replaced,
+                        // The replacement moves everything after it; clamping is what keeps the
+                        // caret inside the buffer when the text got shorter.
+                        selection = TextRange(state.source.selection.start.coerceIn(0, replaced.length))
+                    )
+                )
+            )
+        }
+    )
 
     fun dispatch(event: CvEvent) {
         state = when (event) {
@@ -109,29 +185,63 @@ class CvStore(
             )
             is CvEvent.ThemeSelected -> state.copy(themeId = event.themeId, hasThemeOverride = true)
             is CvEvent.FontSelected -> state.copy(fontId = event.fontId, hasFontOverride = true)
-            CvEvent.ZoomIn -> state.copy(zoomPercent = CvZoomPolicy.zoomIn(state.zoomPercent))
-            CvEvent.ZoomOut -> state.copy(zoomPercent = CvZoomPolicy.zoomOut(state.zoomPercent))
-            CvEvent.ZoomReset -> state.copy(zoomPercent = CvZoomPolicy.DefaultPercent)
+
+            // Every explicit zoom leaves fit mode: the user has just said what they want the scale
+            // to be, so it must stop changing under them when the window resizes.
+            CvEvent.ZoomIn -> state.copy(
+                zoomPercent = CvZoomPolicy.zoomIn(state.zoomPercent),
+                zoomFit = CvZoomFit.None
+            )
+            CvEvent.ZoomOut -> state.copy(
+                zoomPercent = CvZoomPolicy.zoomOut(state.zoomPercent),
+                zoomFit = CvZoomFit.None
+            )
+            CvEvent.ZoomReset -> state.copy(
+                zoomPercent = CvZoomPolicy.DefaultPercent,
+                zoomFit = CvZoomFit.None
+            )
+            CvEvent.ZoomFitPage -> state.copy(zoomFit = CvZoomFit.Page)
+            CvEvent.ZoomFitWidth -> state.copy(zoomFit = CvZoomFit.Width)
+            is CvEvent.ZoomResolved ->
+                if (state.zoomPercent == event.percent) state else state.copy(zoomPercent = event.percent)
+
             CvEvent.ToggleZoomControls -> state.copy(showZoomControls = !state.showZoomControls)
-            is CvEvent.DocumentOpened -> {
-                val document = adapter.parse(event.source)
+            CvEvent.ToggleOutline -> state.copy(isOutlineVisible = !state.isOutlineVisible)
+
+            is CvEvent.OutlineItemSelected -> {
+                val line = event.item.source.startLine
                 state.copy(
-                    source = TextFieldValue(event.source),
-                    document = document,
-                    templateId = CvTemplateCatalog.fromMetadata(document.metadata["template"])
-                        ?: CvTemplateCatalog.default,
-                    hasTemplateOverride = false,
-                    themeId = themeFrom(document),
-                    hasThemeOverride = false,
-                    fontId = CvFontCatalog.fromMetadata(document.metadata["font"]) ?: CvFontCatalog.default,
-                    hasFontOverride = false,
-                    currentFile = event.file,
-                    savedSource = event.source,
-                    errorMessage = null,
-                    undoStack = emptyList(),
-                    redoStack = emptyList()
+                    source = state.source.copy(
+                        selection = TextRange(offsetOfLine(state.source.text, line))
+                    ),
+                    navigation = CvNavigationRequest(line, navigationSerial++)
                 )
             }
+
+            CvEvent.FindMatchRevealed -> {
+                val match = findReplace.matches.getOrNull(findReplace.currentMatchIndex)
+                if (match == null) {
+                    state
+                } else {
+                    val end = (match.last + 1).coerceAtMost(state.source.text.length)
+                    state.copy(
+                        source = state.source.copy(
+                            selection = TextRange(match.first.coerceAtMost(end), end)
+                        )
+                    )
+                }
+            }
+
+            is CvEvent.DocumentOpened -> opened(
+                source = event.source,
+                file = event.file,
+                savedSource = event.source
+            )
+            is CvEvent.DocumentRecovered -> opened(
+                source = event.source,
+                file = event.file,
+                savedSource = event.savedSource
+            )
             is CvEvent.DocumentSaved -> state.copy(
                 currentFile = event.file,
                 savedSource = state.source.text,
@@ -152,6 +262,28 @@ class CvStore(
         }
     }
 
+    /** Opening and recovering differ only in what counts as the saved bytes. */
+    private fun opened(source: String, file: File?, savedSource: String): CvEditorState {
+        val document = adapter.parse(source)
+        return state.copy(
+            source = TextFieldValue(source),
+            document = document,
+            templateId = CvTemplateCatalog.fromMetadata(document.metadata["template"])
+                ?: CvTemplateCatalog.default,
+            hasTemplateOverride = false,
+            themeId = themeFrom(document),
+            hasThemeOverride = false,
+            fontId = CvFontCatalog.fromMetadata(document.metadata["font"]) ?: CvFontCatalog.default,
+            hasFontOverride = false,
+            navigation = null,
+            currentFile = file,
+            savedSource = savedSource,
+            errorMessage = null,
+            undoStack = emptyList(),
+            redoStack = emptyList()
+        )
+    }
+
     private fun initialState(source: String): CvEditorState {
         val document = adapter.parse(source)
         return CvEditorState(
@@ -165,8 +297,11 @@ class CvStore(
             fontId = CvFontCatalog.fromMetadata(document.metadata["font"]) ?: CvFontCatalog.default,
             hasFontOverride = false,
             zoomPercent = CvZoomPolicy.DefaultPercent,
+            zoomFit = CvZoomFit.None,
             showZoomControls = false,
             viewMode = CvViewMode.Split,
+            isOutlineVisible = true,
+            navigation = null,
             currentFile = null,
             savedSource = source,
             errorMessage = null
@@ -220,4 +355,34 @@ class CvStore(
         /** Full source snapshots are intentionally bounded against long editing sessions. */
         internal const val HISTORY_LIMIT = 50
     }
+}
+
+/**
+ * Character offset where one-based [line] starts, clamped into [text].
+ *
+ * Counting newlines rather than splitting: the outline runs this on every selection over a source
+ * that can be a hundred pages long, and `split` would allocate the whole document to find one index.
+ */
+internal fun offsetOfLine(text: String, line: Int): Int {
+    if (line <= 1) return 0
+    var remaining = line - 1
+    var index = 0
+    while (index < text.length) {
+        if (text[index] == '\n') {
+            remaining--
+            if (remaining == 0) return index + 1
+        }
+        index++
+    }
+    return text.length
+}
+
+/** Inverse of [offsetOfLine]: the one-based line containing [offset]. */
+internal fun lineOfOffset(text: String, offset: Int): Int {
+    val limit = offset.coerceIn(0, text.length)
+    var line = 1
+    for (index in 0 until limit) {
+        if (text[index] == '\n') line++
+    }
+    return line
 }

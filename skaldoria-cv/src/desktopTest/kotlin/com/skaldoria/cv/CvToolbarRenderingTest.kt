@@ -23,10 +23,12 @@ class CvToolbarRenderingTest {
                 CvToolbar(
                     state = state,
                     dispatch = {},
+                    diagnostics = state.document.diagnostics,
                     onOpenRequest = {},
                     onSaveRequest = {},
                     onSaveAsRequest = {},
-                    onExportPdfRequest = {}
+                    onExportPdfRequest = {},
+                    onFindRequest = {}
                 )
             }
         }

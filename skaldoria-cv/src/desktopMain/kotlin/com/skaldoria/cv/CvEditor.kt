@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -26,69 +27,98 @@ fun CvEditor(
     onExportPdfRequest: () -> Unit
 ) {
     val state = store.state
+
+    /**
+     * Resolved here rather than inside the preview, because two things outside the preview need
+     * it: the overflow report (CV-FR-046), which must be visible in Source view where no page is
+     * drawn at all, and the toolbar's badge. Resolving it twice would double the layout cost of
+     * every keystroke.
+     */
+    val layout = remember(state.document, state.templateId, state.themeId, state.fontId) {
+        resolveCvLayout(state.document, state.templateId, state.themeId, state.fontId)
+    }
+    val diagnostics = remember(state.document, layout) {
+        state.document.diagnostics + layout.resolved.overflows.map { it.toDiagnostic() }
+    }
+
     MaterialTheme {
         Column(Modifier.fillMaxSize().background(Color(0xFFF1F3F5))) {
             CvToolbar(
-                state,
-                store::dispatch,
-                onOpenRequest,
-                onSaveRequest,
-                onSaveAsRequest,
-                onExportPdfRequest
+                state = state,
+                dispatch = store::dispatch,
+                diagnostics = diagnostics,
+                onOpenRequest = onOpenRequest,
+                onSaveRequest = onSaveRequest,
+                onSaveAsRequest = onSaveAsRequest,
+                onExportPdfRequest = onExportPdfRequest,
+                onFindRequest = { store.findReplace.toggle() }
             )
             Row(Modifier.fillMaxSize()) {
-                when (state.viewMode) {
-                    CvViewMode.Source -> SourceEditor(state, store::dispatch, Modifier.weight(1f))
-                    CvViewMode.Split -> {
-                        SourceEditor(state, store::dispatch, Modifier.weight(1f))
-                        VerticalDivider(Modifier.fillMaxHeight().width(1.dp))
-                        CvPreview(
-                            state.document,
-                            state.templateId,
-                            state.themeId,
-                            state.fontId,
-                            state.zoomPercent,
-                            showZoomControls = state.showZoomControls,
-                            onZoomIn = { store.dispatch(CvEvent.ZoomIn) },
-                            onZoomOut = { store.dispatch(CvEvent.ZoomOut) },
-                            onZoomReset = { store.dispatch(CvEvent.ZoomReset) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    CvViewMode.Preview -> CvPreview(
-                        state.document,
-                        state.templateId,
-                        state.themeId,
-                        state.fontId,
-                        state.zoomPercent,
-                        showZoomControls = state.showZoomControls,
-                        onZoomIn = { store.dispatch(CvEvent.ZoomIn) },
-                        onZoomOut = { store.dispatch(CvEvent.ZoomOut) },
-                        onZoomReset = { store.dispatch(CvEvent.ZoomReset) },
-                        modifier = Modifier.weight(1f)
+                if (state.isOutlineVisible) {
+                    CvOutlinePanel(
+                        outline = state.outline,
+                        caretLine = state.caretLine,
+                        onItemSelected = { store.dispatch(CvEvent.OutlineItemSelected(it)) }
                     )
+                    VerticalDivider(Modifier.fillMaxHeight().width(1.dp))
                 }
-                DiagnosticsPanel(state.document.diagnostics)
+
+                when (state.viewMode) {
+                    CvViewMode.Source -> SourcePane(store, Modifier.weight(1f))
+                    CvViewMode.Split -> {
+                        SourcePane(store, Modifier.weight(1f))
+                        VerticalDivider(Modifier.fillMaxHeight().width(1.dp))
+                        PreviewPane(store, layout, Modifier.weight(1f))
+                    }
+                    CvViewMode.Preview -> PreviewPane(store, layout, Modifier.weight(1f))
+                }
+                DiagnosticsPanel(diagnostics)
             }
         }
     }
 }
 
+/** The paginated preview, fed the layout the editor already resolved. */
 @Composable
-private fun SourceEditor(
-    state: CvEditorState,
-    dispatch: (CvEvent) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    OutlinedTextField(
-        value = state.source,
-        onValueChange = { dispatch(CvEvent.SourceChanged(it)) },
-        modifier = modifier.fillMaxHeight().padding(16.dp),
-        textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-        visualTransformation = MarkdownVisualTransformation(MaterialTheme.colorScheme),
-        label = { Text("Markdown source") },
-        supportingText = { Text("Edits update the semantic preview and diagnostics immediately.") }
+private fun PreviewPane(store: CvStore, layout: CvPreviewLayout, modifier: Modifier = Modifier) {
+    val state = store.state
+    CvPreview(
+        layout = layout,
+        zoomPercent = state.zoomPercent,
+        zoomFit = state.zoomFit,
+        showZoomControls = state.showZoomControls,
+        navigation = state.navigation,
+        onZoomIn = { store.dispatch(CvEvent.ZoomIn) },
+        onZoomOut = { store.dispatch(CvEvent.ZoomOut) },
+        onZoomReset = { store.dispatch(CvEvent.ZoomReset) },
+        onZoomFitPage = { store.dispatch(CvEvent.ZoomFitPage) },
+        onZoomFitWidth = { store.dispatch(CvEvent.ZoomFitWidth) },
+        onZoomResolved = { store.dispatch(CvEvent.ZoomResolved(it)) },
+        modifier = modifier
     )
+}
+
+/** The Markdown source, with the find bar above it when it is open. */
+@Composable
+private fun SourcePane(store: CvStore, modifier: Modifier = Modifier) {
+    val state = store.state
+    Column(modifier.fillMaxHeight()) {
+        if (store.findReplace.isOpen) {
+            CvFindBar(
+                controller = store.findReplace,
+                onMatchMoved = { store.dispatch(CvEvent.FindMatchRevealed) }
+            )
+        }
+        OutlinedTextField(
+            value = state.source,
+            onValueChange = { store.dispatch(CvEvent.SourceChanged(it)) },
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+            visualTransformation = MarkdownVisualTransformation(MaterialTheme.colorScheme),
+            label = { Text("Markdown source") },
+            supportingText = { Text("Edits update the semantic preview and diagnostics immediately.") }
+        )
+    }
 }
 
 @Composable

@@ -14,7 +14,7 @@ import com.skaldoria.core.deck.SlideNavigator
 import com.skaldoria.core.deck.SlideTemplates
 import com.skaldoria.core.document.DeckHistory
 import com.skaldoria.core.document.SlideSourceLocator
-import com.skaldoria.core.editor.FindReplaceController
+import com.skaldoria.shared.ui.editor.FindReplaceController
 import com.skaldoria.core.models.*
 import com.skaldoria.markdown.models.*
 import com.skaldoria.core.pacing.Pacing

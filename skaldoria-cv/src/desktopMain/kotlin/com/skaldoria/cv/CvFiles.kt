@@ -19,26 +19,33 @@ class CvFileController {
             .onSuccess { store.dispatch(CvEvent.DocumentSaved(file)) }
             .onFailure { store.dispatch(CvEvent.FailureReported("Could not save ${file.name}: ${it.message}")) }
     }
+}
 
-    internal fun writeAtomically(file: File, content: String) {
-        val target = file.toPath().toAbsolutePath()
-        val parent = target.parent ?: error("A destination directory is required")
-        Files.createDirectories(parent)
-        val temporary = parent.resolve(".${target.fileName}.${UUID.randomUUID()}.tmp")
+/**
+ * Writes through a temporary sibling and publishes with one move — CV-NFR-040.
+ *
+ * Top-level rather than a member because the recovery store (CV-FR-026) needs the same guarantee
+ * for the same reason: a snapshot half-written when the process dies is worse than no snapshot,
+ * since it would offer to restore a truncated document over a whole one.
+ */
+internal fun writeAtomically(file: File, content: String) {
+    val target = file.toPath().toAbsolutePath()
+    val parent = target.parent ?: error("A destination directory is required")
+    Files.createDirectories(parent)
+    val temporary = parent.resolve(".${target.fileName}.${UUID.randomUUID()}.tmp")
+    try {
+        Files.writeString(temporary, content, StandardCharsets.UTF_8)
         try {
-            Files.writeString(temporary, content, StandardCharsets.UTF_8)
-            try {
-                Files.move(
-                    temporary,
-                    target,
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING
-                )
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING)
-            }
-        } finally {
-            Files.deleteIfExists(temporary)
+            Files.move(
+                temporary,
+                target,
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING)
         }
+    } finally {
+        Files.deleteIfExists(temporary)
     }
 }
