@@ -31,22 +31,22 @@ class WysiwygVisualTransformationTest {
             isVisualMode = false,
             isFocusMode = false
         )
-        
+
         val text = AnnotatedString("# Header 1\n## Header 2")
         val transformed = transformer.filter(text)
-        
+
         // Since isVisualMode is false, the text should be identical
         assertEquals("# Header 1\n## Header 2", transformed.text.text)
-        
+
         // Check styles
         val styles = transformed.text.spanStyles
         assertTrue(styles.isNotEmpty(), "Expected styles to be applied to headers")
-        
+
         // Header 1 style (size 32)
         val h1Style = styles.find { it.item.fontSize == 32.sp }
         assertTrue(h1Style != null, "Expected 32sp font size for Header 1")
         assertEquals(FontWeight.Bold, h1Style!!.item.fontWeight)
-        
+
         // Header 2 style (size 24)
         val h2Style = styles.find { it.item.fontSize == 24.sp }
         assertTrue(h2Style != null, "Expected 24sp font size for Header 2")
@@ -79,7 +79,7 @@ class WysiwygVisualTransformationTest {
         assertEquals("Large title", transformed.text.text)
         assertEquals(42.sp, transformed.text.paragraphStyles.single().item.lineHeight)
     }
-    
+
     @Test
     fun `visual transform handles leading whitespace`() {
         val transformer = WysiwygVisualTransformation(
@@ -88,10 +88,10 @@ class WysiwygVisualTransformationTest {
             isVisualMode = false,
             isFocusMode = false
         )
-        
+
         val text = AnnotatedString("   # Header with space")
         val transformed = transformer.filter(text)
-        
+
         val styles = transformed.text.spanStyles
         val h1Style = styles.find { it.item.fontSize == 32.sp }
         assertTrue(h1Style != null, "Expected header to be styled despite leading whitespace")
@@ -173,7 +173,7 @@ class WysiwygVisualTransformationTest {
     }
 
     @Test
-    fun `visual mode folds every line regardless of cursor position`() {
+    fun `cursor line reveals syntax while other lines stay folded`() {
         val source = "## Hidden **heading**\nEdit *this* line"
         val cursorOnSecondLine = source.indexOf("this")
         val transformed = WysiwygVisualTransformation(
@@ -182,7 +182,7 @@ class WysiwygVisualTransformationTest {
             isVisualMode = true
         ).filter(AnnotatedString(source))
 
-        assertEquals("Hidden heading\nEdit this line", transformed.text.text)
+        assertEquals("Hidden heading\nEdit *this* line", transformed.text.text)
     }
 
     @Test

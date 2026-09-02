@@ -35,15 +35,14 @@ class CvStoreTest {
     }
 
     @Test
-    fun `theme switching writes the choice into the front matter header`() {
+    fun `theme switching never rewrites or dirties Markdown`() {
         val store = CvStore("# Candidate\n\n## Experience")
 
         store.dispatch(CvEvent.ThemeSelected(CvThemeId.Forest))
 
         assertEquals(CvThemeId.Forest, store.state.themeId)
-        assertEquals("---\ntheme: forest\n---\n# Candidate\n\n## Experience", store.state.source.text)
-        assertEquals("forest", store.state.document.metadata["theme"])
-        assertTrue(store.state.isDirty)
+        assertEquals("# Candidate\n\n## Experience", store.state.source.text)
+        assertFalse(store.state.isDirty)
     }
 
     @Test
@@ -60,28 +59,14 @@ class CvStoreTest {
     }
 
     @Test
-    fun `font switching writes the choice into the front matter header`() {
-        val store = CvStore("---\ntheme: modern-blue\n---\n# Candidate")
+    fun `font switching changes presentation only`() {
+        val store = CvStore("# Candidate")
 
         store.dispatch(CvEvent.FontSelected(CvFontId.Georgia))
 
         assertEquals(CvFontId.Georgia, store.state.fontId)
-        assertEquals("---\ntheme: modern-blue\nfont: georgia\n---\n# Candidate", store.state.source.text)
-        assertEquals("georgia", store.state.document.metadata["font"])
-        assertTrue(store.state.isDirty)
-    }
-
-    @Test
-    fun `template switching updates an existing header key in place`() {
-        val store = CvStore("---\ntemplate: old-value\n---\n# Candidate")
-
-        store.dispatch(CvEvent.TemplateSelected(CvTemplateId.SoftwareEngineerAts))
-
-        assertEquals(CvTemplateId.SoftwareEngineerAts, store.state.templateId)
-        assertEquals(
-            "---\ntemplate: software-engineer-ats\n---\n# Candidate",
-            store.state.source.text
-        )
+        assertEquals("# Candidate", store.state.source.text)
+        assertFalse(store.state.isDirty)
     }
 
     @Test

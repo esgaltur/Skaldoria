@@ -33,8 +33,6 @@ import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.SubcomposeLayout
-import androidx.compose.ui.layout.SubcomposeMeasureScope
-import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -88,43 +86,6 @@ private sealed interface PreviewItem {
         val block: CvBlock,
         override val keepTogetherGroup: String?
     ) : PreviewItem
-}
-
-/** Page-independent geometry of the paper, in the density's pixels. */
-internal data class CvPageGeometry(
-    val pageWidth: Int,
-    val pageHeight: Int,
-    val horizontalMargin: Int,
-    val topMargin: Int,
-    val bottomReserved: Int,
-    val pageGap: Int,
-    val contentWidth: Int,
-    val contentHeight: Int
-)
-
-/**
- * The fully measured, paginated preview: which content item lands on which page and how tall it is.
- * Extracted from [MeasuredCvPages] so the pagination can be exercised headlessly (see
- * `CvPaginationPlanTest`) without launching a window. Items are described as strings so this
- * internal seam never leaks the private [PreviewItem] type.
- */
-internal class CvPagePlan(
-    val geometry: CvPageGeometry,
-    val descriptors: List<String>,
-    val groups: List<String?>,
-    val contentPlaceables: List<Placeable>,
-    val pages: List<List<Int>>
-) {
-    val heights: List<Int> get() = contentPlaceables.map { it.height }
-}
-
-private fun PreviewItem.describe(): String = when (this) {
-    is PreviewItem.Candidate -> "Candidate(${text})"
-    is PreviewItem.Headline -> "Headline(${text})"
-    is PreviewItem.Contacts -> "Contacts"
-    is PreviewItem.SectionHeading -> "Section(${text})"
-    is PreviewItem.EntryHeading -> "Entry(${text})"
-    is PreviewItem.Block -> "Block(${block.kind}: ${block.markdown.take(28)})"
 }
 
 private sealed interface PreviewSlot {
@@ -251,9 +212,33 @@ private fun MeasuredCvPages(
     modifier: Modifier = Modifier
 ) {
     SubcomposeLayout(modifier) { _ ->
-        val plan = planCvPages(document, theme, layout, paper)
-        val geometry = plan.geometry
-        val paperPlaceables = plan.pages.indices.map { pageIndex ->
+        val pageWidth = paper.widthPoints.dp.roundToPx()
+        val pageHeight = paper.heightPoints.dp.roundToPx()
+        val horizontalMargin = layout.horizontalMargin.dp.roundToPx()
+        val topMargin = layout.topMargin.dp.roundToPx()
+        val bottomReserved = layout.bottomReserved.dp.roundToPx()
+        val pageGap = PAGE_GAP.roundToPx()
+        val contentWidth = pageWidth - horizontalMargin * 2
+        val contentHeight = pageHeight - topMargin - bottomReserved
+        val items = previewItems(document, theme)
+        val contentPlaceables = items.mapIndexed { index, item ->
+            subcompose(PreviewSlot.Content(index)) { PreviewItemView(item, theme, layout) }
+                .single()
+                .measure(Constraints.fixedWidth(contentWidth))
+        }
+        val pages = PagePacker.pack(
+            items = contentPlaceables.mapIndexed { index, placeable ->
+                val item = items[index]
+                MeasuredPageItem(
+                    content = index,
+                    extent = placeable.height.toDouble(),
+                    keepWithNext = item is PreviewItem.SectionHeading || item is PreviewItem.EntryHeading,
+                    keepTogetherGroup = item.keepTogetherGroup
+                )
+            },
+            pageExtent = contentHeight.toDouble()
+        )
+        val paperPlaceables = pages.indices.map { pageIndex ->
             subcompose(PreviewSlot.Paper(pageIndex)) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -262,93 +247,42 @@ private fun MeasuredCvPages(
                 ) {}
             }
                 .single()
-                .measure(Constraints.fixed(geometry.pageWidth, geometry.pageHeight))
+                .measure(Constraints.fixed(pageWidth, pageHeight))
         }
-        val footerPlaceables = plan.pages.indices.map { pageIndex ->
+        val footerPlaceables = pages.indices.map { pageIndex ->
             subcompose(PreviewSlot.Footer(pageIndex)) {
                 Text(
-                    "Page ${pageIndex + 1} of ${plan.pages.size}",
+                    "Page ${pageIndex + 1} of ${pages.size}",
                     color = theme.secondaryText,
                     fontFamily = theme.bodyFont,
                     fontSize = 8.sp
                 )
             }
                 .single()
-                .measure(Constraints(maxWidth = geometry.contentWidth, maxHeight = geometry.bottomReserved))
+                .measure(Constraints(maxWidth = contentWidth, maxHeight = bottomReserved))
         }
-        val totalHeight = geometry.pageHeight * plan.pages.size +
-            geometry.pageGap * (plan.pages.size - 1).coerceAtLeast(0)
+        val totalHeight = pageHeight * pages.size + pageGap * (pages.size - 1).coerceAtLeast(0)
 
-        layout(geometry.pageWidth, totalHeight) {
+        layout(pageWidth, totalHeight) {
             paperPlaceables.forEachIndexed { pageIndex, placeable ->
-                placeable.placeRelative(0, pageIndex * (geometry.pageHeight + geometry.pageGap))
+                placeable.placeRelative(0, pageIndex * (pageHeight + pageGap))
             }
-            plan.pages.forEachIndexed { pageIndex, pageItems ->
-                var itemY = pageIndex * (geometry.pageHeight + geometry.pageGap) + geometry.topMargin
+            pages.forEachIndexed { pageIndex, pageItems ->
+                var itemY = pageIndex * (pageHeight + pageGap) + topMargin
                 pageItems.forEach { itemIndex ->
-                    val placeable = plan.contentPlaceables[itemIndex]
-                    placeable.placeRelative(geometry.horizontalMargin, itemY)
+                    val placeable = contentPlaceables[itemIndex]
+                    placeable.placeRelative(horizontalMargin, itemY)
                     itemY += placeable.height
                 }
             }
             footerPlaceables.forEachIndexed { pageIndex, placeable ->
-                val pageTop = pageIndex * (geometry.pageHeight + geometry.pageGap)
-                val footerX = (geometry.pageWidth - placeable.width) / 2
-                val footerY = pageTop + geometry.pageHeight - (geometry.bottomReserved + placeable.height) / 2
+                val pageTop = pageIndex * (pageHeight + pageGap)
+                val footerX = (pageWidth - placeable.width) / 2
+                val footerY = pageTop + pageHeight - (bottomReserved + placeable.height) / 2
                 placeable.placeRelative(footerX, footerY)
             }
         }
     }
-}
-
-/**
- * Measures every preview item and packs them into pages. Placement-free so it can be driven from a
- * headless [SubcomposeMeasureScope] in tests as well as by [MeasuredCvPages].
- */
-internal fun SubcomposeMeasureScope.planCvPages(
-    document: CvDocument,
-    theme: CvPreviewTheme,
-    layout: CvTemplateLayout,
-    paper: CvPaperSize
-): CvPagePlan {
-    val pageWidth = paper.widthPoints.dp.roundToPx()
-    val pageHeight = paper.heightPoints.dp.roundToPx()
-    val horizontalMargin = layout.horizontalMargin.dp.roundToPx()
-    val geometry = CvPageGeometry(
-        pageWidth = pageWidth,
-        pageHeight = pageHeight,
-        horizontalMargin = horizontalMargin,
-        topMargin = layout.topMargin.dp.roundToPx(),
-        bottomReserved = layout.bottomReserved.dp.roundToPx(),
-        pageGap = PAGE_GAP.roundToPx(),
-        contentWidth = pageWidth - horizontalMargin * 2,
-        contentHeight = pageHeight - layout.topMargin.dp.roundToPx() - layout.bottomReserved.dp.roundToPx()
-    )
-    val items = previewItems(document, theme)
-    val contentPlaceables = items.mapIndexed { index, item ->
-        subcompose(PreviewSlot.Content(index)) { PreviewItemView(item, theme, layout) }
-            .single()
-            .measure(Constraints.fixedWidth(geometry.contentWidth))
-    }
-    val pages = PagePacker.pack(
-        items = contentPlaceables.mapIndexed { index, placeable ->
-            val item = items[index]
-            MeasuredPageItem(
-                content = index,
-                extent = placeable.height.toDouble(),
-                keepWithNext = item is PreviewItem.SectionHeading || item is PreviewItem.EntryHeading,
-                keepTogetherGroup = item.keepTogetherGroup
-            )
-        },
-        pageExtent = geometry.contentHeight.toDouble()
-    )
-    return CvPagePlan(
-        geometry = geometry,
-        descriptors = items.map { it.describe() },
-        groups = items.map { it.keepTogetherGroup },
-        contentPlaceables = contentPlaceables,
-        pages = pages
-    )
 }
 
 @Composable
@@ -447,24 +381,16 @@ private fun previewItems(document: CvDocument, theme: CvPreviewTheme): List<Prev
         add(PreviewItem.Block(it, keepTogetherGroup = "header"))
     }
     document.sections.forEachIndexed { sectionIndex, section ->
+        val sectionGroup = "section-$sectionIndex"
         val title = if (theme.uppercaseSections) section.title.uppercase() else section.title
-        val intro = section.introduction.filterNot { it.kind == CvBlockKind.Unsupported }
-        // The heading must never be stranded from the content beneath it, so it shares a
-        // keep-together group with the first unit below it (its intro, or — when there is no
-        // intro — its first entry). Every remaining entry is its own keep-together unit, so a long
-        // section fills the current page and flows onto the next instead of being moved wholesale.
-        val leadGroup = "section-$sectionIndex-lead"
-        add(PreviewItem.SectionHeading(title, leadGroup))
-        intro.forEach { add(PreviewItem.Block(it, leadGroup)) }
-        section.entries.forEachIndexed { entryIndex, entry ->
-            val entryGroup = if (entryIndex == 0 && intro.isEmpty()) {
-                leadGroup
-            } else {
-                "section-$sectionIndex-entry-$entryIndex"
-            }
-            add(PreviewItem.EntryHeading(entry.title, entryGroup))
+        add(PreviewItem.SectionHeading(title, sectionGroup))
+        section.introduction.filterNot { it.kind == CvBlockKind.Unsupported }.forEach {
+            add(PreviewItem.Block(it, sectionGroup))
+        }
+        section.entries.forEach { entry ->
+            add(PreviewItem.EntryHeading(entry.title, sectionGroup))
             entry.content.filterNot { it.kind == CvBlockKind.Unsupported }.forEach {
-                add(PreviewItem.Block(it, entryGroup))
+                add(PreviewItem.Block(it, sectionGroup))
             }
         }
     }

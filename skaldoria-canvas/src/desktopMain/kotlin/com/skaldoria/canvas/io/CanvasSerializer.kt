@@ -12,7 +12,7 @@ object CanvasSerializer {
         sb.append("{\n")
         sb.append("  \"version\": ${document.version},\n")
         sb.append("  \"title\": \"${escapeJson(document.title)}\",\n")
-        
+
         // Viewport
         sb.append("  \"viewport\": {\n")
         sb.append("    \"panX\": ${document.viewport.panX},\n")
@@ -31,7 +31,8 @@ object CanvasSerializer {
             sb.append("      \"height\": ${node.height},\n")
             sb.append("      \"markdown\": \"${escapeJson(node.markdown)}\",\n")
             sb.append("      \"color\": \"${node.color.name}\",\n")
-            sb.append("      \"zIndex\": ${node.zIndex}\n")
+            sb.append("      \"zIndex\": ${node.zIndex},\n")
+            sb.append("      \"shape\": \"${node.shape.name}\"\n")
             sb.append("    }${if (index < document.nodes.size - 1) "," else ""}\n")
         }
         sb.append("  ],\n")
@@ -85,7 +86,8 @@ object CanvasSerializer {
                 height = (obj["height"] as? Number)?.toFloat() ?: CanvasNode.DEFAULT_HEIGHT,
                 markdown = obj["markdown"] as? String ?: "",
                 color = parseNodeColor(obj["color"] as? String),
-                zIndex = (obj["zIndex"] as? Number)?.toInt() ?: 0
+                zIndex = (obj["zIndex"] as? Number)?.toInt() ?: 0,
+                shape = parseNodeShape(obj["shape"] as? String)
             )
         }
 
@@ -112,6 +114,13 @@ object CanvasSerializer {
             viewport = viewport
         )
     }
+
+    private fun parseNodeShape(name: String?): NodeShape =
+        try {
+            if (name != null) NodeShape.valueOf(name) else NodeShape.Card
+        } catch (_: Exception) {
+            NodeShape.Card
+        }
 
     private fun parseNodeColor(name: String?): NodeColor =
         try {

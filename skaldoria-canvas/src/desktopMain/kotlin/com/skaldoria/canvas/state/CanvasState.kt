@@ -170,7 +170,8 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
         markdown: String = "## New Card\n\nEnter markdown here...",
         color: NodeColor = NodeColor.Default,
         width: Float = CanvasNode.DEFAULT_WIDTH,
-        height: Float = CanvasNode.DEFAULT_HEIGHT
+        height: Float = CanvasNode.DEFAULT_HEIGHT,
+        shape: NodeShape = NodeShape.Card
     ): CanvasNode {
         pushHistory()
         val nextZ = (nodes.maxOfOrNull { it.zIndex } ?: 0) + 1
@@ -182,7 +183,8 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
             height = height,
             markdown = markdown,
             color = color,
-            zIndex = nextZ
+            zIndex = nextZ,
+            shape = shape
         )
         document = document.copy(nodes = document.nodes + newNode)
         selectedNodeIds = setOf(newNode.id)
