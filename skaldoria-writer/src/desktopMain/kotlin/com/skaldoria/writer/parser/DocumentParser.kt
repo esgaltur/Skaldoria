@@ -1,5 +1,6 @@
 package com.skaldoria.writer.parser
 
+import com.skaldoria.markdown.parser.EmphasisRules
 import com.skaldoria.markdown.parser.FenceRules
 import com.skaldoria.markdown.parser.HeadingRules
 import com.skaldoria.markdown.parser.MathRules
@@ -199,27 +200,14 @@ class DocumentParser {
                 }
             }
 
-            // Bold: **...** or __...__
-            if ((c == '*' || c == '_') && i + 1 < text.length && text[i + 1] == c) {
-                val marker = "$c$c"
-                val end = text.indexOf(marker, i + 2)
-                if (end > i + 2) {
-                    flushBuffer()
-                    nodes.add(Bold(parseInline(text.substring(i + 2, end))))
-                    i = end + 2
-                    continue
-                }
-            }
-
-            // Italic: *...* or _..._ (single marker, not part of bold)
-            if ((c == '*' || c == '_') && text.getOrNull(i + 1) != c) {
-                val end = text.indexOf(c, i + 1)
-                if (end > i + 1) {
-                    flushBuffer()
-                    nodes.add(Italic(parseInline(text.substring(i + 1, end))))
-                    i = end + 1
-                    continue
-                }
+            // Bold (** / __) and italic (* / _), delimited by the shared flanking rules.
+            val emphasis = EmphasisRules.match(text, i)
+            if (emphasis != null) {
+                flushBuffer()
+                val content = parseInline(text.substring(emphasis.contentStart, emphasis.contentEnd))
+                nodes.add(if (emphasis.strong) Bold(content) else Italic(content))
+                i = emphasis.end
+                continue
             }
 
             buffer.append(c)

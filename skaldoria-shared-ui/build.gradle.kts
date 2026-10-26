@@ -17,6 +17,7 @@ kotlin {
     sourceSets {
         getByName("desktopMain") {
             dependencies {
+                implementation(project(":skaldoria-markdown"))
                 implementation(compose.desktop.currentOs)
                 implementation(libs.compose.material3)
                 implementation(libs.compose.material.icons.extended)

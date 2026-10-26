@@ -85,27 +85,14 @@ object InlineRuns {
                 }
             }
 
-            // Bold: ** or __
-            if ((c == '*' || c == '_') && text.getOrNull(i + 1) == c) {
-                val marker = "$c$c"
-                val end = text.indexOf(marker, i + 2)
-                if (end > i + 2) {
-                    flush()
-                    append(text.substring(i + 2, end), inherited.copy(bold = true), out)
-                    i = end + 2
-                    continue
-                }
-            }
-
-            // Italic: a single * or _ that is not part of a bold run.
-            if ((c == '*' || c == '_') && text.getOrNull(i + 1) != c) {
-                val end = text.indexOf(c, i + 1)
-                if (end > i + 1) {
-                    flush()
-                    append(text.substring(i + 1, end), inherited.copy(italic = true), out)
-                    i = end + 1
-                    continue
-                }
+            // Bold (** / __) and italic (* / _), delimited by the shared flanking rules.
+            val emphasis = EmphasisRules.match(text, i)
+            if (emphasis != null) {
+                flush()
+                val style = if (emphasis.strong) inherited.copy(bold = true) else inherited.copy(italic = true)
+                append(text.substring(emphasis.contentStart, emphasis.contentEnd), style, out)
+                i = emphasis.end
+                continue
             }
 
             // Strikethrough: ~~

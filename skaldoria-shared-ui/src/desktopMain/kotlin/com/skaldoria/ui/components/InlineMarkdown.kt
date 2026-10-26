@@ -8,6 +8,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
+import com.skaldoria.markdown.parser.EmphasisRules
 import com.skaldoria.theme.PresentationTheme
 
 /**
@@ -64,29 +65,15 @@ private fun AnnotatedString.Builder.appendInlineMarkdown(text: String, theme: Pr
             }
         }
 
-        // Bold: ** or __
-        if ((c == '*' || c == '_') && i + 1 < text.length && text[i + 1] == c) {
-            val marker = "$c$c"
-            val end = text.indexOf(marker, i + 2)
-            if (end > i + 2) {
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                    appendInlineMarkdown(text.substring(i + 2, end), theme)
-                }
-                i = end + 2
-                continue
+        // Bold (** / __) and italic (* / _), delimited by the shared flanking rules.
+        val emphasis = EmphasisRules.match(text, i)
+        if (emphasis != null) {
+            val style = if (emphasis.strong) SpanStyle(fontWeight = FontWeight.Bold) else SpanStyle(fontStyle = FontStyle.Italic)
+            withStyle(style) {
+                appendInlineMarkdown(text.substring(emphasis.contentStart, emphasis.contentEnd), theme)
             }
-        }
-
-        // Italic: * or _ (single marker, non-empty, not part of a bold ** run)
-        if ((c == '*' || c == '_') && text.getOrNull(i + 1) != c) {
-            val end = text.indexOf(c, i + 1)
-            if (end > i + 1) {
-                withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                    appendInlineMarkdown(text.substring(i + 1, end), theme)
-                }
-                i = end + 1
-                continue
-            }
+            i = emphasis.end
+            continue
         }
 
         // Strikethrough: ~~
