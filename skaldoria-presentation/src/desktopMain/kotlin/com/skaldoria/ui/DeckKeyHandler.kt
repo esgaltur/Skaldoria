@@ -3,6 +3,7 @@ package com.skaldoria.ui
 import androidx.compose.ui.input.key.KeyEvent
 import com.skaldoria.core.command.AppCommands
 import com.skaldoria.core.command.CommandScope
+import com.skaldoria.core.presentation.DeckSurface
 import com.skaldoria.state.PresentationState
 
 /**
@@ -25,10 +26,11 @@ object DeckKeyHandler {
     /**
      * Runs whatever [event] resolves to in [CommandScope.DECK].
      *
+     * @param surface the window the key arrived in. Overlays open there and nowhere else.
      * @param onEscape how this window unwinds. Not called for anything else.
      * @return true when the event was consumed, for `onKeyEvent`'s contract.
      */
-    fun handle(event: KeyEvent, state: PresentationState, onEscape: () -> Unit): Boolean {
+    fun handle(event: KeyEvent, state: PresentationState, surface: DeckSurface, onEscape: () -> Unit): Boolean {
         when (KeyBindings.resolve(event, CommandScope.DECK)) {
             AppCommands.NEXT_SLIDE -> state.next()
             AppCommands.PREVIOUS_SLIDE -> state.prev()
@@ -38,12 +40,12 @@ object DeckKeyHandler {
             AppCommands.TOGGLE_HUD -> state.cycleHudVisibility()
             AppCommands.BLACKOUT -> state.toggleBlackout()
             AppCommands.WHITEOUT -> state.toggleWhiteout()
-            AppCommands.GRID_OVERVIEW -> state.toggleGridOverview()
+            AppCommands.GRID_OVERVIEW -> state.gridOverview.toggle(surface)
             AppCommands.LASER_POINTER -> state.toggleLaserPointer()
             AppCommands.PEN_DRAWING -> state.togglePenDrawing()
             AppCommands.CLEAR_ANNOTATIONS -> state.clearAnnotations()
             AppCommands.UNDO_STROKE -> state.undoStroke()
-            AppCommands.COMMAND_PALETTE -> state.openCommandPalette()
+            AppCommands.COMMAND_PALETTE -> state.commandPalette.open(surface)
             AppCommands.EXIT_FULLSCREEN -> onEscape()
             else -> return false
         }

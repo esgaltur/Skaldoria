@@ -1,5 +1,6 @@
 package com.skaldoria.ui.screens
 
+import com.skaldoria.core.presentation.DeckSurface
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -543,10 +544,10 @@ fun EditorWorkspace(
         }
 
         // Command Palette Modal Overlay
-        if (state.isCommandPaletteOpen) {
+        if (state.commandPalette.isOpenOn(DeckSurface.Studio)) {
             CommandPalette(
                 state = state,
-                onClose = state::closeCommandPalette
+                onClose = state.commandPalette::close
             )
         }
 

@@ -24,9 +24,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.skaldoria.state.PresentationState
+
+const val SLIDE_GRID_OVERVIEW_TAG = "SlideGridOverview"
 
 /**
  * Bird's-eye slide grid overview modal.
@@ -59,6 +62,7 @@ fun SlideGridOverviewDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .testTag(SLIDE_GRID_OVERVIEW_TAG)
                 .background(Color.Black.copy(alpha = 0.82f))
                 .clickable { onDismiss() }
                 .onPreviewKeyEvent { event ->

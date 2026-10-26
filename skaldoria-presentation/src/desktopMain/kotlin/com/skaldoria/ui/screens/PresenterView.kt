@@ -1,5 +1,6 @@
 package com.skaldoria.ui.screens
 
+import com.skaldoria.core.presentation.DeckSurface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import com.skaldoria.markdown.models.PacingStatus
 import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.DeckKeyHandler
+import com.skaldoria.ui.components.CommandPalette
 import com.skaldoria.ui.components.ParkingLotView
 import com.skaldoria.ui.components.RemotePairingDialog
 import com.skaldoria.ui.components.RoomPulseBar
@@ -60,8 +62,8 @@ fun PresenterView(
         RemotePairingDialog(state = state, onDismiss = { showRemoteDialog = false })
     }
 
-    if (state.isGridOverviewOpen) {
-        SlideGridOverviewDialog(state = state, onDismiss = state::closeGridOverview)
+    if (state.gridOverview.isOpenOn(DeckSurface.Console)) {
+        SlideGridOverviewDialog(state = state, onDismiss = state.gridOverview::close)
     }
 
     // F-18: `state.elapsedSeconds` is deliberately NOT read here.
@@ -86,267 +88,274 @@ fun PresenterView(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(state.currentTheme.background)
-            .focusRequester(keyboardFocus)
-            .focusable()
-            .onKeyEvent { event ->
-                DeckKeyHandler.handle(event, state) {
-                    // Esc closes the console; it must not also drop the deck out of
-                    // fullscreen, which would end the presentation from the wrong window.
-                    when {
-                        state.isCommandPaletteOpen -> state.closeCommandPalette()
-                        state.isGridOverviewOpen -> state.closeGridOverview()
-                        else -> onClose()
-                    }
-                }
-            }
-    ) {
-        PresenterHeader(state = state, currentTime = currentTime, onClose = onClose)
-
-        // Pacing & Rehearsal Gauge Ribbon
-        PresenterPacingRibbon(state = state)
-
-        // Main Body: Left (Current + Next Preview), Right (Speaker Notes)
-        Row(
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Left Column: Slides Preview
-            Column(
-                modifier = Modifier
-                    .weight(1.3f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // Current Slide Box
-                Column(modifier = Modifier.weight(1.2f)) {
-                    Text(
-                        text = "CURRENT SLIDE (LIVE)",
-                        color = state.currentTheme.primary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.sp
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    val currentSlide = state.currentSlide
-                    if (currentSlide != null) {
-                        SlideSurface(
-                            slide = currentSlide,
-                            theme = state.currentTheme,
-                            totalSlides = state.slides.size,
-                            modifier = Modifier.fillMaxSize(),
-                            votes = state.getVotesForSlide(currentSlide.index),
-                            onVote = { state.recordVote(currentSlide.index, it) }
-                        )
-                    }
-                }
-
-                // Next Slide Preview
-                Column(modifier = Modifier.weight(0.8f)) {
-                    Text(
-                        text = "UPCOMING SLIDE",
-                        color = state.currentTheme.textMuted,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.sp
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    val nextSlide = state.nextSlide
-                    if (nextSlide != null) {
-                        SlideSurface(
-                            slide = nextSlide,
-                            theme = state.currentTheme,
-                            totalSlides = state.slides.size,
-                            modifier = Modifier.fillMaxSize(),
-                            showFooter = false,
-                            votes = state.getVotesForSlide(nextSlide.index)
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(state.currentTheme.surface)
-                                .border(1.dp, state.currentTheme.cardBorder, RoundedCornerShape(12.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "End of Presentation",
-                                color = state.currentTheme.textMuted,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
+                .fillMaxSize()
+                .background(state.currentTheme.background)
+                .focusRequester(keyboardFocus)
+                .focusable()
+                .onKeyEvent { event ->
+                    DeckKeyHandler.handle(event, state, DeckSurface.Console) {
+                        // Esc closes the console; it must not also drop the deck out of
+                        // fullscreen, which would end the presentation from the wrong window.
+                        when {
+                            state.commandPalette.isOpenOn(DeckSurface.Console) -> state.commandPalette.close()
+                            state.gridOverview.isOpenOn(DeckSurface.Console) -> state.gridOverview.close()
+                            else -> onClose()
                         }
                     }
                 }
-            }
+        ) {
+            PresenterHeader(state = state, currentTime = currentTime, onClose = onClose)
 
-            // Right Column: Speaker Notes & Audience Q&A Tab
-            Column(
+            // Pacing & Rehearsal Gauge Ribbon
+            PresenterPacingRibbon(state = state)
+
+            // Main Body: Left (Current + Next Preview), Right (Speaker Notes)
+            Row(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(state.currentTheme.surface)
-                    .border(1.dp, state.currentTheme.cardBorder, RoundedCornerShape(14.dp))
-                    .padding(16.dp)
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // F-18: three copy-pasted 20-line Buttons differing only by index, icon,
-                // label and accent colour. One parameterised composable, driven by a list.
-                val openParkingLotCount = state.followUpQuestions.count { !it.isAnswered }
-                val tabs = listOf(
-                    PresenterTabSpec(0, "Notes", Icons.AutoMirrored.Filled.Notes, 1f, state.currentTheme.primary),
-                    PresenterTabSpec(1, "Q&A (${state.audienceQuestions.size})", Icons.Default.QuestionAnswer, 1.1f, state.currentTheme.accent),
-                    PresenterTabSpec(
-                        index = 2,
-                        label = if (openParkingLotCount > 0) "Parking Lot ($openParkingLotCount)" else "Parking Lot",
-                        icon = Icons.Default.Checklist,
-                        weight = 1.2f,
-                        activeColor = state.currentTheme.primary
-                    )
-                )
-
-                Row(
+                // Left Column: Slides Preview
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(state.currentTheme.background)
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        .weight(1.3f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    tabs.forEach { tab ->
-                        PresenterTab(
-                            spec = tab,
-                            selected = selectedRightTab == tab.index,
-                            theme = state.currentTheme,
-                            modifier = Modifier.weight(tab.weight),
-                            onClick = { selectedRightTab = tab.index }
+                    // Current Slide Box
+                    Column(modifier = Modifier.weight(1.2f)) {
+                        Text(
+                            text = "CURRENT SLIDE (LIVE)",
+                            color = state.currentTheme.primary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 1.sp
                         )
+                        Spacer(Modifier.height(6.dp))
+                        val currentSlide = state.currentSlide
+                        if (currentSlide != null) {
+                            SlideSurface(
+                                slide = currentSlide,
+                                theme = state.currentTheme,
+                                totalSlides = state.slides.size,
+                                modifier = Modifier.fillMaxSize(),
+                                votes = state.getVotesForSlide(currentSlide.index),
+                                onVote = { state.recordVote(currentSlide.index, it) }
+                            )
+                        }
+                    }
+
+                    // Next Slide Preview
+                    Column(modifier = Modifier.weight(0.8f)) {
+                        Text(
+                            text = "UPCOMING SLIDE",
+                            color = state.currentTheme.textMuted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        val nextSlide = state.nextSlide
+                        if (nextSlide != null) {
+                            SlideSurface(
+                                slide = nextSlide,
+                                theme = state.currentTheme,
+                                totalSlides = state.slides.size,
+                                modifier = Modifier.fillMaxSize(),
+                                showFooter = false,
+                                votes = state.getVotesForSlide(nextSlide.index)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(state.currentTheme.surface)
+                                    .border(1.dp, state.currentTheme.cardBorder, RoundedCornerShape(12.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "End of Presentation",
+                                    color = state.currentTheme.textMuted,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
                     }
                 }
 
-                Spacer(Modifier.height(12.dp))
-
-                when (selectedRightTab) {
-                    0 -> NotesPanel(state = state, notesFontSize = notesFontSize, onFontSizeChange = { notesFontSize = it })
-                    1 -> AudienceQaPanel(state = state)
-                    else -> ParkingLotView(
-                        state = state,
-                        theme = state.currentTheme,
-                        modifier = Modifier.fillMaxSize()
+                // Right Column: Speaker Notes & Audience Q&A Tab
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(state.currentTheme.surface)
+                        .border(1.dp, state.currentTheme.cardBorder, RoundedCornerShape(14.dp))
+                        .padding(16.dp)
+                ) {
+                    // F-18: three copy-pasted 20-line Buttons differing only by index, icon,
+                    // label and accent colour. One parameterised composable, driven by a list.
+                    val openParkingLotCount = state.followUpQuestions.count { !it.isAnswered }
+                    val tabs = listOf(
+                        PresenterTabSpec(0, "Notes", Icons.AutoMirrored.Filled.Notes, 1f, state.currentTheme.primary),
+                        PresenterTabSpec(1, "Q&A (${state.audienceQuestions.size})", Icons.Default.QuestionAnswer, 1.1f, state.currentTheme.accent),
+                        PresenterTabSpec(
+                            index = 2,
+                            label = if (openParkingLotCount > 0) "Parking Lot ($openParkingLotCount)" else "Parking Lot",
+                            icon = Icons.Default.Checklist,
+                            weight = 1.2f,
+                            activeColor = state.currentTheme.primary
+                        )
                     )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(state.currentTheme.background)
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        tabs.forEach { tab ->
+                            PresenterTab(
+                                spec = tab,
+                                selected = selectedRightTab == tab.index,
+                                theme = state.currentTheme,
+                                modifier = Modifier.weight(tab.weight),
+                                onClick = { selectedRightTab = tab.index }
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    when (selectedRightTab) {
+                        0 -> NotesPanel(state = state, notesFontSize = notesFontSize, onFontSizeChange = { notesFontSize = it })
+                        1 -> AudienceQaPanel(state = state)
+                        else -> ParkingLotView(
+                            state = state,
+                            theme = state.currentTheme,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+
+            // Bottom Delivery Control Bar (Slide navigation, Blackout, Whiteout, Grid Overview, Remote Companion)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .background(state.currentTheme.surface)
+                    .border(1.dp, state.currentTheme.cardBorder)
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = { state.prev() },
+                    enabled = state.hasPrev,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = state.currentTheme.surfaceVariant,
+                        contentColor = state.currentTheme.textPrimary
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.ChevronLeft, "Previous")
+                    Spacer(Modifier.width(6.dp))
+                    Text("Previous Slide", fontSize = 13.sp)
+                }
+
+                // Quick Delivery Actions
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = { state.gridOverview.toggle(DeckSurface.Console) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (state.gridOverview.isOpenOn(DeckSurface.Console)) state.currentTheme.primary else state.currentTheme.surfaceVariant,
+                            contentColor = state.currentTheme.textPrimary
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.GridView, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Grid Overview (G)", fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = { state.toggleBlackout() },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (state.isBlackoutActive) Color(0xFFEF4444) else state.currentTheme.surfaceVariant,
+                            contentColor = state.currentTheme.textPrimary
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Brightness1, null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Blackout (B)", fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = { state.toggleWhiteout() },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (state.isWhiteoutActive) Color(0xFFF59E0B) else state.currentTheme.surfaceVariant,
+                            contentColor = state.currentTheme.textPrimary
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.WbSunny, null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Whiteout (W)", fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = { showRemoteDialog = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (state.isRemoteServerRunning) state.currentTheme.primary else state.currentTheme.surfaceVariant,
+                            contentColor = state.currentTheme.textPrimary
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.PhoneAndroid, null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (state.isRemoteServerRunning) "Remote Active" else "Mobile Remote", fontSize = 12.sp)
+                    }
+                }
+
+                Button(
+                    onClick = { state.next() },
+                    enabled = state.hasNext,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = state.currentTheme.primary,
+                        contentColor = state.currentTheme.background
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Next Slide", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Default.ChevronRight, "Next")
                 }
             }
         }
 
-        // Bottom Delivery Control Bar (Slide navigation, Blackout, Whiteout, Grid Overview, Remote Companion)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp)
-                .background(state.currentTheme.surface)
-                .border(1.dp, state.currentTheme.cardBorder)
-                .padding(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(
-                onClick = { state.prev() },
-                enabled = state.hasPrev,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = state.currentTheme.surfaceVariant,
-                    contentColor = state.currentTheme.textPrimary
-                ),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Icon(Icons.Default.ChevronLeft, "Previous")
-                Spacer(Modifier.width(6.dp))
-                Text("Previous Slide", fontSize = 13.sp)
-            }
-
-            // Quick Delivery Actions
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Button(
-                    onClick = { state.toggleGridOverview() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (state.isGridOverviewOpen) state.currentTheme.primary else state.currentTheme.surfaceVariant,
-                        contentColor = state.currentTheme.textPrimary
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Icon(Icons.Default.GridView, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Grid Overview (G)", fontSize = 12.sp)
-                }
-
-                Button(
-                    onClick = { state.toggleBlackout() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (state.isBlackoutActive) Color(0xFFEF4444) else state.currentTheme.surfaceVariant,
-                        contentColor = state.currentTheme.textPrimary
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Icon(Icons.Default.Brightness1, null, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Blackout (B)", fontSize = 12.sp)
-                }
-
-                Button(
-                    onClick = { state.toggleWhiteout() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (state.isWhiteoutActive) Color(0xFFF59E0B) else state.currentTheme.surfaceVariant,
-                        contentColor = state.currentTheme.textPrimary
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Icon(Icons.Default.WbSunny, null, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Whiteout (W)", fontSize = 12.sp)
-                }
-
-                Button(
-                    onClick = { showRemoteDialog = true },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (state.isRemoteServerRunning) state.currentTheme.primary else state.currentTheme.surfaceVariant,
-                        contentColor = state.currentTheme.textPrimary
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Icon(Icons.Default.PhoneAndroid, null, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (state.isRemoteServerRunning) "Remote Active" else "Mobile Remote", fontSize = 12.sp)
-                }
-            }
-
-            Button(
-                onClick = { state.next() },
-                enabled = state.hasNext,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = state.currentTheme.primary,
-                    contentColor = state.currentTheme.background
-                ),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text("Next Slide", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(6.dp))
-                Icon(Icons.Default.ChevronRight, "Next")
-            }
+        // Slide search for the speaker, drawn here rather than on the projected deck.
+        if (state.commandPalette.isOpenOn(DeckSurface.Console)) {
+            CommandPalette(state = state, onClose = state.commandPalette::close)
         }
     }
 }

@@ -25,6 +25,7 @@ import com.skaldoria.core.pacing.TalkTimer
 import com.skaldoria.core.parkinglot.ParkingLotStore
 import com.skaldoria.core.ports.*
 import com.skaldoria.core.presentation.HudVisibility
+import com.skaldoria.core.presentation.SurfaceOverlay
 import com.skaldoria.core.report.PollOutcome
 import com.skaldoria.core.report.TalkRecord
 import com.skaldoria.core.report.TalkReport
@@ -160,7 +161,8 @@ class PresentationState(
 
     var isPresenterModeActive by mutableStateOf(false)
 
-    var isCommandPaletteOpen by mutableStateOf(false)
+    /** Slide search. Opened per window — see [SurfaceOverlay]. */
+    val commandPalette = SurfaceOverlay()
 
     var showWelcome by mutableStateOf(true)
 
@@ -178,7 +180,8 @@ class PresentationState(
     // Delivery power tools
     override var isBlackoutActive by mutableStateOf(false)
     override var isWhiteoutActive by mutableStateOf(false)
-    var isGridOverviewOpen by mutableStateOf(false)
+    /** Every slide at once. Opened per window, so it never reaches the projector by accident. */
+    val gridOverview = SurfaceOverlay()
     var isRemoteServerRunning by mutableStateOf(false)
     // DED-5: the pairing dialog reads the tokenised URL straight from the server (SEC-2),
     // so this only exists to show "running at …" in the UI. It deliberately holds the
@@ -268,10 +271,6 @@ class PresentationState(
         persistUiPreferences()
     }
 
-    fun openCommandPalette() { isCommandPaletteOpen = true }
-    fun closeCommandPalette() { isCommandPaletteOpen = false }
-    fun toggleCommandPalette() { isCommandPaletteOpen = !isCommandPaletteOpen }
-    fun closeGridOverview() { isGridOverviewOpen = false }
     fun closeParkingLotDrawer() { isParkingLotDrawerOpen = false }
     fun openUnlockThemeDialog() { isUnlockThemeDialogOpen = true }
     fun closeUnlockThemeDialog() { isUnlockThemeDialogOpen = false }
@@ -940,7 +939,7 @@ class PresentationState(
         if (!navigator.goTo(index)) return
         onSlideShown()
         // A jump is how the grid overview is used, so landing dismisses it.
-        isGridOverviewOpen = false
+        gridOverview.close()
         // AUT-02: the filmstrip, the grid overview and the command palette all route through
         // here, so all three move the source pane by inheriting this one line.
         revealCurrentSlideInEditor()
@@ -1037,10 +1036,6 @@ class PresentationState(
     override fun toggleWhiteout() {
         isWhiteoutActive = !isWhiteoutActive
         if (isWhiteoutActive) isBlackoutActive = false
-    }
-
-    fun toggleGridOverview() {
-        isGridOverviewOpen = !isGridOverviewOpen
     }
 
     fun toggleRemoteServer(port: Int = 8888) {

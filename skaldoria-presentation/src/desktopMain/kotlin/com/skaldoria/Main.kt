@@ -1,5 +1,6 @@
 package com.skaldoria
 
+import com.skaldoria.core.presentation.DeckSurface
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
@@ -112,7 +113,7 @@ fun main() = application {
                 AppCommands.SAVE_AS -> state.saveAsFile()
                 AppCommands.SAVE -> state.saveFile()
                 AppCommands.EXPORT -> com.skaldoria.export.DeckExporter.exportPdf(state) {}
-                AppCommands.COMMAND_PALETTE -> state.toggleCommandPalette()
+                AppCommands.COMMAND_PALETTE -> state.commandPalette.toggle(DeckSurface.Studio)
                 AppCommands.FORMAT_BOLD -> state.formatSelection("**")
                 AppCommands.FORMAT_ITALIC -> state.formatSelection("_")
                 AppCommands.FORMAT_LINK -> state.formatSelection("[", "]()")
@@ -158,7 +159,7 @@ fun main() = application {
             // handler cannot be starved that way. It runs only when the content did not
             // consume the event, so nothing is handled twice.
             onKeyEvent = { event ->
-                DeckKeyHandler.handle(event, state, state::exitFullscreen)
+                DeckKeyHandler.handle(event, state, DeckSurface.Deck, state::exitFullscreen)
             }
         ) {
             ProvideDeckBaseDir(state.deckBaseDir) { FullscreenDeck(state) }
@@ -176,7 +177,7 @@ fun main() = application {
             // KEY-1. This window is `alwaysOnTop`, so it holds focus for most of a talk — and
             // it answered to no key at all before this.
             onKeyEvent = { event ->
-                DeckKeyHandler.handle(event, state, state::closePresenterMode)
+                DeckKeyHandler.handle(event, state, DeckSurface.Console, state::closePresenterMode)
             }
         ) {
             ProvideDeckBaseDir(state.deckBaseDir) {

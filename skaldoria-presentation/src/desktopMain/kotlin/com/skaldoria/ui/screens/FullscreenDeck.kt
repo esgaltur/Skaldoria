@@ -1,5 +1,6 @@
 package com.skaldoria.ui.screens
 
+import com.skaldoria.core.presentation.DeckSurface
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -103,8 +104,8 @@ fun FullscreenDeck(
 
     val isHudOnScreen = hudVisibility.isOnScreen(isIdle = isPointerIdle)
 
-    if (state.isGridOverviewOpen) {
-        SlideGridOverviewDialog(state = state, onDismiss = state::closeGridOverview)
+    if (state.gridOverview.isOpenOn(DeckSurface.Deck)) {
+        SlideGridOverviewDialog(state = state, onDismiss = state.gridOverview::close)
     }
 
     // THM-05: the OS pointer is drawn by the window system in the user's desktop colour, so a
@@ -154,13 +155,13 @@ fun FullscreenDeck(
 
                 // KEY-1: the dispatch itself lives in DeckKeyHandler, shared with the speaker
                 // console — which had no key handling at all until this was extracted.
-                DeckKeyHandler.handle(event, state) {
+                DeckKeyHandler.handle(event, state, DeckSurface.Deck) {
                     // Escape unwinds the innermost thing that is open, so it never drops the
                     // speaker out of fullscreen while a dialog is still covering the deck.
                     when {
                         !numberEntry.isEmpty -> numberEntry = numberEntry.cleared()
-                        state.isCommandPaletteOpen -> state.closeCommandPalette()
-                        state.isGridOverviewOpen -> state.closeGridOverview()
+                        state.commandPalette.isOpenOn(DeckSurface.Deck) -> state.commandPalette.close()
+                        state.gridOverview.isOpenOn(DeckSurface.Deck) -> state.gridOverview.close()
                         else -> state.exitFullscreen()
                     }
                 }
@@ -278,13 +279,13 @@ fun FullscreenDeck(
             // Grid Overview (G)
             AppTooltip(text = "Grid Overview", theme = state.currentTheme, shortcut = "G") {
                 IconButton(
-                    onClick = { state.toggleGridOverview() },
+                    onClick = { state.gridOverview.toggle(DeckSurface.Deck) },
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.GridView,
                         contentDescription = "Grid Overview",
-                        tint = if (state.isGridOverviewOpen) state.currentTheme.primary else state.currentTheme.textMuted,
+                        tint = if (state.gridOverview.isOpenOn(DeckSurface.Deck)) state.currentTheme.primary else state.currentTheme.textMuted,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -481,10 +482,10 @@ fun FullscreenDeck(
         }
 
         // Command Palette Modal Overlay
-        if (state.isCommandPaletteOpen) {
+        if (state.commandPalette.isOpenOn(DeckSurface.Deck)) {
             CommandPalette(
                 state = state,
-                onClose = state::closeCommandPalette
+                onClose = state.commandPalette::close
             )
         }
 

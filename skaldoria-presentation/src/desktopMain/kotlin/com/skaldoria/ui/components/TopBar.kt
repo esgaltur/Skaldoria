@@ -1,5 +1,6 @@
 package com.skaldoria.ui.components
 
+import com.skaldoria.core.presentation.DeckSurface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,8 +41,8 @@ fun TopBar(
         UnlockCorporateThemeDialog(state = state, onDismiss = state::closeUnlockThemeDialog)
     }
 
-    if (state.isGridOverviewOpen) {
-        SlideGridOverviewDialog(state = state, onDismiss = state::closeGridOverview)
+    if (state.gridOverview.isOpenOn(DeckSurface.Studio)) {
+        SlideGridOverviewDialog(state = state, onDismiss = state.gridOverview::close)
     }
 
     Row(
@@ -204,7 +205,7 @@ fun TopBar(
             // Slide Overview Grid (G key)
             AppTooltip(text = "Slide Overview Grid", theme = state.currentTheme, shortcut = "G") {
                 IconButton(
-                    onClick = { state.toggleGridOverview() },
+                    onClick = { state.gridOverview.toggle(DeckSurface.Studio) },
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
@@ -293,7 +294,7 @@ fun TopBar(
             // Quick Spotlight Search Button
             AppTooltip(text = "Spotlight Quick Slide Search", theme = state.currentTheme, shortcut = "Ctrl+K") {
                 Button(
-                    onClick = state::openCommandPalette,
+                    onClick = { state.commandPalette.open(DeckSurface.Studio) },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = state.currentTheme.surfaceVariant,
                         contentColor = state.currentTheme.textPrimary
