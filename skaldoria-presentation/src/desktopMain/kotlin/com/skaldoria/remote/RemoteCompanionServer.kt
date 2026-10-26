@@ -1,5 +1,6 @@
 package com.skaldoria.remote
 
+import com.skaldoria.core.audience.Reaction
 import com.skaldoria.core.json.Json
 import com.skaldoria.remote.RemoteCompanionServer.routeRequest
 import java.io.OutputStream
@@ -140,6 +141,9 @@ object RemoteCompanionServer {
         serverSocket = boundSocket
         currentPort = boundPort
         sessionToken = generateSessionToken()
+        // A new session: the room has seen nothing yet and owns no handout or reactions.
+        deck.audience.share.reset()
+        deck.audience.reactions.reset()
         isRunningFlag.set(true)
 
         // SEC-4: bounded. `newCachedThreadPool` spawned a thread per connection with no
@@ -362,6 +366,11 @@ object RemoteCompanionServer {
         Route("/remote", HttpMethod.GET, RouteScope.PUBLIC) { sendHtmlResponse(it.output, PortalAssets.presenterHtml()) },
         Route("/audience", HttpMethod.GET, RouteScope.PUBLIC) { sendHtmlResponse(it.output, PortalAssets.audienceHtml()) },
 
+        // Follow-along: public, but only for slides the room has already been shown, and the
+        // whole deck only after the speaker releases it. See AudienceShare.
+        Route("/slide", HttpMethod.GET, RouteScope.PUBLIC) { handleSlidePage(it.output, it.params, it.deck) },
+        Route("/handout", HttpMethod.GET, RouteScope.PUBLIC) { handleHandoutPage(it.output, it.deck) },
+
         // SEC-2: a read for everyone, but speaker notes are filtered by `authorized`.
         Route("/api/state", HttpMethod.GET, RouteScope.PUBLIC) {
             handleStateApi(it.output, it.deck, includeNotes = it.authorized)
@@ -379,6 +388,9 @@ object RemoteCompanionServer {
         },
         Route("/api/parking-lot/add", HttpMethod.POST, RouteScope.AUDIENCE) {
             handleParkingLotAddApi(it.output, it.params, it.deck)
+        },
+        Route("/api/react", HttpMethod.POST, RouteScope.AUDIENCE) {
+            handleReactApi(it.output, it.params, it.deck, it.clientKey)
         },
 
         // Presenter scope: drives the deck or moderates. Session token required (SEC-2).
@@ -442,6 +454,17 @@ object RemoteCompanionServer {
 
     private fun handleStateApi(output: OutputStream, deck: DeckControl, includeNotes: Boolean) {
         try {
+            // This response is how a phone learns which slide is up, so it is also the moment
+            // that slide becomes one the room has seen. Read the index ONCE: re-reading it for the
+            // JSON let a slide change land in between, telling phones about a slide that was never
+            // revealed — they then requested it, were refused, and stayed stuck on the error.
+            val current = deck.currentSlideIndex
+            val share = deck.audience.share
+            share.reveal(current)
+            val pulseJson = deck.audience.reactions.pulse().entries.joinToString(prefix = "{", postfix = "}") { (reaction, count) ->
+                "\"${reaction.wireName}\": $count"
+            }
+
             // SEC-2: speaker notes are presenter-only. Audience devices reach this same
             // endpoint, so the field is emitted empty rather than omitted — the portal JS
             // treats "no notes" identically and needs no special case.
@@ -452,12 +475,12 @@ object RemoteCompanionServer {
 
             val pollElement = deck.currentSlidePoll
             val pollJson = if (pollElement != null) {
-                val votes = deck.audience.votesForSlide(deck.currentSlideIndex)
+                val votes = deck.audience.votesForSlide(current)
                 val optionsJson = pollElement.options.mapIndexed { idx, opt ->
                     val count = votes[idx] ?: 0
                     """{"index": $idx, "text": "${escapeJson(opt)}", "votes": $count}"""
                 }.joinToString(prefix = "[", postfix = "]")
-                """{"hasPoll": true, "slideIndex": ${deck.currentSlideIndex}, "question": "${escapeJson(pollElement.question)}", "options": $optionsJson}"""
+                """{"hasPoll": true, "slideIndex": $current, "question": "${escapeJson(pollElement.question)}", "options": $optionsJson}"""
             } else {
                 """{"hasPoll": false}"""
             }
@@ -474,7 +497,7 @@ object RemoteCompanionServer {
             val title = escapeJson(deck.currentSlideTitle)
             val json = """
                 {
-                    "currentSlideIndex": ${deck.currentSlideIndex},
+                    "currentSlideIndex": $current,
                     "totalSlides": ${deck.totalSlides},
                     "title": "$title",
                     "notes": $notesJson,
@@ -483,7 +506,10 @@ object RemoteCompanionServer {
                     "isBlackout": ${deck.isBlackoutActive},
                     "isWhiteout": ${deck.isWhiteoutActive},
                     "poll": $pollJson,
-                    "questions": $questionsJson
+                    "questions": $questionsJson,
+                    "revealedThrough": ${share.revealedThrough},
+                    "handoutReleased": ${share.handoutReleased},
+                    "pulse": $pulseJson
                 }
             """.trimIndent()
 
@@ -506,6 +532,7 @@ object RemoteCompanionServer {
                     "whiteout" -> deck.toggleWhiteout()
                     "toggleTimer" -> deck.toggleTimer()
                     "resetTimer" -> deck.resetTimer()
+                    "toggleHandout" -> deck.audience.share.toggleHandout()
                 }
             }
             sendJsonResponse(output, """{"status":"ok"}""")
@@ -593,6 +620,53 @@ object RemoteCompanionServer {
         }
     }
 
+    private fun handleSlidePage(output: OutputStream, params: Map<String, String>, deck: DeckControl) {
+        try {
+            val index = params["index"]?.toIntOrNull()
+            when {
+                index == null -> sendErrorResponse(output, "Which slide? Pass ?index=", 400)
+                index !in 0 until deck.totalSlides -> sendErrorResponse(output, "No such slide", 404)
+                // Not "not found": the slide exists, the room just has not reached it.
+                !deck.audience.share.isRevealed(index) ->
+                    sendErrorResponse(output, "This slide has not been shown yet", 403)
+                else -> sendHtmlResponse(output, deck.slideHtml(index))
+            }
+        } catch (t: Throwable) {
+            sendErrorResponse(output, "Slide rendering failed: ${t.message}")
+        }
+    }
+
+    private fun handleHandoutPage(output: OutputStream, deck: DeckControl) {
+        try {
+            if (deck.audience.share.handoutReleased) {
+                sendHtmlResponse(output, deck.handoutHtml())
+            } else {
+                sendErrorResponse(output, "The speaker has not shared the slides yet", 403)
+            }
+        } catch (t: Throwable) {
+            sendErrorResponse(output, "Handout rendering failed: ${t.message}")
+        }
+    }
+
+    private fun handleReactApi(
+        output: OutputStream,
+        params: Map<String, String>,
+        deck: DeckControl,
+        clientKey: String
+    ) {
+        try {
+            val reaction = Reaction.fromWire(params["kind"])
+            if (reaction == null) {
+                sendJsonResponse(output, """{"status":"error", "message":"Unknown reaction"}""", 400)
+            } else {
+                deck.audience.reactions.react(clientKey, reaction, deck.currentSlideIndex)
+                sendJsonResponse(output, """{"status":"ok"}""")
+            }
+        } catch (t: Throwable) {
+            sendErrorResponse(output, "Reaction failed: ${t.message}")
+        }
+    }
+
     private fun handleParkingLotAddApi(output: OutputStream, params: Map<String, String>, deck: DeckControl) {
         try {
             val text = params["question"] ?: params["text"] ?: ""
@@ -632,6 +706,7 @@ object RemoteCompanionServer {
         200 -> "OK"
         400 -> "Bad Request"
         401 -> "Unauthorized"
+        403 -> "Forbidden"
         404 -> "Not Found"
         405 -> "Method Not Allowed"
         411 -> "Length Required"

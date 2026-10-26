@@ -95,7 +95,13 @@ class RouteTableSecurityTest : PresentationStateTestBase() {
         }
     }
 
-    /** Reads must stay open: the audience portal holds no token by design. */
+    /**
+     * Reads must stay open: the audience portal holds no token by design.
+     *
+     * Asserted as "never 401" rather than "always 200": `/slide` and `/handout` are public yet
+     * refuse content the room has not been given (400/403). That is a content rule, not
+     * authentication — a token would not change the answer.
+     */
     @Test
     fun `every public route answers without a token`() {
         withServer { base ->
@@ -103,7 +109,7 @@ class RouteTableSecurityTest : PresentationStateTestBase() {
                 .filter { it.scope == RouteScope.PUBLIC }
                 .forEach { route ->
                     val response = open("$base${route.path}", route.method.name).responseCode
-                    assertEquals(200, response, "${route.path} should be reachable without a token")
+                    assertNotEquals(401, response, "${route.path} should not demand a token")
                 }
         }
     }

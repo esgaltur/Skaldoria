@@ -2,6 +2,7 @@ package com.skaldoria.core.ports
 
 import com.skaldoria.core.models.DeckProject
 import com.skaldoria.config.ConfigManager
+import com.skaldoria.export.DeckExporter
 import com.skaldoria.export.FileManager
 import com.skaldoria.project.DeckProjectManager
 import com.skaldoria.remote.DeckControl
@@ -64,6 +65,11 @@ object DefaultPreferencesRepository : PreferencesRepository {
     override fun clearDraft() = ConfigManager.clearDraft()
     override fun addRecentProject(path: String, title: String, slideCount: Int) =
         ConfigManager.addRecentProject(path, title, slideCount)
+}
+
+object DefaultPrintableHtmlRenderer : PrintableHtmlRenderer {
+    override fun render(source: PrintableDeckSource, slideIndices: IntRange): String =
+        DeckExporter.generatePrintableHtml(source, autoTriggerPrint = false, slideIndices = slideIndices)
 }
 
 object DefaultHtmlDeckExporter : HtmlDeckExporter {

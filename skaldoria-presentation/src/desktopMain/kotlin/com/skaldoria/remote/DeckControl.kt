@@ -28,6 +28,15 @@ interface DeckControl {
     /** The poll on the current slide, if it carries one. */
     val currentSlidePoll: SlideElement.Poll?
 
+    /**
+     * One slide as a standalone, offline HTML page — what an audience phone shows while following
+     * along. Never contains speaker notes. The server decides *whether* a phone may have it.
+     */
+    fun slideHtml(index: Int): String
+
+    /** The whole deck as one offline HTML file, for the room to take home once released. */
+    fun handoutHtml(): String
+
     val elapsedSeconds: Long
     val isTimerRunning: Boolean
     val isBlackoutActive: Boolean

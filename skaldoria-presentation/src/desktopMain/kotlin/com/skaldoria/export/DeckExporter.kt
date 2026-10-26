@@ -1,6 +1,7 @@
 package com.skaldoria.export
 
 import com.skaldoria.core.media.ImageResolver
+import com.skaldoria.core.ports.PrintableDeckSource
 import com.skaldoria.core.media.ImageSource
 import com.skaldoria.markdown.models.Slide
 import com.skaldoria.markdown.models.SlideElement
@@ -420,7 +421,15 @@ object DeckExporter {
         return image
     }
 
-    fun generatePrintableHtml(state: PresentationState, autoTriggerPrint: Boolean = true): String {
+    /**
+     * @param slideIndices the slides to include, all of them by default. A phone following the
+     *   talk is sent one slide at a time, so it never holds a slide the room has not seen.
+     */
+    fun generatePrintableHtml(
+        state: PrintableDeckSource,
+        autoTriggerPrint: Boolean = true,
+        slideIndices: IntRange = state.slides.indices
+    ): String {
         val theme = state.currentTheme
         val bgHex = theme.background.toCssHex()
         val surfaceHex = theme.surface.toCssHex()
@@ -428,7 +437,7 @@ object DeckExporter {
         val primaryHex = theme.primary.toCssHex()
         val mutedHex = theme.textMuted.toCssHex()
 
-        val slidesHtml = state.slides.joinToString("\n") { slide ->
+        val slidesHtml = state.slides.slice(slideIndices).joinToString("\n") { slide ->
             val elementsHtml = slide.elements.joinToString("\n") { el ->
                 when (el) {
                     is SlideElement.BulletList -> "<ul>" + el.items.joinToString("") { "<li>${escapeHtml(it)}</li>" } + "</ul>"

@@ -20,6 +20,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,6 +30,7 @@ import com.skaldoria.state.PresentationState
 import com.skaldoria.ui.DeckKeyHandler
 import com.skaldoria.ui.components.ParkingLotView
 import com.skaldoria.ui.components.RemotePairingDialog
+import com.skaldoria.ui.components.RoomPulseBar
 import com.skaldoria.ui.components.SlideGridOverviewDialog
 import com.skaldoria.ui.components.SlideSurface
 import java.time.LocalTime
@@ -614,6 +616,11 @@ private fun PresenterHeader(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold
             )
+
+            // Only while phones can actually connect; without the companion there is no room.
+            if (state.remoteServerUrl != null) {
+                RoomPulseBar(audience = state.audience, theme = state.currentTheme)
+            }
         }
 
         // Stopwatch Timer with Play/Pause & Reset
@@ -657,6 +664,15 @@ private fun PresenterHeader(
                     tint = state.currentTheme.textMuted
                 )
             }
+        }
+
+        // Timing, questions, polls and reactions, written up for after the talk.
+        OutlinedButton(
+            onClick = { state.saveTalkReport(onSaved = ::openInDefaultApp) },
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.testTag(PresenterViewTags.TalkReportButton)
+        ) {
+            Text("📝 Talk report", fontSize = 12.sp, color = state.currentTheme.textPrimary)
         }
 
         // Close Presenter View Button
@@ -870,4 +886,21 @@ private fun AudienceQaPanel(state: PresentationState) {
             }
         }
     }
+}
+
+object PresenterViewTags {
+    const val TalkReportButton = "TalkReportButton"
+}
+
+/**
+ * Opens a saved report in whatever the system uses for Markdown.
+ *
+ * A convenience on top of a save that already succeeded: where the platform cannot open files
+ * the report is still on disk at the path the speaker just chose, so there is nothing to report.
+ */
+private fun openInDefaultApp(path: String) {
+    if (!java.awt.Desktop.isDesktopSupported()) return
+    val desktop = java.awt.Desktop.getDesktop()
+    if (!desktop.isSupported(java.awt.Desktop.Action.OPEN)) return
+    runCatching { desktop.open(java.io.File(path)) }
 }

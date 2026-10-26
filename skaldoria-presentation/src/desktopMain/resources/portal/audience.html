@@ -27,12 +27,52 @@
         .upvote-btn { background: #1e293b; border: 1px solid #334155; color: #38bdf8; padding: 8px 12px; border-radius: 20px; font-size: 0.9rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 4px; }
         .upvote-btn:active { background: #0284c7; color: white; }
         .error-msg { color: #f87171; font-size: 0.85rem; font-weight: bold; margin-top: 8px; text-align: center; }
+        .ok-msg { color: #34d399; font-size: 0.85rem; font-weight: bold; margin-top: 8px; text-align: center; }
+        /* The slide renders at 960x540 and is scaled to the phone, so it keeps the projected
+           layout. 1280x720 left body text at ~6px on a phone; "Full screen" opens the slide on its
+           own page, where it can be rotated and pinch-zoomed. */
+        .slide-frame { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 12px; background: #000; border: 1px solid #1e293b; }
+        .slide-frame iframe { position: absolute; top: 0; left: 0; width: 960px; height: 540px; border: 0; transform-origin: 0 0; pointer-events: none; }
+        .slide-nav { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+        .nav-btn { flex: 1; font-family: inherit; padding: 10px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; color: #f1f5f9; font-size: 1rem; font-weight: 700; cursor: pointer; }
+        .nav-btn:disabled { opacity: 0.35; cursor: default; }
+        .nav-btn.live { background: #dc2626; border-color: #ef4444; }
+        .slide-label { font-size: 0.8rem; color: #94a3b8; font-weight: 600; margin-left: auto; }
+        .handout-link { display: block; text-align: center; text-decoration: none; margin-top: 12px; }
+        .react-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+        .react-btn { padding: 14px 6px; background: #1e293b; border: 1px solid #334155; border-radius: 12px; color: #f1f5f9; font-size: 0.95rem; font-weight: 700; cursor: pointer; }
+        .react-btn.chosen { background: #0369a1; border-color: #38bdf8; }
     </style>
 </head>
 <body>
     <div class="header">
         <div class="brand">⚡ SKALDORIA AUDIENCE</div>
         <div class="subtitle">Live Presentation Interactive Portal · {{VERSION}}</div>
+    </div>
+
+    <!-- Follow along: the slides the room has seen, plus the take-home deck once shared -->
+    <div class="card" id="slides-section" style="display:none;">
+        <div class="card-title">🖥 Slides <span class="slide-label" id="slide-label"></span></div>
+        <div class="slide-frame" id="slide-frame"><iframe id="slide-iframe" title="Current slide" sandbox></iframe></div>
+        <div class="slide-nav">
+            <button class="nav-btn" id="slide-prev" aria-label="Previous slide">‹</button>
+            <button class="nav-btn live" id="slide-live">● Live</button>
+            <button class="nav-btn" id="slide-next" aria-label="Next slide">›</button>
+            <a class="nav-btn" id="slide-open" target="_blank" rel="noopener" style="text-align:center; text-decoration:none;">⤢ Full screen</a>
+        </div>
+        <a class="btn-submit handout-link" id="handout-link" href="/handout" download="slides.html" style="display:none;">⬇ Download all slides</a>
+    </div>
+
+    <!-- Live reactions: tell the speaker without interrupting -->
+    <div class="card" id="react-section">
+        <div class="card-title">🎚 How is it going?</div>
+        <div class="react-row">
+            <button class="react-btn" data-kind="fast">🐢 Too fast</button>
+            <button class="react-btn" data-kind="lost">😕 Lost me</button>
+            <button class="react-btn" data-kind="good">👍 Good</button>
+        </div>
+        <div id="react-sent-msg" class="ok-msg" style="display:none;">Sent — the speaker can see it.</div>
+        <div id="react-error-msg" class="error-msg" style="display:none;">Not sent — please try again in a moment.</div>
     </div>
 
     <!-- Active Poll Section -->
@@ -118,6 +158,74 @@
             pollState();
         }
 
+        // ---- follow along ----
+        // `viewing` is null while following live; otherwise the slide the listener scrolled to.
+        // They can only ever move within 0..revealedThrough — the server enforces the same.
+        let viewing = null;
+        let latestState = null;
+        let loadedSlide = -1;
+
+        function fitSlide() {
+            const frame = document.getElementById('slide-frame');
+            document.getElementById('slide-iframe').style.transform = 'scale(' + (frame.clientWidth / 960) + ')';
+        }
+
+        function renderSlides(data) {
+            latestState = data;
+            const section = document.getElementById('slides-section');
+            if (data.totalSlides === 0 || data.revealedThrough < 0) {
+                section.style.display = 'none';
+                return;
+            }
+            section.style.display = 'block';
+
+            if (viewing !== null && viewing > data.revealedThrough) viewing = null;
+            const index = viewing === null ? data.currentSlideIndex : viewing;
+            if (index !== loadedSlide) {
+                loadedSlide = index;
+                document.getElementById('slide-iframe').src = '/slide?index=' + index;
+                document.getElementById('slide-open').href = '/slide?index=' + index;
+            }
+            fitSlide();
+
+            document.getElementById('slide-label').textContent =
+                (index + 1) + ' / ' + data.totalSlides + (viewing === null ? ' · live' : '');
+            document.getElementById('slide-prev').disabled = index <= 0;
+            document.getElementById('slide-next').disabled = index >= data.revealedThrough;
+            document.getElementById('slide-live').style.visibility = viewing === null ? 'hidden' : 'visible';
+            document.getElementById('handout-link').style.display = data.handoutReleased ? 'block' : 'none';
+        }
+
+        function step(delta) {
+            if (!latestState) return;
+            const from = viewing === null ? latestState.currentSlideIndex : viewing;
+            const to = Math.max(0, Math.min(latestState.revealedThrough, from + delta));
+            viewing = to === latestState.currentSlideIndex ? null : to;
+            renderSlides(latestState);
+        }
+
+        document.getElementById('slide-prev').addEventListener('click', () => step(-1));
+        document.getElementById('slide-next').addEventListener('click', () => step(1));
+        document.getElementById('slide-live').addEventListener('click', () => { viewing = null; renderSlides(latestState); });
+        window.addEventListener('resize', fitSlide);
+
+        // ---- reactions ----
+        async function react(kind) {
+            let accepted = false;
+            try {
+                const res = await fetch('/api/react?kind=' + encodeURIComponent(kind), { method: 'POST' });
+                accepted = res.ok;
+            } catch(e) {}
+
+            document.querySelectorAll('.react-btn').forEach(b =>
+                b.classList.toggle('chosen', accepted && b.dataset.kind === kind));
+            document.getElementById('react-sent-msg').style.display = accepted ? 'block' : 'none';
+            showError('react-error-msg', !accepted);
+        }
+
+        document.querySelectorAll('.react-btn').forEach(b =>
+            b.addEventListener('click', () => react(b.dataset.kind)));
+
         async function upvoteQuestion(id) {
             try {
                 await fetch('/api/qa/upvote?id=' + encodeURIComponent(id), { method: 'POST' });
@@ -131,6 +239,7 @@
                 if (!res.ok) return;
                 const data = await res.json();
                 currentActiveSlide = data.currentSlideIndex;
+                renderSlides(data);
 
                 // Check poll
                 const pollSec = document.getElementById('poll-section');

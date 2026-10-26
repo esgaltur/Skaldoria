@@ -20,6 +20,12 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class AudienceSession {
 
+    /** What the room may see of the deck: slides already shown, and the released handout. */
+    val share = AudienceShare()
+
+    /** The live "too fast / lost me / good" pulse, and its record for the post-talk report. */
+    val reactions = AudienceReactions()
+
     private val _questions = mutableStateListOf<AudienceQuestion>()
 
     /** Newest first. Observable by Compose; use [snapshot] when reading off-thread. */

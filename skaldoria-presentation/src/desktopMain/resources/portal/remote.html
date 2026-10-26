@@ -30,6 +30,9 @@
         .qa-text { font-size: 0.95rem; color: #f1f5f9; font-weight: 500; }
         .qa-author { font-size: 0.75rem; color: #64748b; margin-top: 4px; }
         .pairing-banner { display: none; margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: #450a0a; border: 1px solid #dc2626; color: #fecaca; font-size: 0.85rem; font-weight: 600; }
+        .pulse { display: flex; gap: 14px; margin-top: 10px; font-size: 0.9rem; font-weight: 700; color: #94a3b8; }
+        .pulse .hot { color: #fbbf24; }
+        .btn-action.shared { background: #047857; color: white; border-color: #10b981; }
         .qa-votes { background: #0369a1; color: white; padding: 4px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; }
     </style>
 </head>
@@ -51,6 +54,9 @@
             <div class="slide-meta" id="slide-index">Slide 1 of 1</div>
             <div class="slide-title" id="slide-title">Loading presentation...</div>
             <div class="notes-box" id="notes">No notes for this slide.</div>
+            <div class="pulse" id="pulse" title="Audience reactions in the last minute">
+                <span id="pulse-fast">🐢 0</span><span id="pulse-lost">😕 0</span><span id="pulse-good">👍 0</span>
+            </div>
         </div>
 
         <div class="controls">
@@ -62,6 +68,7 @@
             <button class="btn-action" id="btn-blackout" onclick="sendAction('blackout')">⚫ Blackout (B)</button>
             <button class="btn-action" id="btn-whiteout" onclick="sendAction('whiteout')">⚪ Whiteout (W)</button>
             <button class="btn-action" onclick="sendAction('toggleTimer')">⏱ Timer</button>
+            <button class="btn-action" id="btn-handout" onclick="sendAction('toggleHandout')">📤 Share slides</button>
         </div>
     </div>
 
@@ -162,6 +169,20 @@
 
                 document.getElementById('btn-blackout').className = data.isBlackout ? 'btn-action active' : 'btn-action';
                 document.getElementById('btn-whiteout').className = data.isWhiteout ? 'btn-action active' : 'btn-action';
+
+                const handout = document.getElementById('btn-handout');
+                handout.className = data.handoutReleased ? 'btn-action shared' : 'btn-action';
+                handout.textContent = data.handoutReleased ? '📤 Slides shared' : '📤 Share slides';
+
+                // "Too fast" and "lost me" light up once they are a real signal, not one person.
+                if (data.pulse) {
+                    [['fast', '🐢'], ['lost', '😕'], ['good', '👍']].forEach(([kind, icon]) => {
+                        const node = document.getElementById('pulse-' + kind);
+                        const count = data.pulse[kind] || 0;
+                        node.textContent = icon + ' ' + count;
+                        node.className = (kind !== 'good' && count >= 3) ? 'hot' : '';
+                    });
+                }
 
                 // Q&A
                 const qaCount = data.questions ? data.questions.length : 0;

@@ -47,6 +47,8 @@ class DeckControlPortTest {
         override fun resetTimer() { timerResets++ }
         override fun parkQuestion(question: String, author: String?) { parked = question to author }
         override fun <T> applyFromBackgroundThread(mutation: () -> T): T = mutation()
+        override fun slideHtml(index: Int) = "<p>slide $index</p>"
+        override fun handoutHtml() = "<p>every slide</p>"
     }
 
     private fun open(url: String, method: String = "GET", token: String? = null): HttpURLConnection =
@@ -137,4 +139,96 @@ class DeckControlPortTest {
             assertEquals("Throughput per shard" to "Bo", deck.parked)
         }
     }
+
+    @Test
+    fun `a phone can read slides the room has seen but never the ones ahead`() {
+        val deck = FakeDeck()
+        withDeck(deck) { base ->
+            assertEquals(403, open("$base/slide?index=0").responseCode, "nothing is shown before a phone has synced")
+
+            open("$base/api/state").bodyText()
+            deck.currentSlideIndex = 2
+            open("$base/api/state").bodyText()
+
+            assertEquals("<p>slide 1</p>", open("$base/slide?index=1").bodyText(), "slides already passed stay readable")
+            assertEquals(200, open("$base/slide?index=2").responseCode)
+
+            deck.currentSlideIndex = 0
+            open("$base/api/state").bodyText()
+            assertEquals(200, open("$base/slide?index=2").responseCode, "stepping back does not take slides away")
+
+            assertEquals(404, open("$base/slide?index=9").responseCode)
+            assertEquals(400, open("$base/slide?index=abc").responseCode)
+        }
+    }
+
+    @Test
+    fun `slides ahead of the speaker stay hidden even after a jump back`() {
+        val deck = FakeDeck(totalSlides = 5)
+        withDeck(deck) { base ->
+            deck.currentSlideIndex = 1
+            open("$base/api/state").bodyText()
+            assertEquals(403, open("$base/slide?index=3").responseCode)
+        }
+    }
+
+    @Test
+    fun `the handout is withheld until the speaker shares it`() {
+        val deck = FakeDeck()
+        withDeck(deck) { base ->
+            assertEquals(403, open("$base/handout").responseCode)
+            assertTrue("\"handoutReleased\": false" in open("$base/api/state").bodyText())
+
+            assertEquals(401, open("$base/api/action?action=toggleHandout", "POST").responseCode, "the room cannot release it")
+            open("$base/api/action?action=toggleHandout", "POST", presenterToken()).responseCode
+
+            assertEquals("<p>every slide</p>", open("$base/handout").bodyText())
+            assertTrue("\"handoutReleased\": true" in open("$base/api/state").bodyText())
+        }
+    }
+
+    @Test
+    fun `reactions reach the pulse, one per device`() {
+        val deck = FakeDeck()
+        withDeck(deck) { base ->
+            repeat(3) { open("$base/api/react?kind=lost", "POST").responseCode }
+            assertEquals(400, open("$base/api/react?kind=bored", "POST").responseCode)
+
+            val state = open("$base/api/state").bodyText()
+            assertTrue("\"lost\": 1" in state, "three taps from one phone are one person: $state")
+            assertEquals(3, deck.audience.reactions.history().size, "the report still sees every tap")
+        }
+    }
+
+    @Test
+    fun `a new session forgets what the last room saw`() {
+        val deck = FakeDeck()
+        withDeck(deck) { base ->
+            open("$base/api/state").bodyText()
+            open("$base/api/action?action=toggleHandout", "POST", presenterToken()).responseCode
+        }
+        withDeck(deck) { base ->
+            assertEquals(403, open("$base/slide?index=0").responseCode)
+            assertEquals(403, open("$base/handout").responseCode)
+        }
+    }
+
+    @Test
+    fun `the slide a phone is told about is always one it may read`() {
+        // The speaker moves on mid-request: every read of the index after the first sees the
+        // next slide. The response must not announce a slide it did not also reveal.
+        val deck = object : DeckControl by FakeDeck() {
+            private var reads = 0
+            override val currentSlideIndex: Int get() = if (reads++ == 0) 0 else 1
+        }
+        withDeck(deck) { base ->
+            val announced = Regex("\"currentSlideIndex\": (\\d+)")
+                .find(open("$base/api/state").bodyText())!!.groupValues[1].toInt()
+
+            assertEquals(200, open("$base/slide?index=$announced").responseCode)
+        }
+    }
+
+    private fun presenterToken(): String =
+        RemoteCompanionServer.presenterUrl().substringAfter("t=")
 }

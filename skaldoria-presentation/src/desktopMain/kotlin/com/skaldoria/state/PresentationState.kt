@@ -20,10 +20,14 @@ import com.skaldoria.markdown.models.*
 import com.skaldoria.core.pacing.Pacing
 import com.skaldoria.core.pacing.PacingCalculator
 import com.skaldoria.core.pacing.PacingPlan
+import com.skaldoria.core.pacing.SlideTimeLog
 import com.skaldoria.core.pacing.TalkTimer
 import com.skaldoria.core.parkinglot.ParkingLotStore
 import com.skaldoria.core.ports.*
 import com.skaldoria.core.presentation.HudVisibility
+import com.skaldoria.core.report.PollOutcome
+import com.skaldoria.core.report.TalkRecord
+import com.skaldoria.core.report.TalkReport
 import com.skaldoria.remote.DeckControl
 import com.skaldoria.theme.BuiltinThemes
 import com.skaldoria.theme.PresentationTheme
@@ -47,8 +51,9 @@ class PresentationState(
     private val fileDialogs: FileDialogs = DefaultFileDialogs,
     private val companionServer: CompanionServerPort = DefaultCompanionServer,
     private val preferences: PreferencesRepository = DefaultPreferencesRepository,
-    private val htmlExporter: HtmlDeckExporter = DefaultHtmlDeckExporter
-) : DeckControl, HtmlDeckSource {
+    private val htmlExporter: HtmlDeckExporter = DefaultHtmlDeckExporter,
+    private val printableHtml: PrintableHtmlRenderer = DefaultPrintableHtmlRenderer
+) : DeckControl, PrintableDeckSource {
     private val scope = CoroutineScope(backgroundContext)
 
     /**
@@ -299,6 +304,9 @@ class PresentationState(
 
     /** Newest first. Kept so the presenter console's existing call sites are unchanged. */
     val audienceQuestions: List<AudienceQuestion> get() = audience.questions
+
+    /** How long each slide actually stayed up, for the post-talk report. */
+    private val slideTimes = SlideTimeLog()
 
     // ------------------------------------------------------------------
     // Presentation Aside: Parking Lot — delegated to [ParkingLotStore] (F-12).
@@ -705,6 +713,10 @@ class PresentationState(
     override val currentSlidePoll: SlideElement.Poll?
         get() = currentSlide?.elements?.filterIsInstance<SlideElement.Poll>()?.firstOrNull()
 
+    override fun slideHtml(index: Int): String = printableHtml.render(this, index..index)
+
+    override fun handoutHtml(): String = printableHtml.render(this, slides.indices)
+
     override fun parkQuestion(question: String, author: String?) {
         addFollowUpQuestion(question = question, slideIndex = currentSlideIndex, author = author)
     }
@@ -845,7 +857,7 @@ class PresentationState(
      * The project root in project mode, otherwise the folder holding the open `.md`. Null
      * for an unsaved deck, where a relative path has nothing to be relative *to*.
      */
-    val deckBaseDir: java.io.File?
+    override val deckBaseDir: java.io.File?
         get() = currentFilePath?.let { path ->
             val file = java.io.File(path)
             if (file.isDirectory) file else file.parentFile
@@ -868,7 +880,7 @@ class PresentationState(
 
     override fun nextSlide() {
         if (!navigator.next()) return
-        clearScreenBlanking()
+        onSlideShown()
         revealCurrentSlideInEditor()
     }
 
@@ -881,9 +893,16 @@ class PresentationState(
         isWhiteoutActive = false
     }
 
+    /** Every way the speaker moves through the deck lands here. */
+    private fun onSlideShown() {
+        clearScreenBlanking()
+        // The clock itself, not the once-a-second published reading.
+        slideTimes.record(currentSlideIndex, timer.currentElapsedSeconds())
+    }
+
     override fun previousSlide() {
         if (!navigator.previous()) return
-        clearScreenBlanking()
+        onSlideShown()
         revealCurrentSlideInEditor()
     }
 
@@ -919,7 +938,7 @@ class PresentationState(
 
     override fun goToSlide(index: Int) {
         if (!navigator.goTo(index)) return
-        clearScreenBlanking()
+        onSlideShown()
         // A jump is how the grid overview is used, so landing dismisses it.
         isGridOverviewOpen = false
         // AUT-02: the filmstrip, the grid overview and the command palette all route through
@@ -978,7 +997,37 @@ class PresentationState(
 
     override fun toggleTimer() = timer.toggle()
 
-    override fun resetTimer() = timer.reset()
+    override fun resetTimer() {
+        timer.reset()
+        slideTimes.reset(currentSlideIndex)
+    }
+
+    /** What this talk has produced so far — timing, questions, polls and reactions. */
+    fun talkRecord(): TalkRecord {
+        val now = timer.currentElapsedSeconds()
+        return TalkRecord(
+            title = slides.firstOrNull()?.title?.ifBlank { null } ?: "Presentation",
+            slideTitles = slides.map { it.title.ifBlank { "Slide ${it.index + 1}" } },
+            plannedSeconds = targetTotalSeconds?.let { pacingPlan.slideSeconds },
+            actualSeconds = slideTimes.secondsBySlide(now),
+            totalElapsedSeconds = now,
+            targetTotalSeconds = targetTotalSeconds,
+            questions = audience.snapshot(),
+            polls = slides.mapNotNull { slide ->
+                slide.elements.filterIsInstance<SlideElement.Poll>().firstOrNull()
+                    ?.let { PollOutcome(slide.index, it, audience.votesForSlide(slide.index)) }
+            },
+            reactions = audience.reactions.history()
+        )
+    }
+
+    /**
+     * Writes the post-talk report as Markdown wherever the speaker chooses, then hands the
+     * saved path to [onSaved] — the presenter view uses it to open the file.
+     */
+    fun saveTalkReport(onSaved: (String) -> Unit = {}) = reportFailure("Could not save the talk report") {
+        fileDialogs.saveAsMarkdownFile(TalkReport.markdown(talkRecord()), onSaved)
+    }
 
     override fun toggleBlackout() {
         isBlackoutActive = !isBlackoutActive

@@ -7,10 +7,12 @@ import com.skaldoria.core.ports.DefaultFileDialogs
 import com.skaldoria.core.ports.DefaultProjectRepository
 import com.skaldoria.core.ports.DefaultPreferencesRepository
 import com.skaldoria.core.ports.DefaultHtmlDeckExporter
+import com.skaldoria.core.ports.DefaultPrintableHtmlRenderer
 import com.skaldoria.core.ports.FileDialogs
 import com.skaldoria.core.ports.ProjectRepository
 import com.skaldoria.core.ports.PreferencesRepository
 import com.skaldoria.core.ports.HtmlDeckExporter
+import com.skaldoria.core.ports.PrintableHtmlRenderer
 import com.skaldoria.state.PresentationState
 import kotlinx.coroutines.Dispatchers
 import kotlin.coroutines.CoroutineContext
@@ -58,7 +60,8 @@ abstract class PresentationStateTestBase {
         fileDialogs: FileDialogs = DefaultFileDialogs,
         companionServer: CompanionServerPort = DefaultCompanionServer,
         preferences: PreferencesRepository = DefaultPreferencesRepository,
-        htmlExporter: HtmlDeckExporter = DefaultHtmlDeckExporter
+        htmlExporter: HtmlDeckExporter = DefaultHtmlDeckExporter,
+        printableHtml: PrintableHtmlRenderer = DefaultPrintableHtmlRenderer
     ): PresentationState = PresentationState(
         initialMarkdown = initialMarkdown,
         backgroundContext = backgroundContext,
@@ -67,7 +70,8 @@ abstract class PresentationStateTestBase {
         fileDialogs = fileDialogs,
         companionServer = companionServer,
         preferences = preferences,
-        htmlExporter = htmlExporter
+        htmlExporter = htmlExporter,
+        printableHtml = printableHtml
     ).also { trackedStates += it }
 
     /**

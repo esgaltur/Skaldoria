@@ -73,6 +73,19 @@ interface HtmlDeckSource {
     val slides: List<Slide>
 }
 
+/** What the offline, printable renderer reads: [HtmlDeckSource] plus where relative images live. */
+interface PrintableDeckSource : HtmlDeckSource {
+    val deckBaseDir: java.io.File?
+}
+
+/**
+ * Offline HTML for a deck, or a contiguous part of one — the PDF export's renderer, reused for
+ * the slides an audience phone follows along with and for the take-home handout.
+ */
+fun interface PrintableHtmlRenderer {
+    fun render(source: PrintableDeckSource, slideIndices: IntRange): String
+}
+
 /** Native HTML export boundary. */
 interface HtmlDeckExporter {
     fun export(source: HtmlDeckSource, onExportCompleted: (String) -> Unit = {})
