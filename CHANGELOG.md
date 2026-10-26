@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-26
+
+### Fixed
+- **The grid overview opened in every window at once.** Opened from the speaker console, it also
+  appeared on the projected deck — every upcoming slide, in front of the room. The grid and the
+  command palette (Ctrl+P) now open only in the window they were asked for, and the speaker
+  console draws its own palette instead of opening it on the audience's screen.
+- **Numbered lists rendered as bullets** in slides and canvas cards. The parser recognised `1.` and
+  then discarded it; a bulleted list straight after a numbered one is also no longer merged into it.
+- **Canvas: text in shaped figures was cut off while editing.** A circle, diamond or cylinder
+  confined its source to the area inside the outline — a heading and a line, at most. Editing
+  now uses the whole figure, and the shape returns when editing ends.
+- **Canvas: text shrank twice below 100% zoom**, and the editing box came out half size at 50%.
+- **Canvas: tables, metrics, polls, quote authors and images** were silently dropped from cards.
+  Images show as a labelled placeholder; the deck export renders the real image.
+- **Canvas:** connection handles were cut in half by the figure outline, and the cylinder drew
+  straight lines across its lid and base.
+- **Writer: the visual editor and the preview disagreed.** Headings, body text, lists and quotes
+  were sized and coloured differently on each side; both now share one typography. A fenced code
+  block in visual mode lost two of its three backticks and folded the code inside it — fences,
+  code, tables and math are now shown exactly as written, and bullets, quotes and rules read as
+  they do in the preview.
+
+### Changed
+- GitHub release notes contain only the released version's changelog section, so the downloads
+  are no longer buried below the entire history.
+
+### Known gaps
+- Task-list checkboxes (`- [x]`) are shown as literal text in every app; the parser does not
+  model them yet.
+
 ## [1.3.0] - 2026-10-26
 
 Roadmap and delivery work. The candidate feature set is catalogued in
