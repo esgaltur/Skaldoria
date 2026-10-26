@@ -29,6 +29,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+. (Join-Path $PSScriptRoot 'release-notes.ps1')
 $ReleaseBuildRoot = 'build/release/windows'
 $ReleaseBuildRootPath = Join-Path $ProjectRoot 'build\release\windows'
 
@@ -226,7 +227,7 @@ if ($PublishGitHub) {
     }
     $ghArgs = @('release', 'create', "v$Version") + $releaseFiles + @(
         '--title', "Skaldoria Suite v$Version",
-        '--notes-file', (Join-Path $ProjectRoot 'CHANGELOG.md')
+        '--notes-file', (New-ReleaseNotesFile -ProjectRoot $ProjectRoot -Version $Version)
     )
     if ($Draft) { $ghArgs += '--draft' }
     if ($Prerelease) { $ghArgs += '--prerelease' }
