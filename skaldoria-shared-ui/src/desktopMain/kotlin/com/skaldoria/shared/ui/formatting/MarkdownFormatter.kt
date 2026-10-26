@@ -19,74 +19,124 @@ object MarkdownFormatter {
     fun toggleList(state: TextFieldValue) = toggleLinePrefix(state, "- ")
     fun toggleChecklist(state: TextFieldValue) = toggleLinePrefix(state, "- [ ] ")
 
+    /**
+     * Line prefixes that are alternatives to one another. Applying one replaces any other from the
+     * same family instead of stacking on top of it — H1 on `## Title` gave `# ## Title`, and
+     * Checklist on `- item` gave `- [ ] - item`. Longest first, so `- [ ] ` is recognised before
+     * the `- ` it starts with.
+     */
+    private val PREFIX_FAMILIES = listOf(
+        listOf("### ", "## ", "# "),
+        listOf("- [ ] ", "- [x] ", "- [X] ", "- "),
+        listOf("> ")
+    )
+
+    /**
+     * Toggles [prefix] on every line the selection touches, not only the first.
+     *
+     * When every touched line already carries exactly [prefix] it is removed from all of them;
+     * otherwise each line gets it, replacing a sibling from its family. A selection that ends at
+     * the very start of a line does not pull that line in, as in every other editor.
+     */
     private fun toggleLinePrefix(state: TextFieldValue, prefix: String): TextFieldValue {
         val text = state.text
+        val family = PREFIX_FAMILIES.firstOrNull { prefix in it } ?: listOf(prefix)
         val selection = state.selection
-        
-        var lineStart = text.lastIndexOf('\n', maxOf(0, selection.min - 1)) + 1
-        if (lineStart < 0) lineStart = 0
-        
-        val isPrefixed = text.substring(lineStart).startsWith(prefix)
-        
-        return if (isPrefixed) {
-            val newText = text.substring(0, lineStart) + text.substring(lineStart + prefix.length)
-            val diff = -prefix.length
-            val newStart = maxOf(lineStart, selection.start + diff)
-            val newEnd = maxOf(lineStart, selection.end + diff)
-            TextFieldValue(newText, TextRange(newStart, newEnd))
+
+        val lastOffset = if (!selection.collapsed && text.getOrNull(selection.max - 1) == '\n') {
+            selection.max - 1
         } else {
-            val newText = text.substring(0, lineStart) + prefix + text.substring(lineStart)
-            val diff = prefix.length
-            val newStart = selection.start + diff
-            val newEnd = selection.end + diff
-            TextFieldValue(newText, TextRange(newStart, newEnd))
+            selection.max
         }
+        val lineStarts = generateSequence(lineStartOf(text, selection.min)) { start ->
+            text.indexOf('\n', start).takeIf { it in 0 until lastOffset }?.plus(1)
+        }.toList()
+
+        fun existingPrefix(lineStart: Int) = family.firstOrNull { text.startsWith(it, lineStart) }
+        val removing = lineStarts.all { existingPrefix(it) == prefix }
+
+        val builder = StringBuilder(text)
+        var start = selection.start
+        var end = selection.end
+        for (lineStart in lineStarts.asReversed()) {
+            val oldLength = existingPrefix(lineStart)?.length ?: 0
+            val replacement = if (removing) "" else prefix
+            builder.replace(lineStart, lineStart + oldLength, replacement)
+
+            fun shift(offset: Int): Int = when {
+                offset >= lineStart + oldLength -> offset + replacement.length - oldLength
+                offset >= lineStart -> lineStart + replacement.length
+                else -> offset
+            }
+            start = shift(start)
+            end = shift(end)
+        }
+        return TextFieldValue(builder.toString(), TextRange(start, end))
+    }
+
+    private fun lineStartOf(text: String, offset: Int): Int = text.lastIndexOf('\n', offset - 1) + 1
+
+    /**
+     * Whether runs of [left] and [right] marker characters around a span apply [marker].
+     *
+     * `*` is special because `**` is made of it: italic is present when the run is odd (`*x*`,
+     * `***x***`). Treating any `*` as italic made Italic on a bold word strip half of the bold
+     * markers and turn `**word**` into `*word*`.
+     */
+    private fun isWrapped(left: Int, right: Int, marker: String): Boolean {
+        val run = minOf(left, right)
+        return if (marker == "*") run % 2 == 1 else run >= marker.length
+    }
+
+    private fun runBackward(text: String, from: Int, char: Char, limit: Int = 0): Int {
+        var count = 0
+        while (from - count - 1 >= limit && text[from - count - 1] == char) count++
+        return count
+    }
+
+    private fun runForward(text: String, from: Int, char: Char, limit: Int): Int {
+        var count = 0
+        while (from + count < limit && text[from + count] == char) count++
+        return count
     }
 
     private fun toggleSurrounding(state: TextFieldValue, marker: String): TextFieldValue {
         val text = state.text
         val selection = state.selection
+        val char = marker.first()
 
         val start = selection.min
         val end = selection.max
 
-        // Case 1: Markers are immediately outside the current selection.
-        val isSurroundedOutside = start >= marker.length && end <= text.length - marker.length &&
-            text.substring(start - marker.length, start) == marker &&
-            text.substring(end, end + marker.length) == marker
-
-        if (isSurroundedOutside) {
-            // Remove the markers from outside the selection
-            val newText = text.substring(0, start - marker.length) + 
-                          text.substring(start, end) + 
-                          text.substring(end + marker.length)
+        // Case 1: the markers sit immediately outside the selection.
+        val outsideLeft = runBackward(text, start, char)
+        val outsideRight = runForward(text, end, char, text.length)
+        if (isWrapped(outsideLeft, outsideRight, marker)) {
+            val newText = text.substring(0, start - marker.length) +
+                text.substring(start, end) +
+                text.substring(end + marker.length)
             return TextFieldValue(newText, TextRange(start - marker.length, end - marker.length))
         }
 
-        // Case 2: Markers are immediately inside the current selection.
-        val isSurroundedInside = (end - start) >= marker.length * 2 &&
-            text.substring(start, start + marker.length) == marker &&
-            text.substring(end - marker.length, end) == marker
-
-        if (isSurroundedInside) {
-             // Remove the markers from inside the selection
-             val newText = text.substring(0, start) + 
-                           text.substring(start + marker.length, end - marker.length) + 
-                           text.substring(end)
-             return TextFieldValue(newText, TextRange(start, end - (marker.length * 2)))
+        // Case 2: the selection includes the markers.
+        if (end - start >= marker.length * 2) {
+            val insideLeft = runForward(text, start, char, end)
+            val insideRight = runBackward(text, end, char, start)
+            if (insideLeft < end - start && isWrapped(insideLeft, insideRight, marker)) {
+                val newText = text.substring(0, start) +
+                    text.substring(start + marker.length, end - marker.length) +
+                    text.substring(end)
+                return TextFieldValue(newText, TextRange(start, end - marker.length * 2))
+            }
         }
 
-        // Case 3: No markers found. Wrap the selection.
+        // Case 3: not applied yet. Wrap the selection; an empty one leaves the caret inside.
         val newText = text.substring(0, start) + marker + text.substring(start, end) + marker + text.substring(end)
-        
-        // If there was no selection, place the cursor directly inside the newly added markers.
-        // Otherwise, keep the original text selected.
         val newSelection = if (start == end) {
             TextRange(start + marker.length)
         } else {
             TextRange(start + marker.length, end + marker.length)
         }
-        
         return TextFieldValue(newText, newSelection)
     }
 }
