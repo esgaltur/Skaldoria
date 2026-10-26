@@ -310,4 +310,62 @@ class WysiwygVisualTransformationTest {
             previous = mapped
         }
     }
+
+    // ---- block structure, as the preview draws it ----
+
+    /** Visual mode with the caret parked on a trailing line, so every line above is folded. */
+    private fun folded(source: String) = WysiwygVisualTransformation(
+        testTheme,
+        cursorIndex = source.length,
+        isVisualMode = true
+    ).filter(AnnotatedString(source))
+
+    @Test
+    fun `a fenced code block is shown exactly as written`() {
+        // The fold used to read the fence as inline code: two backticks vanished, one stayed,
+        // and `a` inside the code lost its backticks too.
+        val source = "```kotlin\nval x = `a` * 2 * 3\n```\nend"
+
+        assertEquals(source, folded(source).text.text)
+    }
+
+    @Test
+    fun `code lines are monospace in visual mode`() {
+        val transformed = folded("```\nval x = 1\n```\nend")
+
+        assertTrue(transformed.text.spanStyles.any { it.item.fontFamily == FontFamily.Monospace && it.start == 4 })
+    }
+
+    @Test
+    fun `bullet markers show as bullets without moving the text`() {
+        val source = "- one\n* two\n1. three\nend"
+        val transformed = folded(source)
+
+        assertEquals("• one\n• two\n1. three\nend", transformed.text.text)
+        for (offset in 0..source.length) {
+            assertEquals(offset, transformed.offsetMapping.originalToTransformed(offset), "offset $offset moved")
+        }
+    }
+
+    @Test
+    fun `a quote hides its marker and reads as a quote`() {
+        val transformed = folded("> A quoted line\nend")
+
+        assertEquals("A quoted line\nend", transformed.text.text)
+        assertTrue(transformed.text.spanStyles.any { it.item.fontStyle == FontStyle.Italic && it.start == 0 })
+    }
+
+    @Test
+    fun `a thematic break shows as a rule`() {
+        assertEquals("───\nend", folded("---\nend").text.text)
+    }
+
+    @Test
+    fun `the caret line still shows its markdown`() {
+        val source = "- item"
+        val transformed = WysiwygVisualTransformation(testTheme, cursorIndex = 3, isVisualMode = true)
+            .filter(AnnotatedString(source))
+
+        assertEquals(source, transformed.text.text)
+    }
 }

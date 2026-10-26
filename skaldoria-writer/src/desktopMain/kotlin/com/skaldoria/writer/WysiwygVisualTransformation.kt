@@ -38,14 +38,7 @@ class WysiwygVisualTransformation(
      * and let adjacent lines collide. A paragraph style is required: font size is a span
      * concern, but vertical metrics belong to the paragraph.
      */
-    private fun headingTypography(level: Int): Pair<TextUnit, TextUnit> = when (level) {
-        1 -> 32.sp to 42.sp
-        2 -> 24.sp to 34.sp
-        3 -> 20.sp to 30.sp
-        4 -> 18.sp to 28.sp
-        5 -> 17.sp to 27.sp
-        else -> 16.sp to 27.sp
-    }
+    private fun headingTypography(level: Int): Pair<TextUnit, TextUnit> = WriterTypography.heading(level)
 
     /**
      * Visual mode also needs to know how many characters the marker occupies, so it can hide them.
@@ -166,14 +159,16 @@ class WysiwygVisualTransformation(
         var origIdx = 0
         var transIdx = 0
 
-        fun appendVisible(str: String) {
+        /** Shows [str], or [shown] in its place — always character for character, so offsets map 1:1. */
+        fun appendVisible(str: String, shown: String = str) {
+            require(shown.length == str.length) { "a substitution must keep the length" }
             for (char in str) {
                 origToTrans[origIdx] = transIdx
                 transToOrigList.add(origIdx)
                 origIdx++
                 transIdx++
             }
-            builder.append(str)
+            builder.append(shown)
         }
 
         fun appendHidden(count: Int) {
@@ -238,6 +233,40 @@ class WysiwygVisualTransformation(
             }
         }
 
+        // Block structure comes from the shared tokenizer — the grammar authority the source view
+        // and the other editors use — keyed by the offset of the line it starts. The fold below
+        // used to scan characters for itself and knew nothing of fences: a ``` line was read as
+        // inline code, two backticks were hidden and the third was left on screen.
+        val lineBlocks = HashMap<Int, MarkdownTokenKind>()
+        val bulletMarkerEnds = HashMap<Int, Int>()
+        for (token in MarkdownHighlightTokenizer.tokenize(originalText)) {
+            when (token.kind) {
+                in VERBATIM_LINES, MarkdownTokenKind.ThematicBreak, MarkdownTokenKind.Blockquote ->
+                    lineBlocks.putIfAbsent(token.start, token.kind)
+                MarkdownTokenKind.BulletMarker -> bulletMarkerEnds[token.start] = token.end
+                else -> Unit
+            }
+        }
+
+        fun styleVerbatim(kind: MarkdownTokenKind, start: Int, end: Int, alpha: Float) {
+            if (start >= end) return
+            when (kind) {
+                MarkdownTokenKind.FenceMarker -> builder.addStyle(
+                    SpanStyle(fontFamily = FontFamily.Monospace, color = theme.subtext.copy(alpha = 0.6f * alpha)),
+                    start, end
+                )
+                MarkdownTokenKind.CodeText -> builder.addStyle(
+                    SpanStyle(
+                        fontFamily = FontFamily.Monospace,
+                        color = theme.text.copy(alpha = alpha),
+                        background = theme.surface
+                    ),
+                    start, end
+                )
+                else -> Unit
+            }
+        }
+
         val lines = originalText.split('\n')
         var lineStart = 0
 
@@ -289,6 +318,7 @@ class WysiwygVisualTransformation(
                     val tStart = transIdx
                     appendVisible(line)
                     heading?.let { style -> builder.styleHeading(tStart, transIdx, style, alpha) }
+                    lineBlocks[lineStart]?.let { kind -> styleVerbatim(kind, tStart, transIdx, 1f) }
 
                     if (isFocusMode) {
                         builder.addStyle(SpanStyle(color = theme.text.copy(alpha = 1f)), tStart, transIdx)
@@ -298,18 +328,62 @@ class WysiwygVisualTransformation(
                 val trimmedLine = line.trimStart()
                 val indentationLength = line.length - trimmedLine.length
                 val heading = headingStyle(trimmedLine)
+                val block = lineBlocks[lineStart]
+                val bulletEnd = bulletMarkerEnds[lineStart]
 
-                if (indentationLength > 0) {
-                    appendVisible(line.take(indentationLength))
-                }
-                val contentStart = transIdx
-                if (heading != null) {
-                    appendHidden(heading.markerLength)
-                }
-                appendFoldedInline(lineEnd, alpha)
+                when {
+                    // Code, math, tables and directives are shown exactly as written: folding
+                    // emphasis markers inside them would change what they say.
+                    heading == null && block != null && block in VERBATIM_LINES -> {
+                        val start = transIdx
+                        appendVisible(line)
+                        styleVerbatim(block, start, transIdx, alpha)
+                    }
 
-                if (heading != null) {
-                    builder.styleHeading(contentStart, transIdx, heading, alpha)
+                    heading == null && block == MarkdownTokenKind.ThematicBreak -> {
+                        val start = transIdx
+                        appendVisible(line, RULE_CHAR.toString().repeat(line.length))
+                        builder.addStyle(SpanStyle(color = theme.subtext.copy(alpha = 0.5f * alpha)), start, transIdx)
+                    }
+
+                    heading == null && block == MarkdownTokenKind.Blockquote -> {
+                        if (indentationLength > 0) appendVisible(line.take(indentationLength))
+                        // The `>` and the one space after it are the marker, as in CommonMark.
+                        appendHidden(if (trimmedLine.startsWith("> ")) 2 else 1)
+                        val start = transIdx
+                        appendFoldedInline(lineEnd, alpha)
+                        builder.addStyle(
+                            SpanStyle(color = theme.subtext.copy(alpha = alpha), fontStyle = FontStyle.Italic),
+                            start, transIdx
+                        )
+                    }
+
+                    heading == null && bulletEnd != null -> {
+                        val marker = originalText.substring(lineStart, bulletEnd)
+                        val start = transIdx
+                        // `-`, `*` and `+` show as the bullet the preview draws; a number stays a number.
+                        appendVisible(marker, marker.replaceFirst(UNORDERED_MARKER, BULLET_CHAR.toString()))
+                        builder.addStyle(
+                            SpanStyle(color = theme.accent.copy(alpha = alpha), fontWeight = FontWeight.Bold),
+                            start, transIdx
+                        )
+                        appendFoldedInline(lineEnd, alpha)
+                    }
+
+                    else -> {
+                        if (indentationLength > 0) {
+                            appendVisible(line.take(indentationLength))
+                        }
+                        val contentStart = transIdx
+                        if (heading != null) {
+                            appendHidden(heading.markerLength)
+                        }
+                        appendFoldedInline(lineEnd, alpha)
+
+                        if (heading != null) {
+                            builder.styleHeading(contentStart, transIdx, heading, alpha)
+                        }
+                    }
                 }
             }
 
@@ -341,3 +415,18 @@ class WysiwygVisualTransformation(
         )
     }
 }
+
+/** Lines whose text is shown exactly as written in visual mode. */
+private val VERBATIM_LINES = setOf(
+    MarkdownTokenKind.FenceMarker,
+    MarkdownTokenKind.CodeText,
+    MarkdownTokenKind.MathBlock,
+    MarkdownTokenKind.TableRow,
+    MarkdownTokenKind.Directive
+)
+
+private const val BULLET_CHAR = '\u2022'
+private const val RULE_CHAR = '\u2500'
+
+/** The first `-`, `*` or `+` in a bullet marker the tokenizer has already identified. */
+private val UNORDERED_MARKER = Regex("[-*+]")

@@ -248,7 +248,7 @@ private fun WriterTextPane(
                     .heightIn(min = 520.dp)
                     .focusRequester(focusRequester)
                     .testTag(WriterTestTags.Editor),
-                textStyle = TextStyle(color = theme.text, fontSize = 17.sp, lineHeight = 27.sp),
+                textStyle = TextStyle(color = theme.text, fontSize = WriterTypography.BodySize, lineHeight = WriterTypography.BodyLineHeight),
                 cursorBrush = SolidColor(theme.accent),
                 visualTransformation = visualTransformation
             )
@@ -282,18 +282,22 @@ fun PreviewPanel(document: Document, theme: SkaldoriaTheme) {
         Spacer(Modifier.height(16.dp))
         document.blocks.forEach { block ->
             when (block) {
-                is Heading -> Text(
-                    text = inlineMarkdown(flattenInline(block.children), presentationTheme),
-                    color = theme.text,
-                    fontSize = (32 - block.level * 3).sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 14.dp, bottom = 8.dp)
-                )
+                is Heading -> {
+                    val (size, lineHeight) = WriterTypography.heading(block.level)
+                    Text(
+                        text = inlineMarkdown(flattenInline(block.children), presentationTheme),
+                        color = theme.accent,
+                        fontSize = size,
+                        lineHeight = lineHeight,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 14.dp, bottom = 8.dp)
+                    )
+                }
                 is Paragraph -> Text(
                     text = inlineMarkdown(flattenInline(block.children), presentationTheme),
-                    color = theme.text.copy(alpha = 0.9f),
-                    fontSize = 15.sp,
-                    lineHeight = 25.sp,
+                    color = theme.text,
+                    fontSize = WriterTypography.BodySize,
+                    lineHeight = WriterTypography.BodyLineHeight,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
                 is CodeBlock -> PreviewCodeBlock(block, theme, presentationTheme)
@@ -348,9 +352,9 @@ private fun PreviewBlockquote(block: Blockquote, theme: SkaldoriaTheme, presenta
                 Text(
                     text = inlineMarkdown(flattenInline(paragraph.children), presentationTheme),
                     color = theme.subtext,
-                    fontSize = 15.sp,
+                    fontSize = WriterTypography.BodySize,
                     fontStyle = FontStyle.Italic,
-                    lineHeight = 24.sp
+                    lineHeight = WriterTypography.BodyLineHeight
                 )
             }
         }
@@ -365,15 +369,15 @@ private fun PreviewList(block: BulletList, theme: SkaldoriaTheme, presentationTh
                 Text(
                     if (block.isOrdered) "${index + 1}." else "•",
                     color = theme.accent,
-                    fontSize = 15.sp,
+                    fontSize = WriterTypography.BodySize,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.width(24.dp)
+                    modifier = Modifier.width(28.dp)
                 )
                 Text(
                     text = inlineMarkdown(item, presentationTheme),
-                    color = theme.text.copy(alpha = 0.9f),
-                    fontSize = 15.sp,
-                    lineHeight = 24.sp
+                    color = theme.text,
+                    fontSize = WriterTypography.BodySize,
+                    lineHeight = WriterTypography.BodyLineHeight
                 )
             }
         }
