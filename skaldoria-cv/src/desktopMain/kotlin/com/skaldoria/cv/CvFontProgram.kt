@@ -5,6 +5,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.platform.Font
 import com.skaldoria.cv.core.CvFontId
+import com.skaldoria.cv.core.pdf.CvPdfFonts
 import com.skaldoria.cv.core.pdf.TrueTypeFont
 import java.io.File
 
@@ -20,7 +21,18 @@ class LoadedCvFont(
     val regular: ByteArray,
     val italic: ByteArray?,
     val notice: String?
-)
+) {
+    /**
+     * The same bytes parsed for embedding. Lazy and held here because [CvFontProgram] caches this
+     * object: the coverage check runs on every keystroke and must not re-parse the font each time.
+     */
+    val pdfFonts: CvPdfFonts by lazy {
+        CvPdfFonts(
+            regular = TrueTypeFont.parse(regular),
+            italic = italic?.let(TrueTypeFont::parse)
+        )
+    }
+}
 
 /**
  * Resolves a [CvFontId] to the actual bytes Compose measures with and the PDF embeds.

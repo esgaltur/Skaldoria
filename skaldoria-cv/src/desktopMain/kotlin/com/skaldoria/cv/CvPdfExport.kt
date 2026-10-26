@@ -5,7 +5,6 @@ import com.skaldoria.cv.core.layout.CvResolvedLayout
 import com.skaldoria.cv.core.pdf.CvPdfFonts
 import com.skaldoria.cv.core.pdf.CvPdfPalette
 import com.skaldoria.cv.core.pdf.CvPdfRenderer
-import com.skaldoria.cv.core.pdf.TrueTypeFont
 import java.io.File
 
 /** What an export produced, plus anything the user should know about it. */
@@ -84,10 +83,7 @@ object CvPdfExport {
      */
     private fun resolveFonts(fontId: CvFontId): Pair<CvPdfFonts, String?> {
         val program = CvFontProgram.load(fontId)
-        return CvPdfFonts(
-            regular = TrueTypeFont.parse(program.regular),
-            italic = program.italic?.let(TrueTypeFont::parse)
-        ) to program.notice
+        return program.pdfFonts to program.notice
     }
 
     private fun paletteOf(theme: CvPreviewTheme) = CvPdfPalette(

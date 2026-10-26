@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skaldoria.cv.core.CvDiagnostic
 import com.skaldoria.cv.core.DiagnosticSeverity
+import com.skaldoria.cv.core.pdf.CvGlyphCoverage
 
 @Composable
 fun CvEditor(
@@ -38,7 +39,9 @@ fun CvEditor(
         resolveCvLayout(state.document, state.templateId, state.themeId, state.fontId)
     }
     val diagnostics = remember(state.document, layout) {
-        state.document.diagnostics + layout.resolved.overflows.map { it.toDiagnostic() }
+        state.document.diagnostics +
+            layout.resolved.overflows.map { it.toDiagnostic() } +
+            CvGlyphCoverage.check(layout.resolved, CvFontProgram.load(state.fontId).pdfFonts)
     }
 
     MaterialTheme {

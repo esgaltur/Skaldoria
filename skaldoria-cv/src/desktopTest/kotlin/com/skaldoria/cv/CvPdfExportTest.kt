@@ -4,6 +4,7 @@ import com.skaldoria.cv.core.CvFontCatalog
 import com.skaldoria.cv.core.CvMarkdownAdapter
 import com.skaldoria.cv.core.CvTemplateCatalog
 import com.skaldoria.cv.core.CvThemeCatalog
+import com.skaldoria.cv.core.pdf.CvGlyphCoverage
 import org.apache.pdfbox.Loader
 import org.apache.pdfbox.text.PDFTextStripper
 import java.io.File
@@ -46,6 +47,22 @@ class CvPdfExportTest {
         val layout = layoutOf(markdown)
         val result = CvPdfExport.export(layout, CvFontCatalog.default, File(workspace, name))
         return result to layout
+    }
+
+    private fun glyphWarnings(layout: CvPreviewLayout) =
+        CvGlyphCoverage.check(layout.resolved, CvFontProgram.load(CvFontCatalog.default).pdfFonts)
+
+    @Test
+    fun `the bundled example uses only characters the embedded font can draw`() {
+        assertEquals(emptyList(), glyphWarnings(layoutOf(CvExamples.softwareEngineer())))
+    }
+
+    @Test
+    fun `a character the embedded font lacks is reported before export`() {
+        val warning = glyphWarnings(layoutOf("# Ada\n\n## Profile\n\nLikes snow ☃.\n")).single()
+
+        assertEquals(5, warning.source.startLine)
+        assertContains(warning.message, "☃")
     }
 
     @Test

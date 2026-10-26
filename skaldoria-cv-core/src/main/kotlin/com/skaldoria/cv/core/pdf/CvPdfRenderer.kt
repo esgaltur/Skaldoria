@@ -35,7 +35,17 @@ data class CvPdfFonts(
     val regular: TrueTypeFont,
     val italic: TrueTypeFont? = null,
     val monospace: TrueTypeFont? = null
-)
+) {
+    /**
+     * The face that draws [run]. One rule, shared by the renderer and [CvGlyphCoverage], so the
+     * coverage check asks about exactly the font each character will be drawn with.
+     */
+    fun faceFor(run: CvPositionedRun): TrueTypeFont = when {
+        run.code && monospace != null -> monospace
+        run.italic && italic != null -> italic
+        else -> regular
+    }
+}
 
 /**
  * Writes a [CvResolvedLayout] as an accessible, text-based PDF — Phase 3, CV-FR-060 to CV-FR-063.
@@ -209,7 +219,7 @@ object CvPdfRenderer {
             for (run in line.runs) {
                 if (run.text.isEmpty()) continue
 
-                val font = faceFor(run, fonts)
+                val font = fonts.faceFor(run)
                 val embedded = resolve(font)
                 val x = penX
                 val advance = embedded.advanceOf(run.text, style.sizePt, style.letterSpacingPt)
@@ -269,12 +279,6 @@ object CvPdfRenderer {
                 }
             }
         }
-    }
-
-    private fun faceFor(run: CvPositionedRun, fonts: CvPdfFonts): TrueTypeFont = when {
-        run.code && fonts.monospace != null -> fonts.monospace
-        run.italic && fonts.italic != null -> fonts.italic
-        else -> fonts.regular
     }
 
     /**
