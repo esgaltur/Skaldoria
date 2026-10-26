@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-26
+
 Roadmap and delivery work. The candidate feature set is catalogued in
 [`skaldoria-presentation/docs/FEATURE_INDEX.md`](./skaldoria-presentation/docs/FEATURE_INDEX.md); the connectivity design is
 [ADR-005](./skaldoria-presentation/docs/adr/005-companion-link-establishment.md).
-Test suite: **235 to 955 tests**, zero compiler warnings — 496 `:skaldoria-presentation`,
-164 `:skaldoria-shared-ui`, 114 `:skaldoria-markdown`, 51 `:skaldoria-writer`, 46 `:skaldoria-cv-core`,
-43 `:skaldoria-cv`, 41 `:skaldoria-canvas`.
+Test suite: **235 to 1207 tests**, zero compiler warnings — 561 `:skaldoria-presentation`,
+192 `:skaldoria-shared-ui`, 133 `:skaldoria-markdown`, 99 `:skaldoria-cv`, 93 `:skaldoria-canvas`,
+68 `:skaldoria-cv-core`, 61 `:skaldoria-writer`.
 
 ### Performance
 
@@ -52,6 +54,27 @@ Measured, not guessed — see [`PERFORMANCE_BASELINE.md`](./skaldoria-presentati
   be re-run before being trusted.**
 
 ### Added
+- **Canvas present mode.** *Present* (or F5) takes the board full screen and flies the camera
+  from an overview to each card in arrow order — the same reading order the Markdown export
+  uses. Arrows, Space or a click step; Esc leaves. Presenting never moves the saved viewport or
+  marks the board dirty.
+- **Audience phones follow the slides.** The audience portal shows the slide on screen, lets a
+  listener look back at slides already shown, and never serves one the speaker has not reached
+  (`/slide` answers 403). Slides are the printable HTML export, so they carry their full content
+  and no speaker notes.
+- **Shareable handout.** *Share slides* in the presenter view or on the phone remote releases the
+  whole deck as a download on every phone; until then `/handout` is refused.
+- **Live reactions.** Phones send 🐢 *Too fast*, 😕 *Lost me* or 👍 *Good*; the presenter view and
+  the remote show a room-pulse meter that turns hot at three people. One person per device,
+  over the last minute.
+- **Post-talk report.** *📝 Talk report* in the presenter view saves a Markdown report — time on
+  each slide against the plan, where the room reacted, questions ranked by upvotes, and poll
+  results — and opens it in the system's Markdown app. Slide time is measured on the talk clock,
+  so a paused timer is billed to no slide. Audience text is escaped so it cannot restyle the report.
+- **CV glyph coverage check.** The Document checks panel warns about characters the embedded PDF
+  font cannot draw, which the preview silently borrowed from system fonts.
+- **Headless Playwright suite** for both companion portals and the HTML/PDF export
+  (`-PskipBrowserTests` stands it down offline).
 - **One markdown highlighter under three editors.** Syntax highlighting was written three times —
   a complete version in `:skaldoria-presentation`, a partial one in `:skaldoria-writer`, and a
   47-line reimplementation in `:skaldoria-cv` that shared nothing with the rest of Skaldoria but a
@@ -178,6 +201,24 @@ Measured, not guessed — see [`PERFORMANCE_BASELINE.md`](./skaldoria-presentati
   screen to say so. It now shows an escape chip.
 
 ### Fixed
+- **Canvas cards past 100% zoom showed only their top-left corner** — the clip was applied at the
+  unscaled size. Affected the editor as well as presenting.
+- **A phone could be told about a slide and then refused it** when the speaker moved on mid-request;
+  the state feed now reads the slide index once.
+- **Companion portals:** one upvote per device per question; votes for a closed poll or a missing
+  option are refused; a rejected question stays in the box and a rejected vote is no longer
+  reported as recorded; the remote shows a pairing banner on 401.
+- **HTML/PDF export** embeds local images, fixing absolute Windows paths and relative paths.
+- **Emphasis** follows CommonMark flanking rules in the deck, CV and writer — `snake_case_name`
+  and `2 * 3 * 4` are no longer italicised.
+- **Open asks before discarding unsaved changes** in the writer and CV; the CV used to clear its
+  recovery snapshot too.
+- **Writer toolbar** toggles compose (italic on bold is bold italic), line formats replace rather
+  than stack, and apply to every selected line.
+- **CV PDF links** with non-ASCII targets are percent-encoded; missing glyphs no longer all extract
+  as the same character.
+- **Canvas** undo keeps the viewport and prunes stale selection; loading clamps zoom and repairs
+  non-positive card sizes; export orders cards after their parents.
 - **Exported CVs ran their text off the right edge of the page.** `CvFontResolver` registered the
   bundled Roboto with `GraphicsEnvironment.registerFont` (AWT) and then returned
   `FontFamily("Roboto")` — a lookup **by name**. Compose shapes with Skia, Skia never sees AWT
@@ -344,6 +385,10 @@ Measured, not guessed — see [`PERFORMANCE_BASELINE.md`](./skaldoria-presentati
   of a pipe-less table, because recognising its header needs the one-line lookahead the parser has
   and the highlighter does not — and adding it would put lookahead on the per-keystroke path.
 - ~~**Test suites leak `PresentationState` coroutine scopes.**~~ **Fixed — see below (COR-14).**
+- **The ZIP image export draws only each slide's background, title and page number** — body
+  content is never rendered. The HTML and PDF exports, and the slides phones see, are unaffected.
+- **`FileManager.generateStandaloneHtml` is an older second HTML exporter** that still loads
+  Mermaid from a CDN and links images by raw URL; it should be folded into `DeckExporter`.
 
 ## [1.2.0] - 2026-08-05
 
