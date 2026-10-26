@@ -59,7 +59,7 @@ fun main() = application {
             writerState.handleWindowKeyEvent(
                 event = event,
                 onOpen = {
-                    chooseMarkdownToOpen(null)?.let { fileController.open(writerState, it) }
+                    fileController.requestOpen(writerState) { chooseMarkdownToOpen(null) }
                 },
                 onSave = {
                     val destination = writerState.currentFile ?: chooseMarkdownToSave(null)
@@ -71,7 +71,7 @@ fun main() = application {
         WriterEditor(
             state = writerState,
             onOpenRequest = {
-                chooseMarkdownToOpen(window)?.let { fileController.open(writerState, it) }
+                fileController.requestOpen(writerState) { chooseMarkdownToOpen(window) }
             },
             onSaveRequest = {
                 val destination = writerState.currentFile ?: chooseMarkdownToSave(window)

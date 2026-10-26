@@ -59,7 +59,7 @@ fun main() = application {
     }
 
     fun open(parent: Frame?) {
-        chooseMarkdownToOpen(parent)?.let { files.open(store, it) }
+        files.requestOpen(store) { chooseMarkdownToOpen(parent) }
     }
 
     fun save(parent: Frame?) {

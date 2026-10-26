@@ -1,11 +1,24 @@
 package com.skaldoria.cv
 
 import com.skaldoria.core.io.AtomicFileWriter
+import com.skaldoria.shared.ui.util.SwingUnsavedChangesPrompt
+import com.skaldoria.shared.ui.util.UnsavedChangesPrompt
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 
-class CvFileController {
+class CvFileController(
+    private val unsavedChanges: UnsavedChangesPrompt = SwingUnsavedChangesPrompt
+) {
+    /**
+     * The Open command: asks before discarding unsaved edits, then lets the user pick a file.
+     * Without the question, opening replaced the CV and the recovery snapshot was cleared with it.
+     */
+    fun requestOpen(store: CvStore, chooseFile: () -> File?) {
+        if (store.state.isDirty && !unsavedChanges.confirmDiscard()) return
+        chooseFile()?.let { open(store, it) }
+    }
+
     fun open(store: CvStore, file: File) {
         runCatching { Files.readString(file.toPath(), StandardCharsets.UTF_8) }
             .onSuccess { store.dispatch(CvEvent.DocumentOpened(file, it)) }

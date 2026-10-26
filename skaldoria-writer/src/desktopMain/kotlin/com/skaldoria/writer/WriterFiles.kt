@@ -1,6 +1,8 @@
 package com.skaldoria.writer
 
 import com.skaldoria.core.io.AtomicFileWriter
+import com.skaldoria.shared.ui.util.SwingUnsavedChangesPrompt
+import com.skaldoria.shared.ui.util.UnsavedChangesPrompt
 import java.io.File
 
 interface WriterDocumentStore {
@@ -23,8 +25,19 @@ object LocalWriterDocumentStore : WriterDocumentStore {
 
 /** Coordinates recoverable file operations and reports failures through [WriterState]. */
 class WriterFileController(
-    private val store: WriterDocumentStore = LocalWriterDocumentStore
+    private val store: WriterDocumentStore = LocalWriterDocumentStore,
+    private val unsavedChanges: UnsavedChangesPrompt = SwingUnsavedChangesPrompt
 ) {
+    /**
+     * The Open command: asks before discarding unsaved edits, then lets the user pick a file.
+     * Declining either step leaves the current document untouched.
+     */
+    fun requestOpen(state: WriterState, chooseFile: () -> File?): Boolean {
+        if (state.isDirty && !unsavedChanges.confirmDiscard()) return false
+        val file = chooseFile() ?: return false
+        return open(state, file)
+    }
+
     fun open(state: WriterState, file: File): Boolean = runCatching {
         state.load(file, store.read(file))
     }.onFailure { error ->
