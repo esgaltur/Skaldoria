@@ -39,6 +39,7 @@ internal class SectionContext {
     // ---- accumulators for line-spanning blocks ----
 
     private var listItems = mutableListOf<String>()
+    private var listIsOrdered = false
     private var quoteLines = mutableListOf<String>()
     private var tableLines = mutableListOf<String>()
     private var mathLines = mutableListOf<String>()
@@ -78,7 +79,15 @@ internal class SectionContext {
 
     // ---- adding to a block ----
 
-    fun addListItem(item: String) = listItems.add(item)
+    /**
+     * Adds [item] to the open list, or starts a new list when the item's kind differs: `1.` after
+     * `-` is a second list, not a continuation of the first.
+     */
+    fun addListItem(item: ListItemInfo) {
+        if (listItems.isNotEmpty() && item.isOrdered != listIsOrdered) flushList()
+        listIsOrdered = item.isOrdered
+        listItems.add(item.text)
+    }
 
     fun addQuoteLine(line: String) = quoteLines.add(line)
 
@@ -163,7 +172,7 @@ internal class SectionContext {
 
     fun flushList() {
         if (listItems.isEmpty()) return
-        elements.add(SlideElement.BulletList(listItems.toList()))
+        elements.add(SlideElement.BulletList(listItems.toList(), isOrdered = listIsOrdered))
         listItems = mutableListOf()
     }
 

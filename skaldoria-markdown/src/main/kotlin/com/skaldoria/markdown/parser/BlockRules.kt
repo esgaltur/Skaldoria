@@ -281,7 +281,7 @@ internal object ListRule : BlockRule {
         // A list item closes a quote or table, but never the list it continues.
         context.flushQuote()
         context.flushTable()
-        ListRules.listItem(line)?.let { context.addListItem(it.text) }
+        ListRules.listItem(line)?.let(context::addListItem)
     }
 
     override val flushesPendingBlocks get() = false
