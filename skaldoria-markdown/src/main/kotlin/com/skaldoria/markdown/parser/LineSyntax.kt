@@ -15,8 +15,15 @@ package com.skaldoria.markdown.parser
  * differ, so the interface would buy polymorphism nobody uses.
  */
 
-/** An ATX heading: `#` through `######`, its level, and its text. */
-data class HeadingInfo(val level: Int, val text: String)
+/**
+ * An ATX heading: `#` through `######`, its level, its text, and where that text begins.
+ *
+ * [textStart] is an offset into the line exactly as handed to [HeadingRules.heading], leading
+ * whitespace included. It exists so that a caller needing to *locate* the heading in its source
+ * does not have to search the line for [text] and risk matching an earlier coincidence — the rule
+ * that recognised the heading is the thing that knows where its text starts.
+ */
+data class HeadingInfo(val level: Int, val text: String, val textStart: Int)
 
 /** A CommonMark list item and the text following its marker. */
 data class ListItemInfo(val text: String, val isOrdered: Boolean)
@@ -35,7 +42,15 @@ object HeadingRules {
         if (text.firstOrNull() != '#') return null
 
         val match = ATX.find(text) ?: return null
-        return HeadingInfo(level = match.groupValues[1].length, text = match.groupValues[2].trim())
+        val body = match.groups[2] ?: return null
+        // `text` is `line` with its indent removed, so the regex offsets are shifted by exactly
+        // that much. `\s+` is greedy, so `body` already begins at the first non-space character.
+        val indent = line.length - text.length
+        return HeadingInfo(
+            level = match.groupValues[1].length,
+            text = body.value.trim(),
+            textStart = indent + body.range.first
+        )
     }
 }
 

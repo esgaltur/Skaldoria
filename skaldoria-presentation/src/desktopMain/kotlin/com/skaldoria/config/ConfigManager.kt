@@ -1,5 +1,6 @@
 package com.skaldoria.config
 
+import com.skaldoria.core.io.AtomicFileWriter
 import com.skaldoria.core.json.Json
 import java.io.File
 
@@ -111,29 +112,16 @@ object ConfigManager {
      * disk mid-write cannot leave a truncated config behind. `writeText` overwrote in
      * place, which meant an interrupted save lost every recent project.
      *
-     * Falls back to a direct write when the filesystem refuses an atomic move (some
-     * network shares), since a best-effort save still beats no save.
+     * The mechanism is [AtomicFileWriter], shared with the CV, canvas and writer documents.
+     * The local copy this replaced named its temporary `<file>.tmp` and did not remove it on a
+     * failed move, so a filesystem that refused both moves left the directory holding a stale
+     * `config.json.tmp` that nothing would ever clean up.
      */
     private fun writeAtomically(target: File, content: String) {
         // The root is created here rather than when `rootDir` is assigned, so pointing the
         // app or a test at a directory never has a filesystem side effect on its own.
         ensureRootDir()
-        val temp = File(target.parentFile, "${target.name}.tmp")
-        temp.writeText(content, Charsets.UTF_8)
-        try {
-            java.nio.file.Files.move(
-                temp.toPath(),
-                target.toPath(),
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                java.nio.file.StandardCopyOption.ATOMIC_MOVE
-            )
-        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
-            java.nio.file.Files.move(
-                temp.toPath(),
-                target.toPath(),
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING
-            )
-        }
+        AtomicFileWriter.write(target, content)
     }
 
     @Synchronized

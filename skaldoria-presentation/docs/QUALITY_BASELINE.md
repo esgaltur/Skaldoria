@@ -78,19 +78,23 @@ Entries without a **Rationale** are self-evident and need none.
 | COR-5 | Parsing | Heading markers never reach rendered text | `CharacterizationTest` |
 | COR-6 | State | Audience question identifiers are collision-free | `AudienceSessionTest` |
 | COR-7 | Projects | Manifest values are JSON-escaped | `DeckProjectManagerTest` |
-| COR-8 | Config | Configuration writes are atomic | — |
+| COR-8 | Config | Configuration writes are atomic | `AtomicFileWriterTest` |
 | COR-9 | Projects | Slide files sort in natural order | `DeckProjectManagerTest` |
 | COR-10 | Rendering | Images are resolved, loaded and drawn | `ImageResolverTest` |
 | COR-11 | Config | Persistence has one injection point; the suite never writes to the real home | `ConfigStorageLocationTest` |
 | COR-12 | Companion | JSON string encoding escapes the whole C0 range | `JsonEscapingTest` |
 | COR-13 | Search | Slide search covers every `SlideElement` variant | `SlideSearchTest` |
 | COR-14 | Config | A test's `PresentationState` is disposed before the next test runs | `PresentationStateDisposalTest` |
+| COR-15 | Canvas | A `.canvas` file that does not parse is refused, never adopted as an empty document | `CanvasSerializerTest`, `CanvasDocumentControllerTest` |
+| COR-16 | Editing | A block's source position comes from the parser, never from re-scanning | `HeadingRulesTest`, `WriterStateTest` |
+| COR-17 | Documents | Every document is published atomically, never written in place | `AtomicFileWriterTest`, `WriterStateTest` |
 | EXP-1 | Export | Exported colours match the source theme | `CharacterizationTest` |
 | EXP-2 | Export | Exported HTML cannot be broken out of by content | `CharacterizationTest` |
 | EXP-3 | Export | Every slide element reaches the image export | — |
 | EXP-4 | Companion | `Content-Length` is interpreted as bytes | `RemoteCompanionServerTest` |
 | EXP-5 | Export | Subprocess output is drained | — |
 | EXP-6 | Export | Archive streams close on failure | — |
+| EXP-7 | Export | A headless browser that outlives its timeout is terminated | — |
 | PRF-1 | Concurrency | State mutated off the UI thread is applied in a snapshot | — |
 | PRF-2 | Performance | Autosave is debounced | — |
 | PRF-3 | Performance | Search results are cached | `EditorFindAndReplaceTest` |
@@ -726,6 +730,120 @@ declaration instead of being restated at each site.
 **Guard.** `PresentationStateDisposalTest` — scans the test sources and fails on any direct
 construction outside `PresentationStateTestBase`; a second case asserts the scan actually reaches
 the sources, so a moved source set cannot make it pass vacuously.
+
+---
+
+### COR-15 — An unreadable canvas is refused, not opened empty
+
+**Invariant.** `CanvasSerializer.fromJson` either returns the document the file describes or throws
+`CanvasFormatException`. It never answers a malformed file with a default document. Parsing is
+delegated to `com.skaldoria.core.json.Json`; `:skaldoria-canvas` does not carry a second reader.
+
+**Rationale — this was silent, permanent data loss.** `fromJson` returned `CanvasDocument()` for any
+input whose root was not an object, and its hand-rolled tokenizer accepted most inputs that *were*
+malformed. `CanvasDocumentController.open` therefore took the empty document as a success, called
+`loadDocument(it, source.absolutePath)`, and **adopted the path as the save target**. The user saw an
+empty canvas, drew one node, pressed Ctrl+S, and the original was gone. `CanvasFileDialogs.showFailure`
+existed the whole time and was unreachable for the most likely failure there is.
+
+The reader typed a value by what it looked like rather than by the grammar — `token.toDoubleOrNull() ?: token`,
+so a bare `abc` became the string `"abc"` and an unterminated string became a string *containing* its
+opening quote. It also accepted trailing content and a missing `:`. The repository already held a
+grammar-driven reader written to end exactly this class of defect (COR-12), so the fix was to reuse it,
+not to repair the copy; `Json` moved down into `:skaldoria-markdown`, the only Compose-free module both
+applications already depend on, keeping its package so no import changed.
+
+**Why the existing tests could not see it.** `CanvasSerializerTest` round-tripped the writer's own
+output. A reader can be arbitrarily wrong about malformed input and still round-trip well-formed input
+perfectly — the same shape this document records for OVF-1 and AUT-03: *the guard has to exercise the
+state the user is actually in.*
+
+**What is deliberately still tolerated.** An unrecognised **enum name** falls back (`shape: "Trapezoid"`
+→ `Card`) rather than rejecting the file, because that is forward compatibility with a document written
+by a newer build, and rejecting it would lose every other property of the node. A **grammar** violation
+is the opposite case and is refused. The writer also substitutes for non-finite floats, since JSON has
+no `NaN`/`Infinity` and a strict reader would otherwise refuse a file this application had just written.
+
+**Guard.** `CanvasSerializerTest` covers the grammar cases — stray token, truncation, trailing content,
+unterminated string, missing colon, non-object root, missing `id` — and the tolerated cases.
+`CanvasDocumentControllerTest` drives a corrupt file through the real `AtomicCanvasDocumentStorage` and
+asserts `currentFilePath` stays null, because adopting the path is the step that makes the loss
+unrecoverable; a test that only counted nodes would pass with the overwrite intact.
+
+---
+
+### COR-16 — A block's source position comes from the parser
+
+**Invariant.** Anything that needs to *locate* a parsed block in its source reads the position the
+parser recorded. Nothing re-scans the text for the block's own syntax to find it again.
+
+**Rationale.** The writer's outline navigated by re-scanning: for entry *n* it walked the source
+counting lines that `HeadingRules` matched. `DocumentParser` consumes a fenced code block whole and
+never offers its lines to the heading rule, so a `# comment` inside ```` ```python ```` is not a
+heading in the document — but *was* one to the re-scan. The two counts diverged at the first fence,
+and every outline entry after it selected the wrong text. A deck of any size that contains one code
+block with a comment in it had a broken outline for its entire shipped life.
+
+This is COR-1 (`Slide boundaries come from the parser`) in a second module, and the same shape as
+AUT-17's three-way disagreement about tables: **when two things decide what the grammar means, they
+will disagree, and the one the user sees is usually the wrong one.**
+
+`HeadingRules.heading` now returns `textStart` alongside `level` and `text`, so the rule that
+recognises a heading is also the thing that says where its text begins; `DocumentParser` adds the
+line offset and stores it on the `Heading` node. The offset is clamped at the point of use, because
+the parsed document trails the text field by a keystroke and a stale offset must move the caret to a
+defensible place rather than throw.
+
+**Guard.** `HeadingRulesTest` pins `textStart` against indented headings, extra spacing, and lines
+where a naive `indexOf` would find an earlier coincidence. `WriterStateTest` navigates a document
+whose code fence contains two heading-shaped comments and asserts the caret lands on the real
+heading; a third case drives a deliberately stale document to prove the clamp.
+
+---
+
+### COR-17 — Documents are published, never written in place
+
+**Invariant.** Every user document this project writes — deck, canvas, CV, writer file, config,
+recovery snapshot — goes through `AtomicFileWriter`: a temporary sibling, then one move onto the
+target. No path calls `writeText` on a file the user would miss.
+
+**Rationale.** `File.writeText` truncates first and writes second. Anything that interrupts it
+between those two moments — a crash, a full disk, a killed process — leaves a truncated or empty
+document *and* the original is already gone. For files people spend hours on, that is the worst
+failure this application can have, and avoiding it costs one move.
+
+Three modules had reached that conclusion independently and written their own copy (`CvFiles`,
+`AtomicCanvasDocumentStorage`, `ConfigManager`). The writer had not, and saved with `writeText`.
+That is the argument for sharing it: not that three copies are untidy, but that **the fourth module
+did not get the guarantee at all**, because a convention with no callable implementation is not a
+convention. The copies also differed — the config one named its temporary `<file>.tmp` and left it
+behind when a move failed, so a filesystem refusing atomic moves accumulated stale `.tmp` files
+nothing would clean up.
+
+**Guard.** `AtomicFileWriterTest` covers the publish, the replace, the parent-directory creation,
+the temporary cleanup on both paths, and the case that matters most: a failed write leaves the
+previous content intact. A concurrency case asserts the UUID in the temporary name actually
+separates two writers aimed at one target. `WriterStateTest` asserts the writer's own save path
+goes through it.
+
+---
+
+### EXP-7 — A headless browser that outlives its timeout is terminated
+
+**Invariant.** The Chromium/Edge process `exportPdf` starts is never left running. If it has not
+finished when the timeout expires, it is destroyed before the fallback path runs.
+
+**Rationale.** `process.waitFor(15, SECONDS)` returns `false` on timeout and the code moved straight
+to the HTML fallback, leaving the browser alive. Two consequences, both real: the orphan kept
+running for the rest of the session — once per timed-out export — and it was **still writing
+`targetPdf`** while the fallback wrote its HTML beside it, so the user could end up with a
+half-written PDF that looks like a successful export sitting next to the real output.
+
+Termination is `destroy()` first, `destroyForcibly()` only after a short grace period, so Chromium
+gets the chance to finish and close the file it has open rather than being killed mid-write.
+
+**Guard.** None automated — starting a real browser in the suite is exactly the dependency
+`PLT-08` exists to keep out of it. The `finally` is small and the reasoning is here instead.
 
 ---
 

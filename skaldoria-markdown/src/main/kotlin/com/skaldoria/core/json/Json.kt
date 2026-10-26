@@ -44,9 +44,20 @@ object Json {
     fun escape(value: String): String = buildString(value.length) { appendEscaped(value) }
 
     /** Parses a JSON object without accepting trailing non-whitespace content. */
-    fun parseObject(source: String): ObjectValue? = runCatching {
+    fun parseObject(source: String): ObjectValue? = runCatching { readObject(source) }.getOrNull()
+
+    /**
+     * Parses a JSON object, propagating the grammar violation that rejected [source].
+     *
+     * [parseObject] answers "is this the shape I expected?", and `null` is a complete answer for
+     * the companion server and the config file: both fall back to a default and carry on. A
+     * document the *user* chose to open is a different case — the reason has to survive as far as
+     * the dialog, because "opened, and empty" is indistinguishable from "this file is not a canvas"
+     * right up until the next save overwrites it.
+     */
+    fun readObject(source: String): ObjectValue =
         Parser(source).parse() as? ObjectValue
-    }.getOrNull()
+            ?: throw IllegalArgumentException("Expected a JSON object at the document root")
 
     private fun StringBuilder.appendEscaped(value: String) {
         for (char in value) {

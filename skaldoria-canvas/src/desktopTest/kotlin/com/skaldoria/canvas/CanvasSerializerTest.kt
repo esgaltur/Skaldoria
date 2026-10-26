@@ -1,10 +1,13 @@
 package com.skaldoria.canvas
 
+import com.skaldoria.canvas.io.CanvasFormatException
 import com.skaldoria.canvas.io.CanvasSerializer
 import com.skaldoria.canvas.model.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class CanvasSerializerTest {
 
@@ -87,5 +90,122 @@ class CanvasSerializerTest {
         assertEquals("Untitled Canvas", parsed.title)
         assertEquals(0, parsed.nodes.size)
         assertEquals(0, parsed.edges.size)
+    }
+
+    // --- Malformed input is rejected, never silently reinterpreted -------------------------
+    //
+    // The previous reader typed a token by what it looked like, so every case below parsed to
+    // *something* and returned a document. The round-trip tests above could not see any of it,
+    // because they only ever fed the reader the writer's own output.
+
+    @Test
+    fun `a stray token inside an object is rejected`() {
+        // The exact corruption found in Ingestion_System_Design.canvas.
+        assertRejected("""{"version": 1, "nodes": [{"id": "a", "zIndex": 2,abc}]}""")
+    }
+
+    @Test
+    fun `a truncated document is rejected`() {
+        val valid = CanvasSerializer.toJson(documentWithOneNode())
+        assertRejected(valid.substring(0, valid.length / 2))
+    }
+
+    @Test
+    fun `trailing content after the document is rejected`() {
+        assertRejected(CanvasSerializer.toJson(documentWithOneNode()) + "garbage")
+    }
+
+    @Test
+    fun `an unterminated string is rejected`() {
+        assertRejected("""{"title": "never closed}""")
+    }
+
+    @Test
+    fun `a missing colon is rejected`() {
+        assertRejected("""{"version" 1}""")
+    }
+
+    @Test
+    fun `a non-object root is rejected`() {
+        assertRejected("[]")
+        assertRejected("\"just a string\"")
+        assertRejected("")
+    }
+
+    @Test
+    fun `a node without an id is rejected rather than dropped`() {
+        val failure = assertFailsWith<CanvasFormatException> {
+            CanvasSerializer.fromJson("""{"nodes": [{"x": 1, "y": 2}]}""")
+        }
+        assertTrue(failure.message!!.contains("nodes[0]"), "message should locate the entry: ${failure.message}")
+    }
+
+    @Test
+    fun `a collection of the wrong shape is rejected rather than read as empty`() {
+        assertRejected("""{"nodes": "oops"}""")
+        assertRejected("""{"edges": 7}""")
+        assertRejected("""{"nodes": [1, 2]}""")
+        assertRejected("""{"viewport": "oops"}""")
+    }
+
+    // --- Tolerated, deliberately ------------------------------------------------------------
+
+    @Test
+    fun `an absent or null collection is an empty canvas, not a corrupt one`() {
+        assertEquals(0, CanvasSerializer.fromJson("""{"title": "Empty"}""").nodes.size)
+        assertEquals(0, CanvasSerializer.fromJson("""{"nodes": null, "edges": null}""").edges.size)
+        assertEquals(1f, CanvasSerializer.fromJson("""{"viewport": null}""").viewport.zoom)
+    }
+
+    @Test
+    fun `an enum name from a newer build falls back without losing the node`() {
+        val parsed = CanvasSerializer.fromJson(
+            """{"nodes": [{"id": "a", "x": 5, "y": 6, "shape": "Trapezoid", "color": "Chartreuse"}]}"""
+        )
+
+        val node = parsed.nodes.single()
+        assertEquals(NodeShape.Card, node.shape)
+        assertEquals(NodeColor.Default, node.color)
+        // The point of falling back: everything else about the node survives.
+        assertEquals("a", node.id)
+        assertEquals(5f, node.x)
+        assertEquals(6f, node.y)
+    }
+
+    @Test
+    fun `an integer written with a decimal point still reads`() {
+        val parsed = CanvasSerializer.fromJson("""{"nodes": [{"id": "a", "zIndex": 3.0}]}""")
+        assertEquals(3, parsed.nodes.single().zIndex)
+    }
+
+    @Test
+    fun `a non-finite viewport value round-trips instead of writing unreadable JSON`() {
+        // JSON has no NaN/Infinity, so the writer substitutes; the test that matters is that
+        // whatever it writes can be read back, because the reader is now strict.
+        val document = CanvasDocument(
+            viewport = CanvasViewport(panX = Float.NaN, panY = 0f, zoom = Float.POSITIVE_INFINITY)
+        )
+
+        val parsed = CanvasSerializer.fromJson(CanvasSerializer.toJson(document))
+        assertEquals(0f, parsed.viewport.panX)
+        assertEquals(1f, parsed.viewport.zoom)
+    }
+
+    @Test
+    fun `a title containing quotes and control characters round-trips`() {
+        val document = CanvasDocument(title = "a \"quoted\"  title\nwith a newline")
+        val parsed = CanvasSerializer.fromJson(CanvasSerializer.toJson(document))
+        assertEquals(document.title, parsed.title)
+    }
+
+    private fun documentWithOneNode() = CanvasDocument(
+        title = "One",
+        nodes = listOf(CanvasNode(id = "node-1", x = 1f, y = 2f))
+    )
+
+    private fun assertRejected(json: String) {
+        assertFailsWith<CanvasFormatException>("should have rejected: $json") {
+            CanvasSerializer.fromJson(json)
+        }
     }
 }

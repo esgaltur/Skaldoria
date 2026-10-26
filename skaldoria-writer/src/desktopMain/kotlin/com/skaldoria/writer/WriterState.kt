@@ -5,7 +5,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
-import com.skaldoria.markdown.parser.HeadingRules
 import com.skaldoria.shared.ui.formatting.MarkdownFormatter
 import com.skaldoria.shared.ui.theme.Themes
 import com.skaldoria.writer.parser.Document
@@ -132,28 +131,26 @@ class WriterState(
         }
     }
 
+    /**
+     * Selects the source text of the outline entry at [headingIndex].
+     *
+     * The offset comes from the parsed document, not from re-scanning [text] for `#` lines. The
+     * re-scan counted every heading-shaped line, including the ones the parser had already
+     * decided were *not* headings — a `# comment` inside a fenced code block, most commonly — so
+     * the outline and the caret disagreed from the first fence onwards and every entry after it
+     * jumped to the wrong place.
+     *
+     * The parsed document can lag [text] by a keystroke (see [acceptParsedDocument]), so the
+     * range is clamped: a stale offset must move the caret to a defensible place, never throw.
+     */
     fun navigateToHeading(headingIndex: Int): Boolean {
-        if (headingIndex !in headings.indices) return false
-        var sourceOffset = 0
-        var parsedHeadingIndex = 0
+        val heading = headings.getOrNull(headingIndex) ?: return false
 
-        text.split('\n').forEach { line ->
-            val heading = HeadingRules.heading(line)
-            if (heading != null) {
-                if (parsedHeadingIndex == headingIndex) {
-                    val contentStartInLine = line.indexOf(heading.text).coerceAtLeast(0)
-                    val selectionStart = sourceOffset + contentStartInLine
-                    textValue = textValue.copy(
-                        selection = TextRange(selectionStart, selectionStart + heading.text.length)
-                    )
-                    viewMode = ViewMode.Edit
-                    return true
-                }
-                parsedHeadingIndex++
-            }
-            sourceOffset += line.length + 1
-        }
-        return false
+        val start = heading.textStart.coerceIn(0, text.length)
+        val end = (start + heading.text.length).coerceAtMost(text.length)
+        textValue = textValue.copy(selection = TextRange(start, end))
+        viewMode = ViewMode.Edit
+        return true
     }
 
     companion object {

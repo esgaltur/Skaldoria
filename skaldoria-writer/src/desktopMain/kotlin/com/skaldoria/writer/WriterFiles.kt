@@ -1,5 +1,6 @@
 package com.skaldoria.writer
 
+import com.skaldoria.core.io.AtomicFileWriter
 import java.io.File
 
 interface WriterDocumentStore {
@@ -9,7 +10,15 @@ interface WriterDocumentStore {
 
 object LocalWriterDocumentStore : WriterDocumentStore {
     override fun read(file: File): String = file.readText(Charsets.UTF_8)
-    override fun write(file: File, content: String) = file.writeText(content, Charsets.UTF_8)
+
+    /**
+     * Published through [AtomicFileWriter], as every other Skaldoria document is.
+     *
+     * This used to be `file.writeText`, which truncates the target before writing: a crash or a
+     * full disk mid-save left the document empty, with the original already gone. The CV, canvas
+     * and configuration paths all guarded against that; the writer was the one that did not.
+     */
+    override fun write(file: File, content: String) = AtomicFileWriter.write(file, content)
 }
 
 /** Coordinates recoverable file operations and reports failures through [WriterState]. */

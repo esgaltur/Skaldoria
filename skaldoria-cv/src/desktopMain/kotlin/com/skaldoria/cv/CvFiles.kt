@@ -1,11 +1,9 @@
 package com.skaldoria.cv
 
+import com.skaldoria.core.io.AtomicFileWriter
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
-import java.nio.file.StandardCopyOption
-import java.util.UUID
 
 class CvFileController {
     fun open(store: CvStore, file: File) {
@@ -24,28 +22,10 @@ class CvFileController {
 /**
  * Writes through a temporary sibling and publishes with one move — CV-NFR-040.
  *
- * Top-level rather than a member because the recovery store (CV-FR-026) needs the same guarantee
- * for the same reason: a snapshot half-written when the process dies is worse than no snapshot,
- * since it would offer to restore a truncated document over a whole one.
+ * Kept as a named function because CV-NFR-040 is stated in terms of it and the recovery store
+ * (CV-FR-026) needs the same guarantee for the same reason: a snapshot half-written when the
+ * process dies is worse than no snapshot, since it would offer to restore a truncated document
+ * over a whole one. The mechanism itself is [AtomicFileWriter], shared with every other Skaldoria
+ * document so there is one implementation of the guarantee rather than one per module.
  */
-internal fun writeAtomically(file: File, content: String) {
-    val target = file.toPath().toAbsolutePath()
-    val parent = target.parent ?: error("A destination directory is required")
-    Files.createDirectories(parent)
-    val temporary = parent.resolve(".${target.fileName}.${UUID.randomUUID()}.tmp")
-    try {
-        Files.writeString(temporary, content, StandardCharsets.UTF_8)
-        try {
-            Files.move(
-                temporary,
-                target,
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING)
-        }
-    } finally {
-        Files.deleteIfExists(temporary)
-    }
-}
+internal fun writeAtomically(file: File, content: String) = AtomicFileWriter.write(file, content)

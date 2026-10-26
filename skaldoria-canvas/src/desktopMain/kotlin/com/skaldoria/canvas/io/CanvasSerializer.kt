@@ -1,9 +1,27 @@
 package com.skaldoria.canvas.io
 
 import com.skaldoria.canvas.model.*
+import com.skaldoria.core.json.Json
 
 /**
- * Fast, dependency-free JSON serializer and parser for Skaldoria Canvas `.canvas` documents.
+ * Raised when a `.canvas` file is not a canvas document, naming what was violated.
+ *
+ * This type exists because its absence was a data-loss defect. `fromJson` used to answer every
+ * unreadable file with an empty [CanvasDocument]; `CanvasDocumentController.open` treated that as
+ * a success, adopted the file path, and the next save wrote the empty document over the user's
+ * work. The failure channel — `CanvasFileDialogs.showFailure` — was already built and was
+ * unreachable for the one failure most likely to happen.
+ */
+class CanvasFormatException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
+ * Reads and writes Skaldoria Canvas `.canvas` documents.
+ *
+ * Parsing is delegated to [Json], the grammar-driven reader shared with the companion server and
+ * the deck manifests. This module previously carried its own tokenizer, which typed a value by
+ * what it looked like (`token.toDoubleOrNull() ?: token`, so a bare `abc` became the string
+ * `"abc"`), accepted trailing garbage, accepted a missing `:`, and accepted an unterminated
+ * string — none of it reported. One reader, one grammar, one set of tests.
  */
 object CanvasSerializer {
 
@@ -11,28 +29,28 @@ object CanvasSerializer {
         val sb = StringBuilder()
         sb.append("{\n")
         sb.append("  \"version\": ${document.version},\n")
-        sb.append("  \"title\": \"${escapeJson(document.title)}\",\n")
-        
+        sb.append("  \"title\": ${Json.string(document.title)},\n")
+
         // Viewport
         sb.append("  \"viewport\": {\n")
-        sb.append("    \"panX\": ${document.viewport.panX},\n")
-        sb.append("    \"panY\": ${document.viewport.panY},\n")
-        sb.append("    \"zoom\": ${document.viewport.zoom}\n")
+        sb.append("    \"panX\": ${document.viewport.panX.asJsonNumber()},\n")
+        sb.append("    \"panY\": ${document.viewport.panY.asJsonNumber()},\n")
+        sb.append("    \"zoom\": ${document.viewport.zoom.asJsonNumber(fallback = 1f)}\n")
         sb.append("  },\n")
 
         // Nodes
         sb.append("  \"nodes\": [\n")
         document.nodes.forEachIndexed { index, node ->
             sb.append("    {\n")
-            sb.append("      \"id\": \"${escapeJson(node.id)}\",\n")
-            sb.append("      \"x\": ${node.x},\n")
-            sb.append("      \"y\": ${node.y},\n")
-            sb.append("      \"width\": ${node.width},\n")
-            sb.append("      \"height\": ${node.height},\n")
-            sb.append("      \"markdown\": \"${escapeJson(node.markdown)}\",\n")
-            sb.append("      \"color\": \"${node.color.name}\",\n")
+            sb.append("      \"id\": ${Json.string(node.id)},\n")
+            sb.append("      \"x\": ${node.x.asJsonNumber()},\n")
+            sb.append("      \"y\": ${node.y.asJsonNumber()},\n")
+            sb.append("      \"width\": ${node.width.asJsonNumber(fallback = CanvasNode.DEFAULT_WIDTH)},\n")
+            sb.append("      \"height\": ${node.height.asJsonNumber(fallback = CanvasNode.DEFAULT_HEIGHT)},\n")
+            sb.append("      \"markdown\": ${Json.string(node.markdown)},\n")
+            sb.append("      \"color\": ${Json.string(node.color.name)},\n")
             sb.append("      \"zIndex\": ${node.zIndex},\n")
-            sb.append("      \"shape\": \"${node.shape.name}\"\n")
+            sb.append("      \"shape\": ${Json.string(node.shape.name)}\n")
             sb.append("    }${if (index < document.nodes.size - 1) "," else ""}\n")
         }
         sb.append("  ],\n")
@@ -41,14 +59,14 @@ object CanvasSerializer {
         sb.append("  \"edges\": [\n")
         document.edges.forEachIndexed { index, edge ->
             sb.append("    {\n")
-            sb.append("      \"id\": \"${escapeJson(edge.id)}\",\n")
-            sb.append("      \"fromNodeId\": \"${escapeJson(edge.fromNodeId)}\",\n")
-            sb.append("      \"toNodeId\": \"${escapeJson(edge.toNodeId)}\",\n")
-            sb.append("      \"fromPort\": \"${edge.fromPort.name}\",\n")
-            sb.append("      \"toPort\": \"${edge.toPort.name}\",\n")
-            sb.append("      \"label\": \"${escapeJson(edge.label)}\",\n")
-            sb.append("      \"style\": \"${edge.style.name}\",\n")
-            sb.append("      \"color\": ${if (edge.color != null) "\"${edge.color.name}\"" else "null"}\n")
+            sb.append("      \"id\": ${Json.string(edge.id)},\n")
+            sb.append("      \"fromNodeId\": ${Json.string(edge.fromNodeId)},\n")
+            sb.append("      \"toNodeId\": ${Json.string(edge.toNodeId)},\n")
+            sb.append("      \"fromPort\": ${Json.string(edge.fromPort.name)},\n")
+            sb.append("      \"toPort\": ${Json.string(edge.toPort.name)},\n")
+            sb.append("      \"label\": ${Json.string(edge.label)},\n")
+            sb.append("      \"style\": ${Json.string(edge.style.name)},\n")
+            sb.append("      \"color\": ${edge.color?.let { Json.string(it.name) } ?: "null"}\n")
             sb.append("    }${if (index < document.edges.size - 1) "," else ""}\n")
         }
         sb.append("  ]\n")
@@ -56,255 +74,125 @@ object CanvasSerializer {
         return sb.toString()
     }
 
-    @Suppress("UNCHECKED_CAST")
+    /**
+     * @throws CanvasFormatException when [json] is not a well-formed canvas document. Callers are
+     * expected to surface the message: an unreadable file must never arrive as an empty canvas.
+     */
     fun fromJson(json: String): CanvasDocument {
-        val root = JsonParser.parse(json) as? JsonObject
-            ?: return CanvasDocument()
-
-        val version = (root["version"] as? Number)?.toInt() ?: 1
-        val title = root["title"] as? String ?: "Untitled Canvas"
-
-        val vpObj = root["viewport"] as? JsonObject
-        val viewport = if (vpObj != null) {
-            CanvasViewport(
-                panX = (vpObj["panX"] as? Number)?.toFloat() ?: 0f,
-                panY = (vpObj["panY"] as? Number)?.toFloat() ?: 0f,
-                zoom = (vpObj["zoom"] as? Number)?.toFloat() ?: 1f
-            )
-        } else {
-            CanvasViewport()
-        }
-
-        val nodesList = root["nodes"] as? JsonArray ?: emptyList()
-        val nodes = nodesList.mapNotNull { item ->
-            val obj = item as? JsonObject ?: return@mapNotNull null
-            CanvasNode(
-                id = obj["id"] as? String ?: return@mapNotNull null,
-                x = (obj["x"] as? Number)?.toFloat() ?: 0f,
-                y = (obj["y"] as? Number)?.toFloat() ?: 0f,
-                width = (obj["width"] as? Number)?.toFloat() ?: CanvasNode.DEFAULT_WIDTH,
-                height = (obj["height"] as? Number)?.toFloat() ?: CanvasNode.DEFAULT_HEIGHT,
-                markdown = obj["markdown"] as? String ?: "",
-                color = parseNodeColor(obj["color"] as? String),
-                zIndex = (obj["zIndex"] as? Number)?.toInt() ?: 0,
-                shape = parseNodeShape(obj["shape"] as? String)
-            )
-        }
-
-        val edgesList = root["edges"] as? JsonArray ?: emptyList()
-        val edges = edgesList.mapNotNull { item ->
-            val obj = item as? JsonObject ?: return@mapNotNull null
-            CanvasEdge(
-                id = obj["id"] as? String ?: return@mapNotNull null,
-                fromNodeId = obj["fromNodeId"] as? String ?: return@mapNotNull null,
-                toNodeId = obj["toNodeId"] as? String ?: return@mapNotNull null,
-                fromPort = parseEdgePort(obj["fromPort"] as? String),
-                toPort = parseEdgePort(obj["toPort"] as? String),
-                label = obj["label"] as? String ?: "",
-                style = parseEdgeStyle(obj["style"] as? String),
-                color = parseNodeColorOrNull(obj["color"] as? String)
+        val root = try {
+            Json.readObject(json)
+        } catch (failure: RuntimeException) {
+            throw CanvasFormatException(
+                "Not a valid canvas document: ${failure.message ?: failure.javaClass.simpleName}",
+                failure
             )
         }
 
         return CanvasDocument(
-            version = version,
-            title = title,
-            nodes = nodes,
-            edges = edges,
-            viewport = viewport
+            version = root.int("version", fallback = 1),
+            title = root.string("title") ?: "Untitled Canvas",
+            nodes = root.entries("nodes").mapIndexed(::readNode),
+            edges = root.entries("edges").mapIndexed(::readEdge),
+            viewport = readViewport(root.optionalObject("viewport"))
         )
     }
 
-    private fun parseNodeShape(name: String?): NodeShape =
-        try {
-            if (name != null) NodeShape.valueOf(name) else NodeShape.Card
-        } catch (_: Exception) {
-            NodeShape.Card
+    private fun readViewport(obj: Json.ObjectValue?): CanvasViewport =
+        if (obj == null) {
+            CanvasViewport()
+        } else {
+            CanvasViewport(
+                panX = obj.float("panX", fallback = 0f),
+                panY = obj.float("panY", fallback = 0f),
+                zoom = obj.float("zoom", fallback = 1f)
+            )
         }
 
-    private fun parseNodeColor(name: String?): NodeColor =
-        try {
-            if (name != null) NodeColor.valueOf(name) else NodeColor.Default
-        } catch (_: Exception) {
-            NodeColor.Default
-        }
+    private fun readNode(index: Int, obj: Json.ObjectValue) = CanvasNode(
+        id = obj.requireId("nodes", index),
+        x = obj.float("x", fallback = 0f),
+        y = obj.float("y", fallback = 0f),
+        width = obj.float("width", fallback = CanvasNode.DEFAULT_WIDTH),
+        height = obj.float("height", fallback = CanvasNode.DEFAULT_HEIGHT),
+        markdown = obj.string("markdown") ?: "",
+        color = obj.string("color").asEnumOr(NodeColor.Default),
+        zIndex = obj.int("zIndex", fallback = 0),
+        shape = obj.string("shape").asEnumOr(NodeShape.Card)
+    )
 
-    private fun parseNodeColorOrNull(name: String?): NodeColor? =
-        try {
-            if (name != null) NodeColor.valueOf(name) else null
-        } catch (_: Exception) {
-            null
-        }
+    private fun readEdge(index: Int, obj: Json.ObjectValue) = CanvasEdge(
+        id = obj.requireId("edges", index),
+        fromNodeId = obj.requireString("fromNodeId", "edges", index),
+        toNodeId = obj.requireString("toNodeId", "edges", index),
+        fromPort = obj.string("fromPort").asEnumOr(EdgePort.Auto),
+        toPort = obj.string("toPort").asEnumOr(EdgePort.Auto),
+        label = obj.string("label") ?: "",
+        style = obj.string("style").asEnumOr(EdgeStyle.Solid),
+        color = obj.string("color").asEnumOrNull<NodeColor>()
+    )
+}
 
-    private fun parseEdgePort(name: String?): EdgePort =
-        try {
-            if (name != null) EdgePort.valueOf(name) else EdgePort.Auto
-        } catch (_: Exception) {
-            EdgePort.Auto
-        }
+/**
+ * JSON has no `NaN` and no `Infinity` (RFC 8259 §6). A non-finite coordinate can only arrive from
+ * a degenerate gesture, and writing one produced a file the reader now correctly refuses — so the
+ * writer is where it has to stop, not the reader.
+ */
+private fun Float.asJsonNumber(fallback: Float = 0f): String =
+    if (isFinite()) toString() else fallback.toString()
 
-    private fun parseEdgeStyle(name: String?): EdgeStyle =
-        try {
-            if (name != null) EdgeStyle.valueOf(name) else EdgeStyle.Solid
-        } catch (_: Exception) {
-            EdgeStyle.Solid
-        }
+/**
+ * A number is read through `Double` rather than parsed as an `Int` directly, because a hand-edited
+ * or third-party file may legitimately write `"zIndex": 1.0`, and `"1.0".toIntOrNull()` is null.
+ */
+private fun Json.ObjectValue.int(name: String, fallback: Int): Int =
+    number(name)?.toDoubleOrNull()?.toInt() ?: fallback
 
-    private fun escapeJson(str: String): String {
-        val sb = StringBuilder()
-        for (c in str) {
-            when (c) {
-                '\"' -> sb.append("\\\"")
-                '\\' -> sb.append("\\\\")
-                '\b' -> sb.append("\\b")
-                '\u000c' -> sb.append("\\f")
-                '\n' -> sb.append("\\n")
-                '\r' -> sb.append("\\r")
-                '\t' -> sb.append("\\t")
-                else -> {
-                    if (c.code < 0x20) {
-                        sb.append(String.format("\\u%04x", c.code))
-                    } else {
-                        sb.append(c)
-                    }
-                }
-            }
-        }
-        return sb.toString()
+private fun Json.ObjectValue.float(name: String, fallback: Float): Float =
+    number(name)?.toFloatOrNull() ?: fallback
+
+/**
+ * The `nodes`/`edges` members.
+ *
+ * Absent (or `null`) means an empty collection — a canvas with no nodes is a legitimate document.
+ * Present but the wrong shape is a corrupt one, and is refused: reading `"nodes": "oops"` as zero
+ * nodes would reintroduce, in miniature, the silent emptiness this whole reader exists to prevent.
+ */
+private fun Json.ObjectValue.entries(name: String): List<Json.ObjectValue> {
+    val value = fields[name] ?: return emptyList()
+    if (value is Json.NullValue) return emptyList()
+
+    val values = (value as? Json.ArrayValue)?.values
+        ?: throw CanvasFormatException("\"$name\" must be an array")
+
+    return values.mapIndexed { index, entry ->
+        entry as? Json.ObjectValue
+            ?: throw CanvasFormatException("$name[$index] is not an object")
     }
 }
 
-typealias JsonObject = Map<String, Any?>
-typealias JsonArray = List<Any?>
+/** As [entries], for a single nested object: absent is a default, wrong shape is corrupt. */
+private fun Json.ObjectValue.optionalObject(name: String): Json.ObjectValue? {
+    val value = fields[name] ?: return null
+    if (value is Json.NullValue) return null
 
-private object JsonParser {
-    fun parse(json: String): Any? {
-        val tokens = tokenize(json)
-        var index = 0
-
-        fun parseValue(): Any? {
-            if (index >= tokens.size) return null
-            val token = tokens[index++]
-            return when {
-                token == "{" -> {
-                    val map = mutableMapOf<String, Any?>()
-                    while (index < tokens.size && tokens[index] != "}") {
-                        val keyToken = tokens[index++]
-                        val key = if (keyToken.startsWith("\"") && keyToken.endsWith("\"")) {
-                            unescapeJson(keyToken.substring(1, keyToken.length - 1))
-                        } else keyToken
-
-                        if (index < tokens.size && tokens[index] == ":") index++
-                        val value = parseValue()
-                        map[key] = value
-
-                        if (index < tokens.size && tokens[index] == ",") index++
-                    }
-                    if (index < tokens.size && tokens[index] == "}") index++
-                    map
-                }
-                token == "[" -> {
-                    val list = mutableListOf<Any?>()
-                    while (index < tokens.size && tokens[index] != "]") {
-                        val value = parseValue()
-                        list.add(value)
-                        if (index < tokens.size && tokens[index] == ",") index++
-                    }
-                    if (index < tokens.size && tokens[index] == "]") index++
-                    list
-                }
-                token.startsWith("\"") && token.endsWith("\"") -> {
-                    unescapeJson(token.substring(1, token.length - 1))
-                }
-                token == "true" -> true
-                token == "false" -> false
-                token == "null" -> null
-                else -> token.toDoubleOrNull() ?: token
-            }
-        }
-
-        return parseValue()
-    }
-
-    private fun tokenize(json: String): List<String> {
-        val tokens = mutableListOf<String>()
-        var i = 0
-        while (i < json.length) {
-            val c = json[i]
-            if (c.isWhitespace()) {
-                i++
-                continue
-            }
-            if (c == '{' || c == '}' || c == '[' || c == ']' || c == ':' || c == ',') {
-                tokens.add(c.toString())
-                i++
-                continue
-            }
-            if (c == '\"') {
-                val sb = StringBuilder("\"")
-                i++
-                var escaped = false
-                while (i < json.length) {
-                    val sc = json[i]
-                    sb.append(sc)
-                    if (escaped) {
-                        escaped = false
-                    } else if (sc == '\\') {
-                        escaped = true
-                    } else if (sc == '\"') {
-                        i++
-                        break
-                    }
-                    i++
-                }
-                tokens.add(sb.toString())
-                continue
-            }
-
-            // Primitive / Number
-            val sb = StringBuilder()
-            while (i < json.length && !json[i].isWhitespace() && json[i] !in "{}[],:") {
-                sb.append(json[i])
-                i++
-            }
-            tokens.add(sb.toString())
-        }
-        return tokens
-    }
-
-    private fun unescapeJson(str: String): String {
-        val sb = StringBuilder()
-        var i = 0
-        while (i < str.length) {
-            val c = str[i]
-            if (c == '\\' && i + 1 < str.length) {
-                when (val next = str[i + 1]) {
-                    '\"' -> { sb.append('\"'); i += 2 }
-                    '\\' -> { sb.append('\\'); i += 2 }
-                    '/' -> { sb.append('/'); i += 2 }
-                    'b' -> { sb.append('\b'); i += 2 }
-                    'f' -> { sb.append('\u000c'); i += 2 }
-                    'n' -> { sb.append('\n'); i += 2 }
-                    'r' -> { sb.append('\r'); i += 2 }
-                    't' -> { sb.append('\t'); i += 2 }
-                    'u' -> {
-                        if (i + 5 < str.length) {
-                            val hex = str.substring(i + 2, i + 6)
-                            val code = hex.toIntOrNull(16) ?: 0
-                            sb.append(code.toChar())
-                            i += 6
-                        } else {
-                            sb.append(c)
-                            i++
-                        }
-                    }
-                    else -> { sb.append(next); i += 2 }
-                }
-            } else {
-                sb.append(c)
-                i++
-            }
-        }
-        return sb.toString()
-    }
+    return value as? Json.ObjectValue
+        ?: throw CanvasFormatException("\"$name\" must be an object")
 }
+
+private fun Json.ObjectValue.requireId(collection: String, index: Int): String =
+    requireString("id", collection, index)
+
+private fun Json.ObjectValue.requireString(field: String, collection: String, index: Int): String =
+    string(field) ?: throw CanvasFormatException("$collection[$index] is missing \"$field\"")
+
+/**
+ * An unrecognised enum name is a **forward-compatibility** case, not a corrupt file: a document
+ * written by a newer Skaldoria can name a shape or colour this build has never heard of. Falling
+ * back preserves every other property of that node, where rejecting the file would lose all of
+ * them. Grammar violations are the opposite case and are rejected — see [CanvasFormatException].
+ */
+private inline fun <reified E : Enum<E>> String?.asEnumOrNull(): E? =
+    this?.let { name -> enumValues<E>().firstOrNull { it.name == name } }
+
+private inline fun <reified E : Enum<E>> String?.asEnumOr(fallback: E): E =
+    asEnumOrNull<E>() ?: fallback

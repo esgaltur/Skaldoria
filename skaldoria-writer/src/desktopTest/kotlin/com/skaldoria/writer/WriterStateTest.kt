@@ -100,6 +100,70 @@ class WriterStateTest {
         assertEquals("Current", state.headings.single().text)
     }
 
+    /**
+     * The outline used to re-scan the source for `#` lines and count them. The parser does not
+     * treat a `#` inside a fenced code block as a heading, so the two disagreed from the first
+     * fence onwards: asking for "Second heading" selected the Python comment instead.
+     */
+    @Test
+    fun outlineNavigationIgnoresHeadingLookalikesInsideCodeFences() {
+        val markdown = buildString {
+            appendLine("# First")
+            appendLine()
+            appendLine("```python")
+            appendLine("# not a heading, just a comment")
+            appendLine("# nor is this one")
+            appendLine("```")
+            appendLine()
+            append("## Second heading")
+        }
+        val state = WriterState(markdown)
+
+        assertEquals(listOf("First", "Second heading"), state.headings.map { it.text })
+        assertTrue(state.navigateToHeading(1))
+        assertEquals("Second heading", state.selectedText())
+    }
+
+    @Test
+    fun outlineNavigationSelectsIndentedAndRepeatedHeadings() {
+        val state = WriterState("# Alpha\n\nAlpha appears in prose too.\n\n   ### Alpha\n")
+
+        assertTrue(state.navigateToHeading(1))
+        assertEquals("Alpha", state.selectedText())
+        // The second Alpha, not the first: offset 33 is the indented heading's text.
+        assertTrue(state.textValue.selection.start > 30, state.textValue.selection.toString())
+    }
+
+    @Test
+    fun outlineNavigationSurvivesAStaleParsedDocument() {
+        val state = WriterState("# A heading long enough to overrun\n\nbody")
+        // The parsed document still describes the old, longer text.
+        state.updateText(TextFieldValue("#"))
+
+        assertTrue(state.navigateToHeading(0))
+        assertTrue(state.textValue.selection.end <= state.text.length)
+    }
+
+    @Test
+    fun savingPublishesThroughTheAtomicWriter() {
+        val target = File.createTempFile("writer_save_", ".md")
+        target.writeText("the original")
+        try {
+            val state = WriterState("replacement")
+
+            assertTrue(WriterFileController().save(state, target))
+            assertEquals("replacement", target.readText())
+            val leftovers = target.parentFile.listFiles().orEmpty()
+                .filter { it.name.startsWith(".${target.name}") && it.name.endsWith(".tmp") }
+            assertTrue(leftovers.isEmpty(), "temporary files left behind: ${leftovers.map { it.name }}")
+        } finally {
+            target.delete()
+        }
+    }
+
+    private fun WriterState.selectedText(): String =
+        text.substring(textValue.selection.start, textValue.selection.end)
+
     private class InMemoryWriterStore(
         val files: MutableMap<String, String> = mutableMapOf()
     ) : WriterDocumentStore {

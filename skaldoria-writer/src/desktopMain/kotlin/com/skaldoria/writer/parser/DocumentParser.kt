@@ -17,8 +17,9 @@ class DocumentParser {
 
     fun parse(markdown: String): Document {
         val lines = markdown.lines()
+        val lineStarts = lineStartOffsets(markdown, lines.size)
         val blocks = mutableListOf<BlockNode>()
-        
+
         var i = 0
         while (i < lines.size) {
             val line = lines[i]
@@ -34,7 +35,14 @@ class DocumentParser {
             // 2. Heading
             val headingInfo = HeadingRules.heading(line)
             if (headingInfo != null) {
-                blocks.add(Heading(headingInfo.level, headingInfo.text, parseInline(headingInfo.text)))
+                blocks.add(
+                    Heading(
+                        level = headingInfo.level,
+                        text = headingInfo.text,
+                        children = parseInline(headingInfo.text),
+                        textStart = lineStarts[i] + headingInfo.textStart
+                    )
+                )
                 i++
                 continue
             }
@@ -220,5 +228,24 @@ class DocumentParser {
 
         flushBuffer()
         return nodes
+    }
+
+    /**
+     * The character offset at which each line of [markdown] begins.
+     *
+     * Derived by walking the real separators rather than summing `line.length + 1`, because
+     * `lines()` strips a `\r\n` down to the text and the naive sum then drifts by one character
+     * per preceding line — on Windows, where most of this project's documents are written, that
+     * would put every heading offset past the first line in the wrong place.
+     */
+    private fun lineStartOffsets(markdown: String, lineCount: Int): IntArray {
+        val starts = IntArray(lineCount)
+        var index = 0
+        for (line in 0 until lineCount) {
+            starts[line] = index
+            val nextBreak = markdown.indexOf('\n', index)
+            index = if (nextBreak < 0) markdown.length else nextBreak + 1
+        }
+        return starts
     }
 }

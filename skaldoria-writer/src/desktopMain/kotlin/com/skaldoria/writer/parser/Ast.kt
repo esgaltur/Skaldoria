@@ -10,7 +10,19 @@ sealed class BlockNode : MarkdownNode()
 data class Document(val blocks: List<BlockNode>) : MarkdownNode()
 
 data class Paragraph(val children: List<InlineNode>) : BlockNode()
-data class Heading(val level: Int, val text: String, val children: List<InlineNode>) : BlockNode()
+/**
+ * [textStart] is the offset of [text] in the document this heading was parsed from.
+ *
+ * The outline navigates by it. It has to come from the parser, because the parser is the only
+ * thing that knows a `# ...` line inside a fenced code block is not a heading — a caller counting
+ * `#` lines itself lands on the wrong one. See `WriterState.navigateToHeading`.
+ */
+data class Heading(
+    val level: Int,
+    val text: String,
+    val children: List<InlineNode>,
+    val textStart: Int = 0
+) : BlockNode()
 data class CodeBlock(val language: String, val code: String) : BlockNode()
 data class ThematicBreak(val raw: String = "---") : BlockNode()
 data class MathBlock(val content: String) : BlockNode()
