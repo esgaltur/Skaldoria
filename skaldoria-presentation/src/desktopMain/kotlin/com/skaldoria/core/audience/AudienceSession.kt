@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.snapshots.Snapshot
 import com.skaldoria.markdown.models.AudienceQuestion
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Everything the room contributes during a talk: the question queue and the poll ballots.
@@ -53,17 +54,35 @@ class AudienceSession {
 
         // SEC-5: the queue grew without limit. Oldest entries fall off the end.
         while (_questions.size > MAX_QUESTIONS) {
-            _questions.removeAt(_questions.size - 1)
+            upvoters.remove(_questions.removeAt(_questions.size - 1).id)
         }
         return question
     }
 
-    fun upvote(questionId: String) = update(questionId) { it.copy(upvotes = it.upvotes + 1) }
+    /**
+     * SEC-5: `questionId -> voterKeys` that have already upvoted it. A bare counter let one
+     * phone push any question to the top of the queue — the same stuffing [ballots] closes
+     * for polls. Concurrent because upvotes arrive on parallel HTTP worker threads.
+     */
+    private val upvoters = ConcurrentHashMap<String, MutableSet<String>>()
+
+    /**
+     * Adds one upvote.
+     *
+     * @param voterKey stable per audience device; a repeat from the same device is ignored.
+     *   Null means a local in-app upvote from the speaker's own machine, which always counts.
+     */
+    fun upvote(questionId: String, voterKey: String? = null) {
+        if (find(questionId) == null) return
+        if (voterKey != null && !upvoters.computeIfAbsent(questionId) { ConcurrentHashMap.newKeySet() }.add(voterKey)) return
+        update(questionId) { it.copy(upvotes = it.upvotes + 1) }
+    }
 
     fun markAnswered(questionId: String) = update(questionId) { it.copy(isAnswered = true) }
 
     fun dismiss(questionId: String) {
         _questions.removeAll { it.id == questionId }
+        upvoters.remove(questionId)
     }
 
     fun find(questionId: String): AudienceQuestion? = _questions.firstOrNull { it.id == questionId }

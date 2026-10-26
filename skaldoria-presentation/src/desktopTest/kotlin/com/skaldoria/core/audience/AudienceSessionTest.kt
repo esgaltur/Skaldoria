@@ -116,6 +116,32 @@ class AudienceSessionTest {
     }
 
     @Test
+    fun `SEC-5 one device upvotes a question once`() {
+        val a = session.submit("a", "first")
+        repeat(5) { session.upvote(a.id, voterKey = "192.168.1.50") }
+        session.upvote(a.id, voterKey = "192.168.1.51")
+
+        assertEquals(2, session.questions.single().upvotes)
+    }
+
+    @Test
+    fun `a device's upvote on one question does not block it on another`() {
+        val a = session.submit("a", "first")
+        val b = session.submit("b", "second")
+        session.upvote(a.id, voterKey = "device")
+        session.upvote(b.id, voterKey = "device")
+
+        assertEquals(1, session.questions.single { it.id == a.id }.upvotes)
+        assertEquals(1, session.questions.single { it.id == b.id }.upvotes)
+    }
+
+    @Test
+    fun `an upvote on an unknown id records no voter`() {
+        session.upvote("not-yet", voterKey = "device")
+        assertTrue(session.questions.isEmpty())
+    }
+
+    @Test
     fun `marking answered flags only the target`() {
         val a = session.submit("a", "first")
         session.markAnswered(a.id)

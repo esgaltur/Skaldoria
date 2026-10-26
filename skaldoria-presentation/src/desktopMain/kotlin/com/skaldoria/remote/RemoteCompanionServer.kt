@@ -375,7 +375,7 @@ object RemoteCompanionServer {
             handleQaSubmitApi(it.output, it.params, it.deck)
         },
         Route("/api/qa/upvote", HttpMethod.POST, RouteScope.AUDIENCE) {
-            handleQaUpvoteApi(it.output, it.params, it.deck)
+            handleQaUpvoteApi(it.output, it.params, it.deck, it.clientKey)
         },
         Route("/api/parking-lot/add", HttpMethod.POST, RouteScope.AUDIENCE) {
             handleParkingLotAddApi(it.output, it.params, it.deck)
@@ -521,14 +521,23 @@ object RemoteCompanionServer {
         clientKey: String
     ) {
         try {
-            val slideIdx = (params["slideIndex"] ?: params["slide"])?.toIntOrNull() ?: deck.currentSlideIndex
+            val currentSlide = deck.currentSlideIndex
+            val slideIdx = (params["slideIndex"] ?: params["slide"])?.toIntOrNull() ?: currentSlide
             val optionIdx = (params["optionIndex"] ?: params["option"])?.toIntOrNull()
+            val poll = deck.currentSlidePoll
 
-            if (optionIdx != null && optionIdx >= 0) {
-                deck.applyFromBackgroundThread { deck.audience.recordVote(slideIdx, optionIdx, voterKey = clientKey) }
-                sendJsonResponse(output, """{"status":"ok", "votedSlide": $slideIdx, "votedOption": $optionIdx}""")
-            } else {
-                sendJsonResponse(output, """{"status":"error", "message":"Invalid option"}""", 400)
+            // A ballot is only meaningful against the poll the room can see. A slide with no
+            // poll, a slide the deck has moved past, or an option the poll does not have was
+            // previously stored as a phantom ballot in that slide's tally.
+            when {
+                poll == null || slideIdx != currentSlide ->
+                    sendJsonResponse(output, """{"status":"error", "message":"No poll is open on that slide"}""", 400)
+                optionIdx == null || optionIdx !in poll.options.indices ->
+                    sendJsonResponse(output, """{"status":"error", "message":"Invalid option"}""", 400)
+                else -> {
+                    deck.applyFromBackgroundThread { deck.audience.recordVote(slideIdx, optionIdx, voterKey = clientKey) }
+                    sendJsonResponse(output, """{"status":"ok", "votedSlide": $slideIdx, "votedOption": $optionIdx}""")
+                }
             }
         } catch (t: Throwable) {
             sendErrorResponse(output, "Poll voting failed: ${t.message}")
@@ -551,11 +560,16 @@ object RemoteCompanionServer {
         }
     }
 
-    private fun handleQaUpvoteApi(output: OutputStream, params: Map<String, String>, deck: DeckControl) {
+    private fun handleQaUpvoteApi(
+        output: OutputStream,
+        params: Map<String, String>,
+        deck: DeckControl,
+        clientKey: String
+    ) {
         try {
             val id = params["id"]
             if (!id.isNullOrBlank()) {
-                deck.applyFromBackgroundThread { deck.audience.upvote(id) }
+                deck.applyFromBackgroundThread { deck.audience.upvote(id, voterKey = clientKey) }
                 sendJsonResponse(output, """{"status":"ok"}""")
             } else {
                 sendJsonResponse(output, """{"status":"error", "message":"Missing question id"}""", 400)

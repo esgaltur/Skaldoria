@@ -11,6 +11,9 @@ junit-jupiter = "5.11.4"
 # Deliberately NOT a runtime dependency: the PDF writer is hand-rolled so the shipped
 # applications keep zero third-party runtime dependencies.
 pdfbox = "3.0.3"
+# Test-only. Drives the companion portals and the HTML export in a headless Chromium, so the
+# JavaScript the phones actually run is exercised — not just the strings the server emits.
+playwright = "1.64.0"
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
@@ -27,3 +30,4 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
 pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
+playwright = { module = "com.microsoft.playwright:playwright", version.ref = "playwright" }

@@ -62,6 +62,8 @@ kotlin {
             dependencies {
                 implementation(kotlin("test-junit5"))
                 implementation(libs.junit.jupiter)
+                implementation(libs.playwright)
+                implementation(libs.pdfbox)
                 @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
                 implementation(compose.uiTest)
             }
@@ -84,6 +86,12 @@ tasks.withType<Test>().configureEach {
 
     if (providers.gradleProperty("skipRenderTests").isPresent) {
         systemProperty("skaldoria.skipRenderTests", "true")
+    }
+
+    // Browser tests need a Chromium build, which Playwright downloads on first use. Offline
+    // machines can stand them down explicitly; they are then reported as skipped, not passed.
+    if (providers.gradleProperty("skipBrowserTests").isPresent) {
+        systemProperty("skaldoria.skipBrowserTests", "true")
     }
 }
 

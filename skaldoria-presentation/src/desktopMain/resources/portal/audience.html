@@ -26,6 +26,7 @@
         .qa-text-body { font-size: 0.95rem; color: #e2e8f0; line-height: 1.4; }
         .upvote-btn { background: #1e293b; border: 1px solid #334155; color: #38bdf8; padding: 8px 12px; border-radius: 20px; font-size: 0.9rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 4px; }
         .upvote-btn:active { background: #0284c7; color: white; }
+        .error-msg { color: #f87171; font-size: 0.85rem; font-weight: bold; margin-top: 8px; text-align: center; }
     </style>
 </head>
 <body>
@@ -39,6 +40,7 @@
         <div class="card-title">📊 Live Poll: <span id="poll-question"></span></div>
         <div id="poll-options"></div>
         <div id="poll-voted-msg" style="display:none; color:#34d399; font-size:0.85rem; font-weight:bold; margin-top:8px; text-align:center;">✓ Your vote was recorded!</div>
+        <div id="poll-error-msg" class="error-msg" style="display:none;">Your vote was not counted — please try again.</div>
     </div>
 
     <!-- Ask Question Section -->
@@ -51,6 +53,7 @@
             <textarea class="input-text" id="qa-text-input" rows="3" placeholder="Type your question for the presenter..."></textarea>
         </div>
         <button class="btn-submit" onclick="submitQuestion()">Submit Question</button>
+        <div id="qa-error-msg" class="error-msg" style="display:none;">Your question was not sent — please try again in a moment.</div>
     </div>
 
     <!-- Live Questions Feed -->
@@ -76,14 +79,26 @@
             return node;
         }
 
+        // fetch() resolves on any HTTP status, so a throttled (429) or refused (400) request
+        // must be detected from res.ok — never report it to the voter as recorded.
+        function showError(id, visible) {
+            document.getElementById(id).style.display = visible ? 'block' : 'none';
+        }
+
         async function votePoll(optIndex) {
+            let accepted = false;
             try {
-                await fetch('/api/poll/vote?slideIndex=' + currentActiveSlide + '&optionIndex=' + optIndex, { method: 'POST' });
+                const res = await fetch('/api/poll/vote?slideIndex=' + currentActiveSlide + '&optionIndex=' + optIndex, { method: 'POST' });
+                accepted = res.ok;
+            } catch(e) {}
+
+            if (accepted) {
                 lastVotedSlide = currentActiveSlide;
                 lastVotedOption = optIndex;
                 document.getElementById('poll-voted-msg').style.display = 'block';
-                pollState();
-            } catch(e) {}
+            }
+            showError('poll-error-msg', !accepted);
+            pollState();
         }
 
         async function submitQuestion() {
@@ -91,11 +106,16 @@
             const text = document.getElementById('qa-text-input').value.trim();
             if (!text) return;
 
+            let accepted = false;
             try {
-                await fetch('/api/qa/submit?author=' + encodeURIComponent(author) + '&text=' + encodeURIComponent(text), { method: 'POST' });
-                document.getElementById('qa-text-input').value = '';
-                pollState();
+                const res = await fetch('/api/qa/submit?author=' + encodeURIComponent(author) + '&text=' + encodeURIComponent(text), { method: 'POST' });
+                accepted = res.ok;
             } catch(e) {}
+
+            // Keep the question in the box when it was not accepted, so it can be resent.
+            if (accepted) document.getElementById('qa-text-input').value = '';
+            showError('qa-error-msg', !accepted);
+            pollState();
         }
 
         async function upvoteQuestion(id) {
@@ -120,6 +140,7 @@
 
                     const isVotedOnThisSlide = (lastVotedSlide === currentActiveSlide);
                     document.getElementById('poll-voted-msg').style.display = isVotedOnThisSlide ? 'block' : 'none';
+                    if (isVotedOnThisSlide) showError('poll-error-msg', false);
 
                     const optsContainer = document.getElementById('poll-options');
                     optsContainer.textContent = '';

@@ -1,5 +1,7 @@
 package com.skaldoria.export
 
+import com.skaldoria.core.media.ImageResolver
+import com.skaldoria.core.media.ImageSource
 import com.skaldoria.markdown.models.Slide
 import com.skaldoria.markdown.models.SlideElement
 import com.skaldoria.state.PresentationState
@@ -9,6 +11,7 @@ import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +32,9 @@ object DeckExporter {
 
     private const val EXPORT_WIDTH = 1920
     private const val EXPORT_HEIGHT = 1080
+
+    /** How long a timed-out browser gets to shut down cleanly before it is killed. */
+    private const val TERMINATE_GRACE_SECONDS = 3L
 
     /**
      * Direct 1-click export to a native vector PDF, via headless Chromium/Edge when one is
@@ -72,6 +78,20 @@ object DeckExporter {
         exportScope.cancel()
     }
 
+    /**
+     * Ends a headless browser that outlived its timeout, politely first.
+     *
+     * `destroy()` lets Chromium flush and close the PDF it was writing; only a process that
+     * ignores that gets `destroyForcibly()`. Killing outright risks leaving a half-written PDF
+     * in the user's output directory looking like a successful export.
+     */
+    private fun terminate(process: Process) {
+        process.destroy()
+        if (!process.waitFor(TERMINATE_GRACE_SECONDS, TimeUnit.SECONDS)) {
+            process.destroyForcibly()
+        }
+    }
+
     private fun exportPdfTo(dir: String, filename: String, state: PresentationState, onSaved: (File) -> Unit) {
         val targetPdf = File(dir, if (filename.endsWith(".pdf", ignoreCase = true)) filename else "$filename.pdf")
 
@@ -84,12 +104,13 @@ object DeckExporter {
         // 2. Attempt Headless Chromium/Edge Vector PDF Rendering
         val browserBinary = findHeadlessBrowser()
         if (browserBinary != null) {
+            var process: Process? = null
             try {
                 // EXP-5: the child writes progress to stderr. Left undrained, the pipe
                 // buffer fills, the browser blocks forever, waitFor() times out, and
                 // the code silently degrades to the HTML path — the cause of PDF
                 // export "randomly" producing HTML instead.
-                val process = ProcessBuilder(
+                process = ProcessBuilder(
                     browserBinary.absolutePath,
                     "--headless=new",
                     "--disable-gpu",
@@ -112,6 +133,12 @@ object DeckExporter {
                 }
             } catch (_: Exception) {
                 // Fallback below
+            } finally {
+                // EXP-7: a browser that did not finish inside the timeout was left running.
+                // It still holds the temp HTML and is still writing `targetPdf`, so the
+                // fallback below raced a live process over the user's output directory, and
+                // every timed-out export leaked a headless browser for the session's lifetime.
+                process?.takeIf { it.isAlive }?.let(::terminate)
             }
         }
 
@@ -410,7 +437,7 @@ object DeckExporter {
                     is SlideElement.Metric -> "<div class='metric'><span class='metric-val'>${escapeHtml(el.value)}</span><span class='metric-lbl'>${escapeHtml(el.label)}</span></div>"
                     is SlideElement.CodeBlock -> "<pre><code>${escapeHtml(el.code)}</code></pre>"
                     is SlideElement.Table -> "<table><thead><tr>" + el.headers.joinToString("") { "<th>${escapeHtml(it)}</th>" } + "</tr></thead><tbody>" + el.rows.joinToString("") { r -> "<tr>" + r.joinToString("") { "<td>${escapeHtml(it)}</td>" } + "</tr>" } + "</tbody></table>"
-                    is SlideElement.Image -> "<img src='${sanitizeUrl(el.url)}' alt='${escapeHtml(el.altText)}' />"
+                    is SlideElement.Image -> "<img src='${imageSrc(el.url, state.deckBaseDir)}' alt='${escapeHtml(el.altText)}' />"
                     // OUT-01: rendered by the application at export time and embedded, so the
                     // file needs no network. The source is kept as alt text and a <details>
                     // fallback — it is the only description a screen reader has, and the only
@@ -528,15 +555,29 @@ object DeckExporter {
             .replace("'", "&#39;")
 
     /**
-     * EXP-2: blocks `javascript:` and `data:` URLs, which would otherwise execute when the
-     * exported deck is opened. Anything not recognisably a safe URL is dropped rather than
-     * emitted, since a broken image beats script execution.
+     * The `src` for an exported image, resolved by the same [ImageResolver] the slides use.
+     *
+     * EXP-2: only `http`/`https` survive as URLs; `javascript:`, `data:` and every other
+     * scheme resolve to [ImageSource.Unsupported] and are dropped, since a broken image beats
+     * script execution.
+     *
+     * Local files are embedded (OUT-01) rather than linked. The previous scheme sniffing read
+     * the drive letter in `C:/deck/logo.png` as an unknown scheme and dropped the image, and a
+     * relative path broke as soon as the HTML was written anywhere but beside the deck —
+     * which `exportPdf` always does, into the temp directory.
      */
-    private fun sanitizeUrl(rawUrl: String): String {
-        val trimmed = rawUrl.trim()
-        val scheme = trimmed.substringBefore(':', missingDelimiterValue = "").lowercase()
-        val hasScheme = trimmed.contains(':') && scheme.isNotEmpty()
-        val safe = !hasScheme || scheme in setOf("http", "https", "file")
-        return if (safe) escapeHtml(trimmed) else ""
-    }
+    private fun imageSrc(rawUrl: String, baseDir: File?): String =
+        when (val source = ImageResolver.resolve(rawUrl, baseDir)) {
+            is ImageSource.Remote -> escapeHtml(source.url)
+            is ImageSource.LocalFile -> runCatching {
+                val mime = "image/" + when (val ext = source.file.extension.lowercase()) {
+                    "jpg" -> "jpeg"
+                    "ico" -> "x-icon"
+                    "wbmp" -> "vnd.wap.wbmp"
+                    else -> ext
+                }
+                "data:$mime;base64," + Base64.getEncoder().encodeToString(source.file.readBytes())
+            }.getOrDefault("")
+            is ImageSource.Unsupported -> ""
+        }
 }

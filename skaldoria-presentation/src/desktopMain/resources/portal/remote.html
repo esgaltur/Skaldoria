@@ -29,6 +29,7 @@
         .qa-item { background: #0a0e1a; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
         .qa-text { font-size: 0.95rem; color: #f1f5f9; font-weight: 500; }
         .qa-author { font-size: 0.75rem; color: #64748b; margin-top: 4px; }
+        .pairing-banner { display: none; margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: #450a0a; border: 1px solid #dc2626; color: #fecaca; font-size: 0.85rem; font-weight: 600; }
         .qa-votes { background: #0369a1; color: white; padding: 4px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; }
     </style>
 </head>
@@ -37,6 +38,8 @@
         <div class="logo">⚡ SKALDORIA <span style="font-size:0.7rem;color:#64748b;font-weight:600;">{{VERSION}}</span></div>
         <div class="timer-badge" id="timer">00:00</div>
     </div>
+
+    <div class="pairing-banner" id="pairing-banner">Not paired — scan the presenter QR code on the laptop to control the deck.</div>
 
     <div class="tabs">
         <button class="tab-btn active" id="tab-remote-btn" onclick="showTab('remote')">📱 Slide Remote</button>
@@ -107,16 +110,22 @@
             document.getElementById('tab-qa-btn').className = t === 'qa' ? 'tab-btn active' : 'tab-btn';
         }
 
+        // A 401 means this phone holds no valid session token (opened without the QR, or the
+        // laptop restarted the companion). Say so instead of letting every tap do nothing.
+        function reportPairing(res) {
+            document.getElementById('pairing-banner').style.display = res.status === 401 ? 'block' : 'none';
+        }
+
         async function sendAction(action) {
             try {
-                await authFetch('/api/action?action=' + encodeURIComponent(action), { method: 'POST' });
+                reportPairing(await authFetch('/api/action?action=' + encodeURIComponent(action), { method: 'POST' }));
                 pollState();
             } catch(e) {}
         }
 
         async function dismissQa(id) {
             try {
-                await authFetch('/api/qa/dismiss?id=' + encodeURIComponent(id), { method: 'POST' });
+                reportPairing(await authFetch('/api/qa/dismiss?id=' + encodeURIComponent(id), { method: 'POST' }));
                 pollState();
             } catch(e) {}
         }
