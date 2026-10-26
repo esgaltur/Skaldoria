@@ -108,20 +108,47 @@ class PdfWriter {
 
     companion object {
 
-        /** Escapes a PDF literal string, for ASCII-safe values such as URIs. */
+        /**
+         * Escapes a PDF literal string.
+         *
+         * A literal string holds bytes, and an octal escape names exactly one byte (`\000`–`\377`).
+         * Characters outside ASCII are therefore written as their UTF-8 bytes; the previous
+         * `char.code.toString(8)` gave `ř` (U+0159) the escape `\531`, a value no byte can hold,
+         * which readers truncate to an unrelated character.
+         */
         fun literal(value: String): String {
             val escaped = StringBuilder(value.length + 8)
-            for (char in value) {
-                when (char) {
-                    '(', ')', '\\' -> escaped.append('\\').append(char)
-                    '\r' -> escaped.append("\\r")
-                    '\n' -> escaped.append("\\n")
-                    else -> if (char.code in 32..126) escaped.append(char) else {
-                        escaped.append("\\").append(char.code.toString(8).padStart(3, '0'))
-                    }
+            for (byte in value.toByteArray(Charsets.UTF_8)) {
+                val code = byte.toInt() and 0xFF
+                when (code) {
+                    '('.code, ')'.code, '\\'.code -> escaped.append('\\').append(code.toChar())
+                    '\r'.code -> escaped.append("\\r")
+                    '\n'.code -> escaped.append("\\n")
+                    in 32..126 -> escaped.append(code.toChar())
+                    else -> escaped.append('\\').append(code.toString(8).padStart(3, '0'))
                 }
             }
             return "($escaped)"
+        }
+
+        /**
+         * A URI action target, which ISO 32000 §12.6.4.7 requires to be 7-bit ASCII.
+         *
+         * Characters outside printable ASCII — `ř` in a Wikipedia link, a space in a hand-typed
+         * URL — are percent-encoded from their UTF-8 bytes (RFC 3987 §3.1), which is what a
+         * browser sends for the same link. Existing `%XX` escapes pass through untouched.
+         */
+        fun uri(target: String): String {
+            val encoded = StringBuilder(target.length + 16)
+            for (byte in target.toByteArray(Charsets.UTF_8)) {
+                val code = byte.toInt() and 0xFF
+                if (code in 33..126) {
+                    encoded.append(code.toChar())
+                } else {
+                    encoded.append('%').append(code.toString(16).uppercase().padStart(2, '0'))
+                }
+            }
+            return literal(encoded.toString())
         }
 
         /**

@@ -190,6 +190,22 @@ class CvPdfConformanceTest {
     }
 
     @Test
+    fun `a link with non-ascii characters opens the right address`() {
+        val cv = "# Jiří Novák\n\n- Web: [Profil](https://cs.wikipedia.org/wiki/Jiří_Novák)\n"
+
+        withPdf(export(cv)) { document ->
+            val target = document.pages.flatMap { it.annotations }
+                .filterIsInstance<PDAnnotationLink>()
+                .mapNotNull { (it.action as? PDActionURI)?.uri }
+                .filter { "wikipedia" in it }
+                .distinct() // one annotation per text run
+                .single()
+
+            assertEquals("https://cs.wikipedia.org/wiki/Ji%C5%99%C3%AD_Nov%C3%A1k", target)
+        }
+    }
+
+    @Test
     fun `a link rectangle sits on the text it belongs to`() {
         withPdf(export(referenceCv)) { document ->
             val page = document.getPage(0)
@@ -226,6 +242,17 @@ class CvPdfConformanceTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun `characters the font lacks never extract as some other character`() {
+        // Roboto has neither symbol, so both are drawn with .notdef (glyph 0). The ToUnicode map
+        // used to record glyph 0 as whichever missing character came first, so an ATS reading
+        // the PDF saw the second symbol as a copy of the first.
+        val text = withPdf(export("# Ada\n\nBefore ☃ middle ♞ after\n")) { PDFTextStripper().getText(it) }
+
+        assertContains(text, "middle")
+        assertTrue(!Regex("middle\\s*☃").containsMatchIn(text), "♞ extracted as ☃: $text")
     }
 
     @Test

@@ -286,7 +286,7 @@ object CvPdfRenderer {
         "<< /Type /Annot /Subtype /Link /Border [0 0 0] " +
             "/Rect [${PdfWriter.number(x0)} ${PdfWriter.number(y0)} " +
             "${PdfWriter.number(x1)} ${PdfWriter.number(y1)}] " +
-            "/A << /S /URI /URI ${PdfWriter.literal(target)} >> >>"
+            "/A << /S /URI /URI ${PdfWriter.uri(target)} >> >>"
 
     private fun colorOperator(rgb: Int, stroking: Boolean): String {
         val r = ((rgb shr 16) and 0xFF) / 255.0
@@ -402,6 +402,10 @@ object CvPdfRenderer {
             )
         }
 
+        private companion object {
+            const val NOTDEF_GLYPH = 0
+        }
+
         /** `/W` in the compact `[ gid [w] gid [w] … ]` form, only for glyphs the document uses. */
         private fun widthArray(): String = usedGlyphs.keys.sorted().joinToString(" ") { glyph ->
             "$glyph [${font.advanceWidth(glyph)}]"
@@ -414,7 +418,10 @@ object CvPdfRenderer {
             append("1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n")
 
             // begincbfchar blocks are capped at 100 entries by the specification.
-            usedGlyphs.entries.chunked(100).forEach { chunk ->
+            // .notdef stands in for *every* character the font lacks, so no single code point is
+            // its meaning. Mapping it to the first one seen made each later missing character
+            // extract as a copy of that one — wrong text for an ATS, where none is honest.
+            usedGlyphs.entries.filter { it.key != NOTDEF_GLYPH }.chunked(100).forEach { chunk ->
                 append("${chunk.size} beginbfchar\n")
                 chunk.forEach { (glyph, codePoint) ->
                     val utf16 = String(Character.toChars(codePoint))
