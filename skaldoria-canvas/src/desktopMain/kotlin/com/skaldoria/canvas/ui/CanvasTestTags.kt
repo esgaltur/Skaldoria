@@ -8,5 +8,6 @@ object CanvasTestTags {
     const val PresentationProgress = "canvas-presentation-progress"
 
     fun node(nodeId: String): String = "canvas-node-$nodeId"
+    fun nodeEditor(nodeId: String): String = "canvas-node-editor-$nodeId"
     fun port(nodeId: String, portName: String): String = "canvas-port-$nodeId-${portName.lowercase()}"
 }

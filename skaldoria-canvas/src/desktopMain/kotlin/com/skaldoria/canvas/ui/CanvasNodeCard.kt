@@ -46,6 +46,41 @@ import kotlin.math.roundToInt
 private val BASE_CONTENT_PADDING = 8.dp
 
 /**
+ * The node's content box at its unscaled size, anchored top-left and allowed to exceed the
+ * zoom-sized box it sits in.
+ *
+ * A plain `size` is coerced into the parent's constraints, so below 100% zoom the content was
+ * squeezed to the zoomed box first and then scaled down again by the graphics layer — text
+ * shrank twice and the editing box came out smaller than the node.
+ */
+private fun Modifier.unscaledNodeSize(node: CanvasNode, density: androidx.compose.ui.unit.Density): Modifier =
+    wrapContentSize(Alignment.TopStart, unbounded = true)
+        .requiredSize(
+            width = with(density) { node.width.toDp() },
+            height = with(density) { node.height.toDp() }
+        )
+
+private fun Modifier.nodeOutline(
+    shape: androidx.compose.ui.graphics.Shape,
+    fill: Color,
+    border: BorderStroke,
+    isSelected: Boolean,
+    theme: PresentationTheme
+): Modifier = shadow(
+    elevation = if (isSelected) 12.dp else 4.dp,
+    shape = shape,
+    // The content clips itself to the outline. Clipping here as well cut the port handles in
+    // half and cut the editing box back down to the shape.
+    clip = false,
+    spotColor = if (isSelected) theme.primary.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.25f)
+)
+    .background(fill, shape)
+    .border(border, shape)
+
+/** The editing box laid over a shaped node while its source is being written. */
+private val EDITOR_SHAPE = RoundedCornerShape(6.dp)
+
+/**
  * Interactive spatial whiteboard card supporting rich Markdown, live code blocks,
  * LaTeX formulas, Mermaid diagrams, resizing, color customization, and edge port linking.
  */
@@ -91,13 +126,36 @@ fun CanvasNodeCard(
             close()
         }
         NodeShape.Cylinder -> GenericShape { size, _ ->
-            val ry = size.height * 0.15f
+            val ry = size.height * CYLINDER_RADIUS_FRACTION
+            // The whole lid, so its near rim shows as the top of the body…
             addOval(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, ry * 2f))
-            addRect(androidx.compose.ui.geometry.Rect(0f, ry, size.width, size.height - ry))
-            addOval(androidx.compose.ui.geometry.Rect(0f, size.height - ry * 2f, size.width, size.height))
+            // …then the sides and the front half of the base. The old
+            // outline added the body as a rectangle and the base as a full ellipse, so the border
+            // drew straight lines across the lid and the base, and the base's hidden back rim.
+            moveTo(0f, ry)
+            lineTo(0f, size.height - ry)
+            arcTo(
+                rect = androidx.compose.ui.geometry.Rect(0f, size.height - ry * 2f, size.width, size.height),
+                startAngleDegrees = 180f,
+                sweepAngleDegrees = -180f,
+                forceMoveTo = false
+            )
+            lineTo(size.width, ry)
+            // Closed along the lid's front rim — a line that is drawn anyway — rather than
+            // straight across, which the border would draw through the middle of the lid.
+            arcTo(
+                rect = androidx.compose.ui.geometry.Rect(0f, 0f, size.width, ry * 2f),
+                startAngleDegrees = 0f,
+                sweepAngleDegrees = 180f,
+                forceMoveTo = false
+            )
+            close()
         }
     }
     
+    // Shapes with nothing eaten by the outline edit inside themselves; the rest get a full box.
+    val editsInPlace = node.shape.contentInset() == NodeContentInset(0f, 0f, 0f, 0f)
+
     val cardBg = node.color.surface(theme.isDark)
     val accentColor = node.color.accent(theme.isDark)
 
@@ -123,13 +181,7 @@ fun CanvasNodeCard(
                 width = with(density) { (node.width * zoom).toDp() },
                 height = with(density) { (node.height * zoom).toDp() }
             )
-            .shadow(
-                elevation = if (isSelected) 12.dp else 4.dp,
-                shape = nodeShape,
-                spotColor = if (isSelected) theme.primary.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.25f)
-            )
-            .background(cardBg, nodeShape)
-            .border(borderStroke, nodeShape)
+            .then(if (isEditing && !editsInPlace) Modifier else Modifier.nodeOutline(nodeShape, cardBg, borderStroke, isSelected, theme))
             .testTag(CanvasTestTags.node(node.id))
             .pointerInput(node.id, zoom, isEditing, state.activeTool) {
                 if (!isEditing) {
@@ -195,10 +247,7 @@ fun CanvasNodeCard(
         // the outer box, entirely in real screen-pixel space.
         Box(
             modifier = Modifier
-                .size(
-                    width = with(density) { node.width.toDp() },
-                    height = with(density) { node.height.toDp() }
-                )
+                .unscaledNodeSize(node, density)
                 .graphicsLayer {
                     scaleX = zoom
                     scaleY = zoom
@@ -252,20 +301,47 @@ fun CanvasNodeCard(
                         ),
                     contentAlignment = if (node.shape == NodeShape.Card) Alignment.TopStart else Alignment.Center
                 ) {
-                    if (isEditing) {
+                    if (!isEditing) {
+                        CardPreviewMode(
+                            markdown = node.markdown,
+                            theme = theme
+                        )
+                    } else if (editsInPlace) {
                         CardEditMode(
                             markdown = node.markdown,
                             onMarkdownChange = { state.updateNodeMarkdown(node.id, it) },
                             theme = theme,
                             focusRequester = focusRequester
                         )
-                    } else {
-                        CardPreviewMode(
-                            markdown = node.markdown,
-                            theme = theme
-                        )
                     }
                 }
+            }
+        }
+
+        // A shape whose outline eats into its box — circle, diamond, cylinder — leaves too little
+        // room to type in: the source was confined to the inscribed rectangle and cut off after a
+        // line or two. While editing, the source gets the whole bounding box instead, unclipped,
+        // and the shape returns as soon as editing ends.
+        if (isEditing && !editsInPlace) {
+            Box(
+                modifier = Modifier
+                    .unscaledNodeSize(node, density)
+                    .graphicsLayer {
+                        scaleX = zoom
+                        scaleY = zoom
+                        transformOrigin = TransformOrigin(0f, 0f)
+                    }
+                    .background(cardBg, EDITOR_SHAPE)
+                    .border(1.5.dp, theme.primary, EDITOR_SHAPE)
+                    .testTag(CanvasTestTags.nodeEditor(node.id))
+                    .padding(BASE_CONTENT_PADDING)
+            ) {
+                CardEditMode(
+                    markdown = node.markdown,
+                    onMarkdownChange = { state.updateNodeMarkdown(node.id, it) },
+                    theme = theme,
+                    focusRequester = focusRequester
+                )
             }
         }
 
@@ -534,13 +610,13 @@ private fun RenderSlideElement(elem: SlideElement, theme: PresentationTheme) {
         }
         is SlideElement.BulletList -> {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                elem.items.forEach { item ->
+                elem.items.forEachIndexed { index, item ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.Top
                     ) {
                         Text(
-                            text = if (elem.isOrdered) "1. " else "• ",
+                            text = if (elem.isOrdered) "${index + 1}. " else "• ",
                             style = TextStyle(color = theme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         )
                         Text(
@@ -566,10 +642,18 @@ private fun RenderSlideElement(elem: SlideElement, theme: PresentationTheme) {
                     .background(theme.surfaceVariant.copy(alpha = 0.3f))
                     .padding(4.dp)
             ) {
-                Text(
-                    text = inlineMarkdown(elem.quote, theme),
-                    style = TextStyle(color = theme.textPrimary, fontSize = 11.sp)
-                )
+                Column {
+                    Text(
+                        text = inlineMarkdown(elem.quote, theme),
+                        style = TextStyle(color = theme.textPrimary, fontSize = 11.sp)
+                    )
+                    elem.author?.takeIf { it.isNotBlank() }?.let { author ->
+                        Text(
+                            text = "— $author",
+                            style = TextStyle(color = theme.textSecondary, fontSize = 10.sp)
+                        )
+                    }
+                }
             }
         }
         is SlideElement.CodeBlock -> {
@@ -596,8 +680,77 @@ private fun RenderSlideElement(elem: SlideElement, theme: PresentationTheme) {
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )
         }
-        else -> {
-            // Additional elements fallback
+        is SlideElement.Table -> CardTable(elem, theme)
+        is SlideElement.Image -> {
+            // The canvas has no image loader of its own; the card says what is there rather
+            // than silently dropping it, and the deck export renders the real image.
+            Text(
+                text = "🖼 " + (elem.caption ?: elem.altText.ifBlank { elem.url }),
+                style = TextStyle(color = theme.textSecondary, fontSize = 11.sp)
+            )
+        }
+        is SlideElement.Metric -> {
+            Column {
+                Text(
+                    text = elem.value,
+                    style = TextStyle(color = theme.primary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    text = inlineMarkdown(elem.label, theme),
+                    style = TextStyle(color = theme.textSecondary, fontSize = 11.sp)
+                )
+            }
+        }
+        is SlideElement.Poll -> {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = inlineMarkdown(elem.question, theme),
+                    style = TextStyle(color = theme.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                )
+                elem.options.forEach { option ->
+                    Text(
+                        text = "○ $option",
+                        style = TextStyle(color = theme.textPrimary, fontSize = 11.sp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardTable(table: SlideElement.Table, theme: PresentationTheme) {
+    val columns = maxOf(table.headers.size, table.rows.maxOfOrNull { it.size } ?: 0)
+    if (columns == 0) return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, theme.cardBorder.copy(alpha = 0.6f), RoundedCornerShape(3.dp))
+    ) {
+        @Composable
+        fun TableRow(cells: List<String>, header: Boolean) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (header) Modifier.background(theme.surfaceVariant.copy(alpha = 0.5f)) else Modifier)
+            ) {
+                for (column in 0 until columns) {
+                    Text(
+                        text = inlineMarkdown(cells.getOrElse(column) { "" }, theme),
+                        style = TextStyle(
+                            color = theme.textPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = if (header) FontWeight.SemiBold else FontWeight.Normal
+                        ),
+                        modifier = Modifier.weight(1f).padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+        if (table.headers.isNotEmpty()) TableRow(table.headers, header = true)
+        table.rows.forEach { row ->
+            HorizontalDivider(color = theme.cardBorder.copy(alpha = 0.4f), thickness = 1.dp)
+            TableRow(row, header = false)
         }
     }
 }
