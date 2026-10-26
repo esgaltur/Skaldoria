@@ -90,17 +90,32 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
     fun undo() {
         if (undoStack.isNotEmpty()) {
             redoStack.add(document)
-            document = undoStack.removeAt(undoStack.lastIndex)
-            isDirty = true
+            restore(undoStack.removeAt(undoStack.lastIndex))
         }
     }
 
     fun redo() {
         if (redoStack.isNotEmpty()) {
             undoStack.add(document)
-            document = redoStack.removeAt(redoStack.lastIndex)
-            isDirty = true
+            restore(redoStack.removeAt(redoStack.lastIndex))
         }
+    }
+
+    /**
+     * Applies a history snapshot to the *content* only.
+     *
+     * The viewport lives in the document but is navigation, not an edit — panning records no
+     * history. Restoring it threw the view back to wherever it was when the undone edit was made.
+     * Selection is pruned for the same reason: undoing an add left the removed card selected, so
+     * the next Delete recorded a no-op history entry and marked the document dirty.
+     */
+    private fun restore(snapshot: CanvasDocument) {
+        document = snapshot.copy(viewport = document.viewport)
+        val nodeIds = snapshot.nodes.mapTo(HashSet()) { it.id }
+        selectedNodeIds = selectedNodeIds.filterTo(HashSet()) { it in nodeIds }
+        if (snapshot.edges.none { it.id == selectedEdgeId }) selectedEdgeId = null
+        if (editingNodeId !in nodeIds) editingNodeId = null
+        isDirty = true
     }
 
     // --- Viewport Operations ---

@@ -104,7 +104,10 @@ object CanvasSerializer {
             CanvasViewport(
                 panX = obj.float("panX", fallback = 0f),
                 panY = obj.float("panY", fallback = 0f),
+                // Every gesture clamps zoom; a file must not bypass that. `"zoom": 0` divided
+                // every screen-to-canvas conversion by zero.
                 zoom = obj.float("zoom", fallback = 1f)
+                    .coerceIn(CanvasViewport.MIN_ZOOM, CanvasViewport.MAX_ZOOM)
             )
         }
 
@@ -112,8 +115,10 @@ object CanvasSerializer {
         id = obj.requireId("nodes", index),
         x = obj.float("x", fallback = 0f),
         y = obj.float("y", fallback = 0f),
-        width = obj.float("width", fallback = CanvasNode.DEFAULT_WIDTH),
-        height = obj.float("height", fallback = CanvasNode.DEFAULT_HEIGHT),
+        // A zero or negative size produced inverted bounds — a card that could be neither seen
+        // nor clicked. Small positive sizes are legitimate and kept as written.
+        width = obj.float("width", fallback = CanvasNode.DEFAULT_WIDTH).positiveOr(CanvasNode.DEFAULT_WIDTH),
+        height = obj.float("height", fallback = CanvasNode.DEFAULT_HEIGHT).positiveOr(CanvasNode.DEFAULT_HEIGHT),
         markdown = obj.string("markdown") ?: "",
         color = obj.string("color").asEnumOr(NodeColor.Default),
         zIndex = obj.int("zIndex", fallback = 0),
@@ -149,6 +154,8 @@ private fun Json.ObjectValue.int(name: String, fallback: Int): Int =
 
 private fun Json.ObjectValue.float(name: String, fallback: Float): Float =
     number(name)?.toFloatOrNull() ?: fallback
+
+private fun Float.positiveOr(fallback: Float): Float = if (this > 0f && isFinite()) this else fallback
 
 /**
  * The `nodes`/`edges` members.

@@ -49,4 +49,68 @@ class CanvasExporterTest {
         assertTrue(exportedDoc.contains("## Step 1\n\nFirst step."))
         assertTrue(exportedDoc.contains("## Step 2\n\nSecond step."))
     }
+
+    private fun ids(doc: CanvasDocument) = CanvasExporter.orderNodes(doc).map { it.id }
+
+    @Test
+    fun `a card with two parents comes after both of them`() {
+        val doc = CanvasDocument(
+            nodes = listOf(
+                CanvasNode(id = "A", x = 0f, y = 0f),
+                CanvasNode(id = "B", x = 0f, y = 400f),
+                CanvasNode(id = "C", x = 400f, y = 200f)
+            ),
+            edges = listOf(
+                CanvasEdge(id = "ac", fromNodeId = "A", toNodeId = "C"),
+                CanvasEdge(id = "bc", fromNodeId = "B", toNodeId = "C")
+            )
+        )
+
+        assertEquals(listOf("A", "B", "C"), ids(doc))
+    }
+
+    @Test
+    fun `a chain is read straight through before the next independent one`() {
+        val doc = CanvasDocument(
+            nodes = listOf(
+                CanvasNode(id = "A1", x = 0f, y = 0f),
+                CanvasNode(id = "A2", x = 0f, y = 600f),
+                CanvasNode(id = "B1", x = 400f, y = 300f)
+            ),
+            edges = listOf(CanvasEdge(id = "a", fromNodeId = "A1", toNodeId = "A2"))
+        )
+
+        assertEquals(listOf("A1", "A2", "B1"), ids(doc))
+    }
+
+    @Test
+    fun `a cycle still exports every card exactly once`() {
+        val doc = CanvasDocument(
+            nodes = listOf(
+                CanvasNode(id = "X", x = 0f, y = 0f),
+                CanvasNode(id = "Y", x = 400f, y = 0f),
+                CanvasNode(id = "Z", x = 800f, y = 0f)
+            ),
+            edges = listOf(
+                CanvasEdge(id = "xy", fromNodeId = "X", toNodeId = "Y"),
+                CanvasEdge(id = "yz", fromNodeId = "Y", toNodeId = "Z"),
+                CanvasEdge(id = "zx", fromNodeId = "Z", toNodeId = "X")
+            )
+        )
+
+        assertEquals(listOf("X", "Y", "Z"), ids(doc))
+    }
+
+    @Test
+    fun `edges to missing cards and self loops are ignored`() {
+        val doc = CanvasDocument(
+            nodes = listOf(CanvasNode(id = "A", x = 0f, y = 0f), CanvasNode(id = "B", x = 0f, y = 300f)),
+            edges = listOf(
+                CanvasEdge(id = "ghost", fromNodeId = "missing", toNodeId = "A"),
+                CanvasEdge(id = "self", fromNodeId = "B", toNodeId = "B")
+            )
+        )
+
+        assertEquals(listOf("A", "B"), ids(doc))
+    }
 }

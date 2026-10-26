@@ -59,76 +59,49 @@ object CanvasExporter {
     }
 
     /**
-     * Orders nodes for linear presentation:
-     * 1. Topologically sorts connected subgraphs using in-degree & outgoing edge flow.
-     * 2. Places disconnected nodes / independent clusters in spatial order (top-to-bottom, left-to-right).
+     * Orders nodes for linear presentation: every card after all of the cards that point at it.
+     *
+     * Kahn's algorithm over the edges. The work-list takes newly-ready children at the *front*,
+     * so a chain is read straight through before the next independent root starts, and ties are
+     * broken spatially (top-to-bottom, then left-to-right) so the order is deterministic.
+     *
+     * The previous breadth-first walk never counted incoming edges: with `A → C` and `B → C` it
+     * emitted `A, C, B`, putting C in the deck before one of the cards it depends on.
+     *
+     * A cycle has no valid order. When nothing is ready but cards remain, the spatially-first of
+     * them is taken as if it were ready, which breaks the cycle without dropping any card.
      */
     fun orderNodes(doc: CanvasDocument): List<CanvasNode> {
+        val spatially = compareBy<CanvasNode>({ it.y }, { it.x })
         val nodeMap = doc.nodes.associateBy { it.id }
-        val adjList = mutableMapOf<String, MutableList<String>>()
-        val inDegree = mutableMapOf<String, Int>()
-
-        doc.nodes.forEach {
-            adjList[it.id] = mutableListOf()
-            inDegree[it.id] = 0
-        }
+        val children = doc.nodes.associate { it.id to mutableListOf<CanvasNode>() }
+        val pendingParents = doc.nodes.associate { it.id to 0 }.toMutableMap()
 
         doc.edges.forEach { edge ->
-            if (nodeMap.containsKey(edge.fromNodeId) && nodeMap.containsKey(edge.toNodeId)) {
-                adjList[edge.fromNodeId]?.add(edge.toNodeId)
-                inDegree[edge.toNodeId] = (inDegree[edge.toNodeId] ?: 0) + 1
-            }
+            val to = nodeMap[edge.toNodeId] ?: return@forEach
+            if (edge.fromNodeId == edge.toNodeId || edge.fromNodeId !in nodeMap) return@forEach
+            children.getValue(edge.fromNodeId) += to
+            pendingParents[to.id] = pendingParents.getValue(to.id) + 1
         }
 
-        val visited = mutableSetOf<String>()
-        val result = mutableListOf<CanvasNode>()
+        val emitted = LinkedHashSet<String>()
+        val ready = ArrayDeque(doc.nodes.filter { pendingParents.getValue(it.id) == 0 }.sortedWith(spatially))
 
-        // Find root nodes (inDegree == 0) sorted spatially
-        val rootNodes = doc.nodes
-            .filter { (inDegree[it.id] ?: 0) == 0 }
-            .sortedWith(compareBy({ it.y }, { it.x }))
+        while (emitted.size < doc.nodes.size) {
+            val next = ready.removeFirstOrNull()
+                ?: doc.nodes.filter { it.id !in emitted }.minWith(spatially)
+            if (!emitted.add(next.id)) continue
 
-        // BFS / topological traversal from each root
-        fun traverseFrom(startNodeId: String) {
-            val queue = ArrayDeque<String>()
-            queue.add(startNodeId)
-            visited.add(startNodeId)
-
-            while (queue.isNotEmpty()) {
-                val currentId = queue.removeFirst()
-                val node = nodeMap[currentId]
-                if (node != null) {
-                    result.add(node)
-                }
-
-                val neighbors = (adjList[currentId] ?: emptyList())
-                    .filter { !visited.contains(it) }
-                    .sortedBy { nodeMap[it]?.x ?: 0f }
-
-                for (neighbor in neighbors) {
-                    visited.add(neighbor)
-                    queue.add(neighbor)
-                }
+            val nowReady = mutableListOf<CanvasNode>()
+            for (child in children.getValue(next.id)) {
+                if (child.id in emitted) continue
+                val remaining = pendingParents.getValue(child.id) - 1
+                pendingParents[child.id] = remaining
+                if (remaining == 0) nowReady += child
             }
+            nowReady.sortedWith(spatially).asReversed().forEach(ready::addFirst)
         }
 
-        for (root in rootNodes) {
-            if (!visited.contains(root.id)) {
-                traverseFrom(root.id)
-            }
-        }
-
-        // Remaining nodes (e.g. cycles or isolated components)
-        val remaining = doc.nodes
-            .filter { !visited.contains(it.id) }
-            .sortedWith(compareBy({ it.y }, { it.x }))
-
-        for (rem in remaining) {
-            if (!visited.contains(rem.id)) {
-                traverseFrom(rem.id)
-            }
-        }
-
-        return result
+        return emitted.map(nodeMap::getValue)
     }
 }

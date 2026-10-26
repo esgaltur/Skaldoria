@@ -14,7 +14,7 @@
       "width": 250.0,
       "height": 100.0,
       "markdown": "# API Gateway\n\nReceives HTTP requests and routes them to the event bus.",
-      "color": "Blue",
+      "color": "Indigo",
       "zIndex": 1,
       "shape": "Rectangle"
     },
@@ -25,7 +25,7 @@
       "width": 220.0,
       "height": 140.0,
       "markdown": "# Kafka Queue\n\n**topic**: `raw-events`\n\nBuffers high-throughput incoming events asynchronously.",
-      "color": "Green",
+      "color": "Emerald",
       "zIndex": 2,
       "shape": "Cylinder"
     },
@@ -47,7 +47,7 @@
       "width": 200.0,
       "height": 140.0,
       "markdown": "# PostgreSQL\n\nStores the enriched, structured event data for analysis.",
-      "color": "Red",
+      "color": "Rose",
       "zIndex": 4,
       "shape": "Cylinder"
     }
@@ -71,7 +71,7 @@
       "toPort": "Left",
       "label": "Consume",
       "style": "Dashed",
-      "color": "Green"
+      "color": "Emerald"
     },
     {
       "id": "edge-3",
