@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
@@ -235,6 +236,30 @@ fun CanvasToolbar(
             )
 
             VerticalDivider(color = currentTheme.cardBorder, modifier = Modifier.height(20.dp))
+
+            // Present: fly through the cards in reading order
+            val presentTooltip = "Present (F5) — fly through the cards in arrow order"
+            EditorTooltip(
+                text = presentTooltip,
+                theme = if (currentTheme.isDark) com.skaldoria.shared.ui.theme.Themes.Nord else com.skaldoria.shared.ui.theme.Themes.Light
+            ) {
+                OutlinedButton(
+                    onClick = state::startPresentation,
+                    enabled = state.nodes.isNotEmpty(),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(28.dp).testTag(CanvasTestTags.PresentButton)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = presentTooltip,
+                        modifier = Modifier.size(14.dp),
+                        tint = currentTheme.primary
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Present", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = currentTheme.textPrimary)
+                }
+            }
 
             // Compilation & Export
             Button(

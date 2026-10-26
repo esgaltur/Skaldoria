@@ -4,6 +4,7 @@ import com.skaldoria.canvas.io.CanvasExporter
 import com.skaldoria.canvas.model.CanvasDocument
 import com.skaldoria.canvas.model.CanvasEdge
 import com.skaldoria.canvas.model.CanvasNode
+import com.skaldoria.canvas.model.CanvasReadingOrder
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -50,7 +51,7 @@ class CanvasExporterTest {
         assertTrue(exportedDoc.contains("## Step 2\n\nSecond step."))
     }
 
-    private fun ids(doc: CanvasDocument) = CanvasExporter.orderNodes(doc).map { it.id }
+    private fun ids(doc: CanvasDocument) = CanvasReadingOrder.of(doc).map { it.id }
 
     @Test
     fun `a card with two parents comes after both of them`() {

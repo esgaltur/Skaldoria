@@ -6,6 +6,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,9 +23,11 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
+import com.skaldoria.canvas.state.CanvasPresentation
 import com.skaldoria.canvas.state.CanvasState
 import com.skaldoria.canvas.io.CanvasDocumentController
 import com.skaldoria.canvas.state.CanvasTool
@@ -39,18 +42,31 @@ fun main() = application {
     var theme by remember { mutableStateOf(BuiltinThemes.SkaldoriaDark) }
     val appIcon = remember { loadClasspathPainter("icons/canvas.png") }
     val windowTitle = canvasWindowTitle(state)
+    val windowState = remember {
+        WindowState(
+            width = 1280.dp,
+            height = 820.dp,
+            position = WindowPosition(Alignment.Center)
+        )
+    }
+
+    // Full screen for the length of a presentation, then back to whatever the user had.
+    val presenting = state.presentation != null
+    var placementBeforePresenting by remember { mutableStateOf(windowState.placement) }
+    LaunchedEffect(presenting) {
+        if (presenting) {
+            placementBeforePresenting = windowState.placement
+            windowState.placement = WindowPlacement.Fullscreen
+        } else {
+            windowState.placement = placementBeforePresenting
+        }
+    }
 
     Window(
         onCloseRequest = { if (files.confirmReplace(state)) exitApplication() },
         title = windowTitle,
         icon = appIcon,
-        state = remember {
-            WindowState(
-                width = 1280.dp,
-                height = 820.dp,
-                position = WindowPosition(Alignment.Center)
-            )
-        },
+        state = windowState,
         onKeyEvent = state::handleKeyEvent
     ) {
         CanvasWindowContent(
@@ -108,9 +124,14 @@ internal fun canvasWindowTitle(state: CanvasState): String {
 
 internal fun CanvasState.handleKeyEvent(event: KeyEvent): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
+    presentation?.let { return it.handleKey(event.key, onExit = ::stopPresentation) }
     val commandModifier = event.isCtrlPressed || event.isMetaPressed
 
     return when {
+        event.key == Key.F5 && editingNodeId == null -> {
+            startPresentation()
+            true
+        }
         (event.key == Key.Delete || event.key == Key.Backspace) && editingNodeId == null -> {
             when {
                 selectedEdgeId != null -> deleteEdge(requireNotNull(selectedEdgeId))
@@ -154,4 +175,20 @@ internal fun CanvasState.handleKeyEvent(event: KeyEvent): Boolean {
         }
         else -> false
     }
+}
+
+/**
+ * Presenter keys, matching the deck app and every clicker on the market: a clicker sends
+ * Page Down / Page Up. Every key is swallowed while presenting, so a stray Delete cannot edit
+ * the board in front of an audience.
+ */
+internal fun CanvasPresentation.handleKey(key: Key, onExit: () -> Unit): Boolean {
+    when (key) {
+        Key.DirectionRight, Key.DirectionDown, Key.PageDown, Key.Spacebar, Key.Enter -> next()
+        Key.DirectionLeft, Key.DirectionUp, Key.PageUp, Key.Backspace -> previous()
+        Key.MoveHome -> first()
+        Key.MoveEnd -> last()
+        Key.Escape, Key.F5 -> onExit()
+    }
+    return true
 }

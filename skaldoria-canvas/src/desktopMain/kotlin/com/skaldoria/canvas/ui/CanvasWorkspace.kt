@@ -47,6 +47,9 @@ fun CanvasWorkspace(
     var exportDeckContent by remember { mutableStateOf<String?>(null) }
     var exportDocContent by remember { mutableStateOf<String?>(null) }
 
+    // While presenting, the board is a stage: no editing chrome, no editing gestures.
+    val presentation = state.presentation
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -56,6 +59,7 @@ fun CanvasWorkspace(
                 canvasSize = Size(it.width.toFloat(), it.height.toFloat())
             }
             .onPointerEvent(PointerEventType.Scroll, PointerEventPass.Initial) { event ->
+                if (state.presentation != null) return@onPointerEvent
                 val change = event.changes.firstOrNull() ?: return@onPointerEvent
                 val scrollDelta = change.scrollDelta
                 val isZoom = event.keyboardModifiers.isCtrlPressed ||
@@ -69,7 +73,8 @@ fun CanvasWorkspace(
                 }
                 event.changes.forEach { it.consume() }
             }
-            .pointerInput(state.activeTool) {
+            .pointerInput(state.activeTool, presentation) {
+                if (presentation != null) return@pointerInput
                 detectCanvasGestures(
                     onMiddleDrag = { delta ->
                         state.panBy(delta.toCanvasPoint())
@@ -152,10 +157,12 @@ fun CanvasWorkspace(
             }
     ) {
         // Layer 1: Infinite Coordinate Background Grid
-        CanvasBackgroundGrid(
-            viewport = state.viewport,
-            theme = theme
-        )
+        if (presentation == null) {
+            CanvasBackgroundGrid(
+                viewport = state.viewport,
+                theme = theme
+            )
+        }
 
         // Layer 2: Graph Connections & Edges
         val visibleEdges = remember(state.edges, state.nodes, state.viewport, canvasSize) {
@@ -176,13 +183,21 @@ fun CanvasWorkspace(
             .sortedWith(compareBy<CanvasNode> { it.id in state.selectedNodeIds }.thenBy { it.zIndex })
             .forEach { node ->
                 key(node.id) {
+                    // The presented card stands out; the rest recede but stay visible as context.
+                    val receded = presentation?.currentNodeId?.let { it != node.id } == true
                     CanvasNodeCard(
                         node = node,
                         state = state,
-                        theme = theme
+                        theme = theme,
+                        alpha = if (receded) 0.35f else 1f
                     )
                 }
             }
+
+        if (presentation != null) {
+            CanvasPresentationLayer(presentation, state, canvasSize, theme)
+            return@Box
+        }
 
         // Layer 4: Marquee Selection Rectangle
         val mStart = state.marqueeStart

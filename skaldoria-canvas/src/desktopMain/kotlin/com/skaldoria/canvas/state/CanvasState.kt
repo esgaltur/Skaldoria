@@ -52,7 +52,39 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
 
     val nodes: List<CanvasNode> get() = document.nodes
     val edges: List<CanvasEdge> get() = document.edges
-    val viewport: CanvasViewport get() = document.viewport
+    /** The running presentation, or null while editing. See [startPresentation]. */
+    var presentation by mutableStateOf<CanvasPresentation?>(null)
+        private set
+
+    /**
+     * What the screen shows: the presentation camera while presenting, else the saved view.
+     * Operations that *change* the saved view read [savedViewport] instead, so a camera position
+     * can never leak into the document.
+     */
+    val viewport: CanvasViewport get() = presentation?.camera ?: document.viewport
+
+    private val savedViewport: CanvasViewport get() = document.viewport
+
+    /**
+     * Starts a tour: the whole board, then every card in [CanvasReadingOrder] — the order the deck
+     * export uses. Does nothing on an empty board. Clears selection and any edit in progress, since
+     * neither belongs on an audience's screen.
+     */
+    fun startPresentation() {
+        if (nodes.isEmpty()) return
+        cancelConnection()
+        cancelMarquee()
+        clearSelection()
+        editingNodeId = null
+        val stops = listOf(PresentationStop.Overview) +
+            CanvasReadingOrder.of(document).map { PresentationStop.Card(it.id) }
+        presentation = CanvasPresentation(stops, startCamera = document.viewport)
+    }
+
+    /** Ends the tour and returns to the saved view, exactly as it was. */
+    fun stopPresentation() {
+        presentation = null
+    }
 
     fun selectTool(tool: CanvasTool) {
         if (activeTool == tool) return
@@ -122,22 +154,22 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
 
     fun panBy(delta: CanvasPoint) {
         if (delta == CanvasPoint.Zero) return
-        val newVp = viewport.copy(
-            panX = viewport.panX + delta.x,
-            panY = viewport.panY + delta.y
+        val newVp = savedViewport.copy(
+            panX = savedViewport.panX + delta.x,
+            panY = savedViewport.panY + delta.y
         )
         document = document.copy(viewport = newVp)
         isDirty = true
     }
 
     fun zoomAt(factor: Float, focalPoint: CanvasPoint) {
-        val oldZoom = viewport.zoom
+        val oldZoom = savedViewport.zoom
         val newZoom = (oldZoom * factor).coerceIn(CanvasViewport.MIN_ZOOM, CanvasViewport.MAX_ZOOM)
         if (newZoom == oldZoom) return
 
         // Keep focal point stationary in screen coordinates
-        val canvasFocalX = (focalPoint.x - viewport.panX) / oldZoom
-        val canvasFocalY = (focalPoint.y - viewport.panY) / oldZoom
+        val canvasFocalX = (focalPoint.x - savedViewport.panX) / oldZoom
+        val canvasFocalY = (focalPoint.y - savedViewport.panY) / oldZoom
 
         val newPanX = focalPoint.x - canvasFocalX * newZoom
         val newPanY = focalPoint.y - canvasFocalY * newZoom
@@ -166,7 +198,7 @@ class CanvasState(initialDocument: CanvasDocument? = null) {
     }
 
     fun resetViewport() {
-        if (viewport == CanvasViewport()) return
+        if (savedViewport == CanvasViewport()) return
         document = document.copy(viewport = CanvasViewport(panX = 0f, panY = 0f, zoom = 1f))
         isDirty = true
     }

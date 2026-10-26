@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
@@ -53,7 +54,13 @@ fun CanvasNodeCard(
     node: CanvasNode,
     state: CanvasState,
     theme: PresentationTheme,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Applied *after* the card is positioned. Passing `Modifier.alpha` through [modifier] puts the
+     * fade layer ahead of the offset, so the card renders into a layer at the origin and is
+     * clipped away.
+     */
+    alpha: Float = 1f
 ) {
     val isSelected = state.selectedNodeIds.contains(node.id)
     val isEditing = state.editingNodeId == node.id
@@ -102,6 +109,7 @@ fun CanvasNodeCard(
     Box(
         modifier = modifier
             .offset { IntOffset(screenPos.x.roundToInt(), screenPos.y.roundToInt()) }
+            .alpha(alpha)
             // The outer box's real layout size is the actual on-screen footprint (already
             // zoom-scaled). Previously this box was laid out at the *unscaled* node size and
             // only made to look bigger/smaller via a graphicsLayer scale — which meant pointer
@@ -191,12 +199,15 @@ fun CanvasNodeCard(
                     width = with(density) { node.width.toDp() },
                     height = with(density) { node.height.toDp() }
                 )
-                .clip(nodeShape)
                 .graphicsLayer {
                     scaleX = zoom
                     scaleY = zoom
                     transformOrigin = TransformOrigin(0f, 0f)
                 }
+                // After the scale, so the outline is clipped in the content's own coordinates.
+                // Clipping first cut at the *unscaled* size in screen space: past 100% zoom the
+                // card showed only its top-left corner — half a title and no body text.
+                .clip(nodeShape)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 if (node.shape == NodeShape.Card) {
