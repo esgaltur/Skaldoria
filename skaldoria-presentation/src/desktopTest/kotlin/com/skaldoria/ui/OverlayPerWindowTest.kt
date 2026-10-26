@@ -17,6 +17,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.skaldoria.PresentationStateTestBase
+import com.skaldoria.RenderEnvironment
 import com.skaldoria.core.presentation.DeckSurface
 import com.skaldoria.core.presentation.SurfaceOverlay
 import com.skaldoria.ui.components.SLIDE_GRID_OVERVIEW_TAG
@@ -69,36 +70,44 @@ class OverlayPerWindowTest : PresentationStateTestBase() {
     }
 
     @Test
-    fun `the grid opened on the speaker console never appears on the projected deck`() = runComposeUiTest {
-        val state = presentationState(initialMarkdown = talk)
-        setContent {
-            Row {
-                FullscreenDeck(state, Modifier.width(400.dp).fillMaxHeight())
-                PresenterView(state = state, onClose = {}, modifier = Modifier.width(1400.dp).fillMaxHeight())
+    fun `the grid opened on the speaker console never appears on the projected deck`() {
+        // The projected deck reaches the window system (its pointer); a headless Linux gate has none.
+        RenderEnvironment.requireDisplay()
+        runComposeUiTest {
+            val state = presentationState(initialMarkdown = talk)
+            setContent {
+                Row {
+                    FullscreenDeck(state, Modifier.width(400.dp).fillMaxHeight())
+                    PresenterView(state = state, onClose = {}, modifier = Modifier.width(1400.dp).fillMaxHeight())
+                }
             }
+
+            onNodeWithText("Grid Overview (G)").performClick()
+
+            assertTrue(state.gridOverview.isOpenOn(DeckSurface.Console))
+            onAllNodesWithTag(SLIDE_GRID_OVERVIEW_TAG).assertCountEquals(1)
         }
-
-        onNodeWithText("Grid Overview (G)").performClick()
-
-        assertTrue(state.gridOverview.isOpenOn(DeckSurface.Console))
-        onAllNodesWithTag(SLIDE_GRID_OVERVIEW_TAG).assertCountEquals(1)
     }
 
     @Test
-    fun `the deck draws only its own overlays`() = runComposeUiTest {
-        val state = presentationState(initialMarkdown = talk)
-        setContent { FullscreenDeck(state) }
-        val paletteHint = "Jump to slide by title, code, or keyword..."
+    fun `the deck draws only its own overlays`() {
+        // The projected deck reaches the window system (its pointer); a headless Linux gate has none.
+        RenderEnvironment.requireDisplay()
+        runComposeUiTest {
+            val state = presentationState(initialMarkdown = talk)
+            setContent { FullscreenDeck(state) }
+            val paletteHint = "Jump to slide by title, code, or keyword..."
 
-        state.gridOverview.open(DeckSurface.Console)
-        state.commandPalette.open(DeckSurface.Console)
-        waitForIdle()
-        onAllNodesWithTag(SLIDE_GRID_OVERVIEW_TAG).assertCountEquals(0)
-        onAllNodesWithText(paletteHint).assertCountEquals(0)
+            state.gridOverview.open(DeckSurface.Console)
+            state.commandPalette.open(DeckSurface.Console)
+            waitForIdle()
+            onAllNodesWithTag(SLIDE_GRID_OVERVIEW_TAG).assertCountEquals(0)
+            onAllNodesWithText(paletteHint).assertCountEquals(0)
 
-        state.gridOverview.open(DeckSurface.Deck)
-        waitForIdle()
-        onAllNodesWithTag(SLIDE_GRID_OVERVIEW_TAG).assertCountEquals(1)
+            state.gridOverview.open(DeckSurface.Deck)
+            waitForIdle()
+            onAllNodesWithTag(SLIDE_GRID_OVERVIEW_TAG).assertCountEquals(1)
+        }
     }
 
     @Test
