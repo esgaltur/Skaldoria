@@ -57,6 +57,21 @@ class MathFormulaRendererTest {
     }
 
     @Test
+    fun testTextCommandsRenderAsPlainText() {
+        val theme = BuiltinThemes.SkaldoriaDark
+        val formula = "\\text{Period interest} = \\text{Daily interest} \\times \\mathrm{Days in period}"
+
+        val rendered = buildLatexAnnotatedString(formula, theme, baseFontSize = 28).text
+        assertTrue(!rendered.contains("\\text") && !rendered.contains("\\mathrm") && !rendered.contains("{"))
+        assertTrue(rendered.contains("Period interest") && rendered.contains("×") && rendered.contains("Days in period"))
+
+        assertEquals(
+            "Total RIA / Days",
+            LatexSymbolMapper.preprocessDelimitersAndSymbols("\\text{Total RIA} / \\text{Days}")
+        )
+    }
+
+    @Test
     fun testFindFractionWithNestedSubscripts() {
         val formula = "\\Delta t = t_{elapsed} - \\left( \\frac{T_{target}}{N_{total}} \\right) \\cdot i_{current}"
         val frac = findFraction(formula)

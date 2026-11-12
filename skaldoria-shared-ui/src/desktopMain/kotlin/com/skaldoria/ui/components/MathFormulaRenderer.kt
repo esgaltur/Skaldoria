@@ -158,7 +158,7 @@ private fun RenderLatexExpression(
                 Spacer(Modifier.height(if (isBlock) 3.dp else 2.dp))
                 Box(
                     modifier = Modifier
-                        .width(maxOf(num.length, den.length).times(if (isBlock) 14 else 9).coerceAtLeast(if (isBlock) 36 else 22).dp)
+                        .width(fractionBarLength(num, den).times(if (isBlock) 14 else 9).coerceAtLeast(if (isBlock) 36 else 22).dp)
                         .height(if (isBlock) 2.5.dp else 1.5.dp)
                         .background(theme.primary)
                 )
@@ -186,6 +186,11 @@ private fun RenderLatexExpression(
         LatexTextSegment(rawFormula, theme, fontSize = linearSize)
     }
 }
+
+private fun fractionBarLength(numerator: String, denominator: String): Int = maxOf(
+    LatexSymbolMapper.preprocessDelimitersAndSymbols(numerator).length,
+    LatexSymbolMapper.preprocessDelimitersAndSymbols(denominator).length
+)
 
 data class FractionInfo(
     val startIndex: Int,
@@ -273,37 +278,43 @@ fun buildLatexAnnotatedString(
     raw: String,
     theme: PresentationTheme,
     baseFontSize: Int
-): AnnotatedString {
-    val cleaned = LatexSymbolMapper.preprocessDelimitersAndSymbols(raw)
+): AnnotatedString = buildAnnotatedString {
+    for (segment in LatexTextCommandParser.split(raw)) {
+        if (segment.isText) {
+            appendUprightText(segment.content, theme, baseFontSize)
+        } else {
+            appendMathRun(LatexSymbolMapper.preprocessDelimitersAndSymbols(segment.content), theme, baseFontSize)
+        }
+    }
+}
 
-    return buildAnnotatedString {
-        var i = 0
-        while (i < cleaned.length) {
-            val c = cleaned[i]
+/** Upright (roman) text, as produced by `\text{...}` and friends. */
+private fun AnnotatedString.Builder.appendUprightText(text: String, theme: PresentationTheme, baseFontSize: Int) {
+    withStyle(
+        SpanStyle(
+            fontSize = baseFontSize.sp,
+            fontWeight = FontWeight.Normal,
+            fontStyle = FontStyle.Normal,
+            fontFamily = FontFamily.Serif,
+            color = theme.primary
+        )
+    ) {
+        append(text)
+    }
+}
 
-            // Subscript: _{...} or _char
-            if (c == '_') {
-                i++
-                if (i < cleaned.length && cleaned[i] == '{') {
-                    val endBrace = cleaned.indexOf('}', i + 1)
-                    if (endBrace != -1) {
-                        val subText = cleaned.substring(i + 1, endBrace)
-                        withStyle(
-                            SpanStyle(
-                                fontSize = (baseFontSize * 0.62).sp,
-                                baselineShift = BaselineShift.Subscript,
-                                fontStyle = FontStyle.Italic,
-                                fontFamily = FontFamily.Serif,
-                                color = theme.textSecondary
-                            )
-                        ) {
-                            append(subText)
-                        }
-                        i = endBrace + 1
-                        continue
-                    }
-                } else if (i < cleaned.length) {
-                    val subChar = cleaned[i].toString()
+private fun AnnotatedString.Builder.appendMathRun(cleaned: String, theme: PresentationTheme, baseFontSize: Int) {
+    var i = 0
+    while (i < cleaned.length) {
+        val c = cleaned[i]
+
+        // Subscript: _{...} or _char
+        if (c == '_') {
+            i++
+            if (i < cleaned.length && cleaned[i] == '{') {
+                val endBrace = cleaned.indexOf('}', i + 1)
+                if (endBrace != -1) {
+                    val subText = cleaned.substring(i + 1, endBrace)
                     withStyle(
                         SpanStyle(
                             fontSize = (baseFontSize * 0.62).sp,
@@ -313,36 +324,36 @@ fun buildLatexAnnotatedString(
                             color = theme.textSecondary
                         )
                     ) {
-                        append(subChar)
+                        append(subText)
                     }
-                    i++
+                    i = endBrace + 1
                     continue
                 }
-            }
-
-            // Superscript: ^{...} or ^char
-            if (c == '^') {
+            } else if (i < cleaned.length) {
+                val subChar = cleaned[i].toString()
+                withStyle(
+                    SpanStyle(
+                        fontSize = (baseFontSize * 0.62).sp,
+                        baselineShift = BaselineShift.Subscript,
+                        fontStyle = FontStyle.Italic,
+                        fontFamily = FontFamily.Serif,
+                        color = theme.textSecondary
+                    )
+                ) {
+                    append(subChar)
+                }
                 i++
-                if (i < cleaned.length && cleaned[i] == '{') {
-                    val endBrace = cleaned.indexOf('}', i + 1)
-                    if (endBrace != -1) {
-                        val supText = cleaned.substring(i + 1, endBrace)
-                        withStyle(
-                            SpanStyle(
-                                fontSize = (baseFontSize * 0.62).sp,
-                                baselineShift = BaselineShift.Superscript,
-                                fontStyle = FontStyle.Italic,
-                                fontFamily = FontFamily.Serif,
-                                color = theme.textSecondary
-                            )
-                        ) {
-                            append(supText)
-                        }
-                        i = endBrace + 1
-                        continue
-                    }
-                } else if (i < cleaned.length) {
-                    val supChar = cleaned[i].toString()
+                continue
+            }
+        }
+
+        // Superscript: ^{...} or ^char
+        if (c == '^') {
+            i++
+            if (i < cleaned.length && cleaned[i] == '{') {
+                val endBrace = cleaned.indexOf('}', i + 1)
+                if (endBrace != -1) {
+                    val supText = cleaned.substring(i + 1, endBrace)
                     withStyle(
                         SpanStyle(
                             fontSize = (baseFontSize * 0.62).sp,
@@ -352,44 +363,102 @@ fun buildLatexAnnotatedString(
                             color = theme.textSecondary
                         )
                     ) {
-                        append(supChar)
+                        append(supText)
                     }
-                    i++
+                    i = endBrace + 1
                     continue
                 }
-            }
-
-            // Mathematical Operators and Parentheses
-            if (c in setOf('=', '+', '-', '·', '×', '÷', '±', '∓', '≈', '≠', '≤', '≥', '(', ')', '[', ']', '{', '}', '|')) {
+            } else if (i < cleaned.length) {
+                val supChar = cleaned[i].toString()
                 withStyle(
                     SpanStyle(
-                        fontSize = baseFontSize.sp,
-                        fontWeight = FontWeight.Normal,
+                        fontSize = (baseFontSize * 0.62).sp,
+                        baselineShift = BaselineShift.Superscript,
+                        fontStyle = FontStyle.Italic,
                         fontFamily = FontFamily.Serif,
-                        color = theme.textPrimary
+                        color = theme.textSecondary
                     )
                 ) {
-                    append(c)
+                    append(supChar)
                 }
                 i++
                 continue
             }
+        }
 
-            // Variables and Greek Letters
+        // Mathematical Operators and Parentheses
+        if (c in setOf('=', '+', '-', '·', '×', '÷', '±', '∓', '≈', '≠', '≤', '≥', '(', ')', '[', ']', '{', '}', '|')) {
             withStyle(
                 SpanStyle(
                     fontSize = baseFontSize.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontStyle = if (c.isLetter()) FontStyle.Italic else FontStyle.Normal,
+                    fontWeight = FontWeight.Normal,
                     fontFamily = FontFamily.Serif,
-                    color = if (c.isLetter() || c in "αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩ") theme.primary else theme.textPrimary
+                    color = theme.textPrimary
                 )
             ) {
                 append(c)
             }
             i++
+            continue
         }
+
+        // Variables and Greek Letters
+        withStyle(
+            SpanStyle(
+                fontSize = baseFontSize.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontStyle = if (c.isLetter()) FontStyle.Italic else FontStyle.Normal,
+                fontFamily = FontFamily.Serif,
+                color = if (c.isLetter() || c in "αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩ") theme.primary else theme.textPrimary
+            )
+        ) {
+            append(c)
+        }
+        i++
     }
+}
+
+/**
+ * Splits a formula into math runs and the plain-text contents of `\text{...}`-style commands,
+ * which LaTeX typesets upright and verbatim rather than as italic math symbols.
+ */
+object LatexTextCommandParser {
+    data class Segment(val content: String, val isText: Boolean)
+
+    // Longest names first so "\textrm" is not consumed as "\text".
+    private val TEXT_COMMANDS = listOf(
+        "\\operatorname", "\\textrm", "\\textit", "\\textbf", "\\mathrm", "\\mathbf", "\\mathit", "\\text", "\\mbox"
+    )
+
+    fun split(input: String): List<Segment> {
+        val segments = mutableListOf<Segment>()
+        val math = StringBuilder()
+
+        fun flushMath() {
+            if (math.isNotEmpty()) segments += Segment(math.toString(), isText = false)
+            math.clear()
+        }
+
+        var i = 0
+        while (i < input.length) {
+            val command = commandAt(input, i)
+            val closeBrace = command?.let { findMatchingBrace(input, i + it.length) }
+            if (command != null && closeBrace != null) {
+                flushMath()
+                segments += Segment(input.substring(i + command.length + 1, closeBrace), isText = true)
+                i = closeBrace + 1
+            } else {
+                math.append(input[i++])
+            }
+        }
+        flushMath()
+        return segments
+    }
+
+    fun stripCommands(input: String): String = split(input).joinToString("") { it.content }
+
+    private fun commandAt(input: String, index: Int): String? =
+        TEXT_COMMANDS.firstOrNull { input.startsWith(it, index) && input.startsWith("{", index + it.length) }
 }
 
 /**
@@ -496,7 +565,7 @@ object LatexSymbolMapper {
     )
 
     fun preprocessDelimitersAndSymbols(input: String): String {
-        var result = input
+        var result = LatexTextCommandParser.stripCommands(input)
         for ((tex, unicode) in SYMBOLS) {
             result = result.replace(tex, unicode)
         }
