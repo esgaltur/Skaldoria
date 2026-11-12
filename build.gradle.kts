@@ -10,7 +10,7 @@ plugins {
 group = "com.skaldoria"
 
 /** Single source of truth for every Skaldoria application and release artifact. */
-val appVersion = "1.3.1"
+val appVersion = "1.3.2"
 version = appVersion
 
 /**

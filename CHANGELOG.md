@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-12
+
+### Fixed
+- **Math formulas showed `\text{...}` literally.** A formula such as
+  `\text{Daily interest} = \frac{\text{Total RIA}}{\text{Days}}` was rendered with the raw
+  command and braces in italics. `\text`, `\textrm`, `\textbf`, `\textit`, `\mathrm`, `\mathbf`,
+  `\mathit`, `\operatorname` and `\mbox` now render their contents as upright text — on slides,
+  inline math, and in the PNG export — and the fraction bar is sized to the visible text.
+
 ## [1.3.1] - 2026-10-26
 
 ### Fixed
