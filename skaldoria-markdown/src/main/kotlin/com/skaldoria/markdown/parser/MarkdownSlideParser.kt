@@ -184,6 +184,10 @@ object MarkdownSlideParser {
 
         for ((position, raw) in lines.withIndex()) {
             val line = raw.trim()
+            if (line.isEmpty() && !context.inCodeBlock && !context.inMathBlock) {
+                context.onBlankLine()
+                continue
+            }
             // AUT-17: a table header is only a header because a delimiter row follows it.
             context.nextLine = lines.getOrNull(position + 1)?.trim()
             val rule = BLOCK_RULES.firstOrNull { it.matches(line, context) } ?: continue

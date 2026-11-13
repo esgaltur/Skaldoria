@@ -174,6 +174,33 @@ class MarkdownSlideParserTest {
     }
 
     @Test
+    fun `a blank line separates two tables and keeps authored order`() {
+        val slide = MarkdownSlideParser.parse(
+            """
+            ## Codes
+
+            - first a list
+
+            | Code | Name |
+            | :--- | :--- |
+            | 442 | RCV |
+
+            | RIA | Credit |
+            | :--- | :--- |
+            | Positive | Seller |
+            """.trimIndent()
+        ).first()
+
+        assertEquals(
+            listOf(SlideElement.BulletList::class, SlideElement.Table::class, SlideElement.Table::class),
+            slide.elements.map { it::class }
+        )
+        val second = slide.elements[2] as SlideElement.Table
+        assertEquals(listOf("RIA", "Credit"), second.headers, "second header was read as a data row")
+        assertEquals(listOf(listOf("Positive", "Seller")), second.rows)
+    }
+
+    @Test
     fun testEmptyMarkdownFallback() {
         val slides = MarkdownSlideParser.parse("")
         assertEquals(1, slides.size)

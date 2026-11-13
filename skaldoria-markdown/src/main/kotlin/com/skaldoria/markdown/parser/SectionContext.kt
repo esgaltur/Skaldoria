@@ -94,6 +94,17 @@ internal class SectionContext {
     fun addTableLine(line: String) = tableLines.add(line)
 
     /**
+     * A blank line ends a table (as in CommonMark), so two tables separated by one stay two
+     * tables instead of the second header being read as a data row of the first. Without an
+     * open table nothing closes: a blank line inside a loose list does not end it. With one,
+     * everything pending closes in the usual order, so a list written above the table still
+     * comes out above it.
+     */
+    fun onBlankLine() {
+        if (hasOpenTable) flushPending()
+    }
+
+    /**
      * AUT-17: the line after the one being dispatched, or null at the end of the section.
      *
      * A table header is only a header because a delimiter row follows it, and nothing else in
