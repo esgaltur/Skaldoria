@@ -52,6 +52,9 @@ enum class FitMode { Height, Contain }
  *   the safe choice for reflowing content.
  * @param minScale legibility floor; below this the content is left clipped and
  *   [onScaleComputed] reports the overflow rather than shrinking into unreadability.
+ * @param maxScale how far content that fits may be enlarged. 1 (the default) never enlarges;
+ *   only [FitMode.Contain] content (diagrams) should pass more, since enlarged text reflows
+ *   nothing and simply gets bigger.
  * @param onScaleComputed invoked with the applied scale whenever it changes; use it to
  *   surface an authoring warning. Not invoked on every frame — only on scale change.
  */
@@ -60,11 +63,12 @@ fun FitToCanvas(
     modifier: Modifier = Modifier,
     minScale: Float = SlideCanvasFit.DEFAULT_MIN_SCALE,
     fitMode: FitMode = FitMode.Height,
+    maxScale: Float = 1f,
     onScaleComputed: ((scale: Float, overflowing: Boolean) -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     SubcomposeLayout(modifier) { constraints ->
-        val fit = measureFitted(constraints, minScale, fitMode, content)
+        val fit = measureFitted(constraints, minScale, maxScale, fitMode, content)
         onScaleComputed?.invoke(fit.scale, fit.overflowing)
 
         layout(fit.availableWidth, fit.availableHeight) {
@@ -92,6 +96,7 @@ private class Measured(val placeables: List<Placeable>, val width: Int, val heig
 private fun SubcomposeMeasureScope.measureFitted(
     constraints: Constraints,
     minScale: Float,
+    maxScale: Float,
     fitMode: FitMode,
     content: @Composable () -> Unit
 ): FitResult {
@@ -114,7 +119,7 @@ private fun SubcomposeMeasureScope.measureFitted(
         }
     }
 
-    val scale = SlideCanvasFit.contentScale(sized.width, sized.height, availableWidth, availableHeight, minScale)
+    val scale = SlideCanvasFit.contentScale(sized.width, sized.height, availableWidth, availableHeight, minScale, maxScale)
     val overflowing = SlideCanvasFit.isOverflowing(sized.width, sized.height, availableWidth, availableHeight, minScale)
     return FitResult(sized.placeables, availableWidth, availableHeight, scale, overflowing)
 }

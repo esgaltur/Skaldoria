@@ -90,6 +90,15 @@ class SlideCanvasFitTest {
     }
 
     @Test
+    fun `a raised max scale enlarges small content up to that cap`() {
+        // The small-diagram case: a 3-node flowchart floating tiny in a full-slide frame.
+        assertEquals(1.5f, SlideCanvasFit.contentScale(400, 200, 600, 300, maxScale = 2f), 0.001f)
+        assertEquals(2f, SlideCanvasFit.contentScale(100, 50, 1280, 720, maxScale = 2f), 0.001f)
+        // Overflowing content still shrinks; the cap only limits enlargement.
+        assertEquals(0.5f, SlideCanvasFit.contentScale(2560, 720, 1280, 720, maxScale = 2f), 0.001f)
+    }
+
+    @Test
     fun `vertically overflowing content shrinks to fit`() {
         // 1440 tall in a 720 box -> half size. This is the bullet-list overflow case.
         assertEquals(0.5f, SlideCanvasFit.contentScale(1280, 1440, 1280, 720), 0.001f)

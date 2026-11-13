@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.sp
 import com.skaldoria.markdown.models.Slide
 import com.skaldoria.markdown.models.SlideElement
 import com.skaldoria.theme.PresentationTheme
+import com.skaldoria.ui.components.FitToCanvas
 import com.skaldoria.ui.components.inlineMarkdown
 
 @Composable
@@ -28,7 +29,9 @@ fun BigQuoteSlide(
 ) {
     val quoteElem = slide.elements.filterIsInstance<SlideElement.Quote>().firstOrNull()
     val quoteText = quoteElem?.quote ?: slide.title
-    val author = quoteElem?.author ?: slide.elements.filterIsInstance<SlideElement.Text>().firstOrNull()?.content
+    val authorSource = if (quoteElem == null) slide.elements.filterIsInstance<SlideElement.Text>().firstOrNull() else null
+    val author = quoteElem?.author ?: authorSource?.content
+    val extras = slide.elements.filter { it !== quoteElem && it !== authorSource }
 
     Box(
         modifier = modifier
@@ -36,57 +39,70 @@ fun BigQuoteSlide(
             .padding(horizontal = 56.dp, vertical = 40.dp),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .clip(RoundedCornerShape(16.dp))
-                .background(theme.surface)
-                .border(1.dp, theme.cardBorder, RoundedCornerShape(16.dp))
-                .padding(horizontal = 48.dp, vertical = 36.dp)
-        ) {
-            // Quote Symbol
-            Text(
-                text = "“",
-                color = theme.primary,
-                fontSize = 64.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Serif,
-                lineHeight = 40.sp
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            // Main Quote Text
-            Text(
-                text = inlineMarkdown(quoteText, theme),
-                color = theme.textPrimary,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Medium,
-                fontStyle = FontStyle.Italic,
-                fontFamily = FontFamily.Serif,
-                textAlign = TextAlign.Center,
-                lineHeight = 34.sp
-            )
-
-            if (!author.isNullOrBlank()) {
-                Spacer(Modifier.height(24.dp))
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(theme.badgeBackground)
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = author,
-                        color = theme.badgeText,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center
-                    )
+        FitToCanvas(modifier = Modifier.fillMaxSize()) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                QuoteCard(quoteText, author, theme)
+                if (extras.isNotEmpty()) {
+                    Spacer(Modifier.height(28.dp))
+                    SlideElementFlow(extras, theme, Modifier.fillMaxWidth(0.9f))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuoteCard(quoteText: String, author: String?, theme: PresentationTheme) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxWidth(0.9f)
+            .clip(RoundedCornerShape(16.dp))
+            .background(theme.surface)
+            .border(1.dp, theme.cardBorder, RoundedCornerShape(16.dp))
+            .padding(horizontal = 48.dp, vertical = 36.dp)
+    ) {
+        // Quote Symbol
+        Text(
+            text = "“",
+            color = theme.primary,
+            fontSize = 64.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Serif,
+            lineHeight = 40.sp
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        // Main Quote Text
+        Text(
+            text = inlineMarkdown(quoteText, theme),
+            color = theme.textPrimary,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Medium,
+            fontStyle = FontStyle.Italic,
+            fontFamily = FontFamily.Serif,
+            textAlign = TextAlign.Center,
+            lineHeight = 34.sp
+        )
+
+        if (!author.isNullOrBlank()) {
+            Spacer(Modifier.height(24.dp))
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(theme.badgeBackground)
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = author,
+                    color = theme.badgeText,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }

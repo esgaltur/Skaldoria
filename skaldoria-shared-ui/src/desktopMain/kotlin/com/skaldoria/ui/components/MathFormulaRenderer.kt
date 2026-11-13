@@ -279,7 +279,7 @@ fun buildLatexAnnotatedString(
     theme: PresentationTheme,
     baseFontSize: Int
 ): AnnotatedString = buildAnnotatedString {
-    for (segment in LatexTextCommandParser.split(raw)) {
+    for (segment in LatexTextCommandParser.split(LatexTextCommandParser.unwrapScriptedText(raw))) {
         if (segment.isText) {
             appendUprightText(segment.content, theme, baseFontSize)
         } else {
@@ -457,6 +457,14 @@ object LatexTextCommandParser {
 
     fun stripCommands(input: String): String = split(input).joinToString("") { it.content }
 
+    private val SCRIPTED_TEXT = Regex("""([_^])\{\s*\\(?:text|textrm|mathrm|mbox)\{([^{}]*)\}\s*\}""")
+
+    /**
+     * Unwraps `_{\text{x}}` / `^{\text{x}}` to `_{x}` / `^{x}`. Otherwise [split] lifts the
+     * `\text` out of the script braces and leaves a dangling `_{` … `}` behind.
+     */
+    fun unwrapScriptedText(input: String): String = SCRIPTED_TEXT.replace(input, "$1{$2}")
+
     private fun commandAt(input: String, index: Int): String? =
         TEXT_COMMANDS.firstOrNull { input.startsWith(it, index) && input.startsWith("{", index + it.length) }
 }
@@ -561,14 +569,46 @@ object LatexSymbolMapper {
         "\\log" to "log",
         "\\ln" to "ln",
         "\\exp" to "exp",
-        "\\sqrt" to "√"
+        "\\sqrt" to "√",
+
+        // Short relation aliases
+        "\\le" to " ≤ ",
+        "\\ge" to " ≥ ",
+        "\\ne" to " ≠ ",
+        "\\ldots" to "…",
+        "\\cdots" to "⋯",
+
+        // Spacing — LaTeX layout hints, rendered as plain gaps
+        "\\qquad" to "    ",
+        "\\quad" to "  ",
+        "\\ " to " ",
+        "\\," to " ",
+        "\\;" to " ",
+        "\\:" to " ",
+        "\\!" to "",
+
+        // Delimiter sizing — the delimiter that follows is kept, the size hint is dropped
+        "\\bigl" to "",
+        "\\bigr" to "",
+        "\\Bigl" to "",
+        "\\Bigr" to "",
+        "\\big" to "",
+        "\\Big" to "",
+        "\\bigg" to "",
+        "\\Bigg" to ""
     )
 
-    fun preprocessDelimitersAndSymbols(input: String): String {
-        var result = LatexTextCommandParser.stripCommands(input)
-        for ((tex, unicode) in SYMBOLS) {
-            result = result.replace(tex, unicode)
+    /**
+     * One pass over the input, longest command first, so a command never eats the prefix of a
+     * longer one (`\in` inside `\int`, `\le` inside `\left`). A command ending in a letter only
+     * matches when no letter follows, the way TeX tokenises control words.
+     */
+    private val SYMBOL_PATTERN = Regex(
+        SYMBOLS.keys.sortedByDescending { it.length }.joinToString("|") { command ->
+            Regex.escape(command) + if (command.last().isLetter()) "(?![A-Za-z])" else ""
         }
-        return result
-    }
+    )
+
+    fun preprocessDelimitersAndSymbols(input: String): String =
+        SYMBOL_PATTERN.replace(LatexTextCommandParser.stripCommands(input)) { SYMBOLS.getValue(it.value) }
 }

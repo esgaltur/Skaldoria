@@ -8,6 +8,27 @@ import kotlin.test.assertTrue
 class MathFormulaRendererTest {
 
     @Test
+    fun `a command never consumes the prefix of a longer one`() {
+        // \in used to be replaced inside \int and \infty, \le inside \left.
+        val out = LatexSymbolMapper.preprocessDelimitersAndSymbols("\\int x \\in A \\le \\infty \\left( y \\right)")
+        listOf("∫", "∈", "≤", "∞", "(", ")").forEach { assertTrue(it in out, "missing $it in: $out") }
+        assertTrue('\\' !in out && "nt" !in out && "fty" !in out && "eft" !in out, "corrupted: $out")
+    }
+
+    @Test
+    fun `short relations, spacing and delimiter sizing are rendered not printed`() {
+        val out = LatexSymbolMapper.preprocessDelimitersAndSymbols("\\big[a\\big] \\ \\ge\\ b \\quad c")
+        assertTrue('\\' !in out, "a raw command survived: $out")
+        assertTrue("≥" in out && "[a]" in out, out)
+    }
+
+    @Test
+    fun `text inside a subscript stays inside the subscript`() {
+        assertEquals("x_{months}", LatexTextCommandParser.unwrapScriptedText("x_{\\text{months}}"))
+        assertEquals("y^{max}", LatexTextCommandParser.unwrapScriptedText("y^{ \\mathrm{max} }"))
+    }
+
+    @Test
     fun testLatexSymbolMapping() {
         val raw = "\\Delta t = t_{elapsed} - \\left( \\frac{T_{target}}{N_{total}} \\right) \\cdot i_{current}"
         val processed = LatexSymbolMapper.preprocessDelimitersAndSymbols(raw)

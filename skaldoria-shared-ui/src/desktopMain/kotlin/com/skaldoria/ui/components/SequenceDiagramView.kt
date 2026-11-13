@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import com.skaldoria.core.diagram.ArrowHead
 import com.skaldoria.core.diagram.SequenceDiagram
 import com.skaldoria.core.diagram.SequenceStep
+import com.skaldoria.core.layout.SlideCanvasFit
 import com.skaldoria.theme.PresentationTheme
 import kotlin.math.max
 import kotlin.math.min
@@ -55,13 +56,16 @@ fun SequenceDiagramView(
 ) {
     val measurer = rememberTextMeasurer()
 
-    FitToCanvas(modifier = modifier, fitMode = FitMode.Contain) {
+    FitToCanvas(modifier = modifier, fitMode = FitMode.Contain, maxScale = SlideCanvasFit.DIAGRAM_MAX_SCALE) {
         if (diagram.participants.isEmpty()) {
             Box(modifier = Modifier.size(400.dp, 300.dp))
         } else {
             val rows = remember(diagram) { flatten(diagram.steps) }
             val participants = diagram.participants
-            val columnWidthPx = 150f
+            // Wide enough for the longest participant name and the longest message label (up to
+            // a cap), so neither is truncated now that labels are drawn at a readable size.
+            val labelWidthPx = remember(diagram, measurer) { widestLabelPx(diagram, rows, measurer) }
+            val columnWidthPx = (labelWidthPx + COLUMN_LABEL_PADDING).coerceIn(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH)
             val totalWidthPx = SIDE_PADDING * 2 + participants.size * columnWidthPx
             val bodyTop = TOP_PADDING + HEADER_HEIGHT
             val totalHeightPx = bodyTop + rows.size * ROW_HEIGHT + ROW_HEIGHT * 0.5f + HEADER_HEIGHT
@@ -85,11 +89,33 @@ fun SequenceDiagramView(
 }
 
 private const val HEADER_HEIGHT = 44f
+private const val MIN_COLUMN_WIDTH = 150f
+private const val MAX_COLUMN_WIDTH = 360f
+private const val COLUMN_LABEL_PADDING = 32f
+private const val PARTICIPANT_FONT_SP = 14f
+private const val MESSAGE_FONT_SP = 14f
+private const val NOTE_FONT_SP = 13f
+private const val TAG_FONT_SP = 12f
 private const val ROW_HEIGHT = 54f
 private const val TOP_PADDING = 8f
 private const val SIDE_PADDING = 16f
 private const val SELF_CALL_WIDTH = 46f
 private const val ACTIVATION_WIDTH = 10f
+
+/** Width of the widest participant name, or message label between neighbouring participants. */
+private fun widestLabelPx(diagram: SequenceDiagram, rows: List<Row>, measurer: TextMeasurer): Float {
+    fun width(text: String, sizeSp: Float, bold: Boolean) = measurer.measure(
+        text,
+        TextStyle(fontSize = sizeSp.sp, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal)
+    ).size.width
+    val indexOf = diagram.participants.withIndex().associate { (index, p) -> p.id to index }
+    val names = diagram.participants.map { width(it.displayName, PARTICIPANT_FONT_SP, bold = true) }
+    // A label spanning several columns has their combined width, so only adjacent hops count.
+    val messages = rows.mapNotNull { it.step as? SequenceStep.Message }
+        .filter { m -> !m.isSelfCall && kotlin.math.abs((indexOf[m.fromId] ?: 0) - (indexOf[m.toId] ?: 0)) == 1 }
+        .map { width(it.text, MESSAGE_FONT_SP, bold = false) }
+    return (names + messages).maxOrNull()?.toFloat() ?: 0f
+}
 
 /** A step flattened for drawing, carrying the nesting depth it was found at. */
 private data class Row(val step: SequenceStep, val depth: Int)
@@ -185,7 +211,7 @@ private fun DrawScope.drawSequence(
                 style = Stroke(width = 1.2f)
             )
             val tab = "${step.kind.keyword.uppercase()}${if (step.label.isBlank()) "" else "  ${step.label}"}"
-            drawLabel(measurer, tab, Offset(SIDE_PADDING * 0.6f + 6f, top + 4f), theme.primary, 10f, bold = true)
+            drawLabel(measurer, tab, Offset(SIDE_PADDING * 0.6f + 6f, top + 4f), theme.primary, TAG_FONT_SP, bold = true)
         }
     }
 
@@ -204,8 +230,8 @@ private fun DrawScope.drawSequence(
                     drawSelfCall(columnCenter(fromIndex), y, step.arrow.isDashed, step.arrow.head, theme)
                     drawLabel(
                         measurer, label,
-                        Offset(columnCenter(fromIndex) + SELF_CALL_WIDTH + 8f, y - 6f),
-                        theme.textPrimary, 11f
+                        Offset(columnCenter(fromIndex) + SELF_CALL_WIDTH + 8f, y - 8f),
+                        theme.textPrimary, MESSAGE_FONT_SP
                     )
                 } else {
                     drawMessageArrow(
@@ -219,9 +245,10 @@ private fun DrawScope.drawSequence(
                     drawCenteredLabel(
                         measurer, label,
                         centerX = (columnCenter(fromIndex) + columnCenter(toIndex)) / 2f,
-                        y = y - 17f,
+                        y = y - 22f,
                         color = theme.textPrimary,
-                        maxWidth = kotlin.math.abs(columnCenter(toIndex) - columnCenter(fromIndex)) - 8f
+                        maxWidth = kotlin.math.abs(columnCenter(toIndex) - columnCenter(fromIndex)) - 8f,
+                        sizeSp = MESSAGE_FONT_SP
                     )
                 }
             }
@@ -233,19 +260,19 @@ private fun DrawScope.drawSequence(
                 } else {
                     (columnCenter(targets.min()) + columnCenter(targets.max())) / 2f
                 }
-                val noteWidth = min(size.width * 0.55f, max(140f, step.text.length * 6.5f))
+                val noteWidth = min(size.width * 0.8f, max(140f, step.text.length * 7.6f))
                 drawRect(
                     color = theme.surfaceVariant,
-                    topLeft = Offset(centerX - noteWidth / 2f, y - 15f),
-                    size = Size(noteWidth, 30f)
+                    topLeft = Offset(centerX - noteWidth / 2f, y - 16f),
+                    size = Size(noteWidth, 32f)
                 )
                 drawRect(
                     color = theme.cardBorder,
-                    topLeft = Offset(centerX - noteWidth / 2f, y - 15f),
-                    size = Size(noteWidth, 30f),
+                    topLeft = Offset(centerX - noteWidth / 2f, y - 16f),
+                    size = Size(noteWidth, 32f),
                     style = Stroke(width = 1f)
                 )
-                drawCenteredLabel(measurer, step.text, centerX, y - 7f, theme.textSecondary, noteWidth - 10f)
+                drawCenteredLabel(measurer, step.text, centerX, y - 9f, theme.textSecondary, noteWidth - 10f, sizeSp = NOTE_FONT_SP)
             }
 
             is SequenceStep.SectionDivider -> {
@@ -266,7 +293,7 @@ private fun DrawScope.drawSequence(
                         "[${step.label}]",
                         Offset(left + 6f, y - ROW_HEIGHT * 0.35f + 3f),
                         theme.primary,
-                        10f,
+                        TAG_FONT_SP,
                         bold = true
                     )
                 }
@@ -279,7 +306,7 @@ private fun DrawScope.drawSequence(
     // --- participant headers (drawn last so they sit above the lifelines) --
     participants.forEachIndexed { index, participant ->
         val x = columnCenter(index)
-        val boxWidth = min(columnWidth - 10f, 150f)
+        val boxWidth = columnWidth - 10f
         drawRect(
             color = theme.surfaceVariant,
             topLeft = Offset(x - boxWidth / 2f, TOP_PADDING),
@@ -293,7 +320,7 @@ private fun DrawScope.drawSequence(
         )
         drawCenteredLabel(
             measurer, participant.displayName, x, TOP_PADDING + 9f,
-            theme.textPrimary, boxWidth - 8f, bold = true, sizeSp = 12f
+            theme.textPrimary, boxWidth - 8f, bold = true, sizeSp = PARTICIPANT_FONT_SP
         )
     }
 }

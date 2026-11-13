@@ -1,5 +1,6 @@
 package com.skaldoria.ui.components
 
+import com.skaldoria.core.layout.SlideCanvasFit
 import com.skaldoria.core.diagram.DiagramEdge
 import com.skaldoria.core.diagram.DiagramGroup
 import com.skaldoria.core.diagram.DiagramNode
@@ -650,7 +651,11 @@ private fun DiagramContent(
                 // FitMode.Contain: FlowchartGraphView reports its own intrinsic
                 // scene size, which can exceed the canvas — contain-fit scales it
                 // down deterministically instead of letting it clip.
-                FitToCanvas(modifier = Modifier.fillMaxSize(), fitMode = FitMode.Contain) {
+                FitToCanvas(
+                    modifier = Modifier.fillMaxSize(),
+                    fitMode = FitMode.Contain,
+                    maxScale = SlideCanvasFit.DIAGRAM_MAX_SCALE
+                ) {
                     FlowchartGraphView(diagram, theme)
                 }
         }

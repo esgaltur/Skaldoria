@@ -57,8 +57,10 @@ object SlideCanvasFit {
      * Uniform scale that brings content of [contentWidth] x [contentHeight] inside a
      * [availableWidth] x [availableHeight] box.
      *
-     * Never returns above 1: content that already fits is left at its authored size
-     * rather than being blown up. Never returns below [minScale] — past that point
+     * Never returns above [maxScale] (default 1): content that already fits is left at its
+     * authored size rather than being blown up. Fixed-size content such as diagrams may pass
+     * a higher cap so a small graph fills its frame instead of floating in it. Never returns
+     * below [minScale] — past that point
      * shrinking trades one unreadable slide for another, so the caller is expected to
      * warn the author instead (see the `onScaleComputed` hook on `FitToCanvas`).
      */
@@ -67,7 +69,8 @@ object SlideCanvasFit {
         contentHeight: Int,
         availableWidth: Int,
         availableHeight: Int,
-        minScale: Float = DEFAULT_MIN_SCALE
+        minScale: Float = DEFAULT_MIN_SCALE,
+        maxScale: Float = 1f
     ): Float {
         if (contentWidth <= 0 || contentHeight <= 0) return 1f
         if (availableWidth <= 0 || availableHeight <= 0) return 1f
@@ -77,7 +80,7 @@ object SlideCanvasFit {
         val fitted = min(widthScale, heightScale)
 
         if (fitted.isNaN() || fitted.isInfinite()) return 1f
-        return fitted.coerceIn(minScale, 1f)
+        return fitted.coerceIn(minScale, maxOf(minScale, maxScale))
     }
 
     /** True when content had to be shrunk past the legibility floor and will still clip. */
@@ -97,6 +100,15 @@ object SlideCanvasFit {
 
     private fun sanitize(value: Float, fallback: Float): Float =
         if (value.isNaN() || value.isInfinite() || value <= 0f) fallback else value
+
+    /**
+     * Upper bound on enlarging a diagram to fill its frame.
+     *
+     * A diagram has a fixed intrinsic size, so capping it at 1 left a five-node graph as a thin
+     * strip in the middle of a full-slide frame. Bounded so a two-node graph does not turn into
+     * billboard-sized boxes.
+     */
+    const val DIAGRAM_MAX_SCALE = 2f
 
     /**
      * Floor on shrinking.

@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.skaldoria.markdown.models.Slide
 import com.skaldoria.markdown.models.SlideElement
 import com.skaldoria.theme.PresentationTheme
+import com.skaldoria.ui.components.FitToCanvas
 import com.skaldoria.ui.components.inlineMarkdown
 
 @Composable
@@ -28,6 +29,7 @@ fun DataTableSlide(
     modifier: Modifier = Modifier
 ) {
     val table = slide.elements.filterIsInstance<SlideElement.Table>().firstOrNull()
+    val tableOnly = table != null && slide.elements.size == 1
 
     Column(
         modifier = modifier
@@ -56,7 +58,12 @@ fun DataTableSlide(
             }
         }
 
-        if (table != null) {
+        if (!tableOnly) {
+            // Bullets or text next to the table used to be dropped; render everything in order.
+            FitToCanvas(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                SlideElementFlow(slide.elements, theme)
+            }
+        } else if (table != null) {
             val colCount = table.headers.size.coerceAtLeast(1)
 
             Column(
