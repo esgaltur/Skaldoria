@@ -149,6 +149,26 @@ class PresentationStateTest : PresentationStateTestBase() {
     }
 
     @Test
+    fun testMagnifierToggleAndZoomBounds() {
+        val state = presentationState()
+        state.togglePenDrawing()
+
+        state.toggleMagnifier()
+        assertTrue(state.isMagnifierActive)
+        assertFalse(state.isPenDrawingActive)
+
+        state.zoomMagnifierBy(1)
+        assertEquals(MagnifierZoom.DEFAULT + MagnifierZoom.STEP, state.magnifierZoom)
+        state.zoomMagnifierBy(100)
+        assertEquals(MagnifierZoom.MAX, state.magnifierZoom)
+        state.zoomMagnifierBy(-100)
+        assertEquals(MagnifierZoom.MIN, state.magnifierZoom)
+
+        state.togglePenDrawing()
+        assertFalse(state.isMagnifierActive)
+    }
+
+    @Test
     fun testAnnotationsManagement() {
         val state = presentationState()
         assertEquals(0, state.currentSlideStrokes.size)

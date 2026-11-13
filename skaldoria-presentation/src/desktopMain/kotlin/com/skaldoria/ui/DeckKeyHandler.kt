@@ -43,6 +43,7 @@ object DeckKeyHandler {
             AppCommands.GRID_OVERVIEW -> state.gridOverview.toggle(surface)
             AppCommands.LASER_POINTER -> state.toggleLaserPointer()
             AppCommands.PEN_DRAWING -> state.togglePenDrawing()
+            AppCommands.MAGNIFIER -> state.toggleMagnifier()
             AppCommands.CLEAR_ANNOTATIONS -> state.clearAnnotations()
             AppCommands.UNDO_STROKE -> state.undoStroke()
             AppCommands.COMMAND_PALETTE -> state.commandPalette.open(surface)

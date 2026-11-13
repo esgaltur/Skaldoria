@@ -92,7 +92,7 @@ fun FullscreenDeck(
 
     // Annotating counts as being at the controls, so the HUD stays put while a pen or laser is
     // active — otherwise it fades out mid-stroke, exactly when it is about to be needed.
-    val holdHudOpen = state.isPenDrawingActive || state.isLaserPointerActive
+    val holdHudOpen = state.isPenDrawingActive || state.isLaserPointerActive || state.isMagnifierActive
 
     LaunchedEffect(pointerActivity, hudVisibility, holdHudOpen) {
         isPointerIdle = false
@@ -177,31 +177,41 @@ fun FullscreenDeck(
                     .padding(horizontal = 28.dp, vertical = 20.dp),
                 contentAlignment = Alignment.Center
             ) {
-                AnimatedContent(
-                    targetState = currentSlide,
-                    // DEL-01/DEL-10: the slide being animated *to* decides the transition, so
-                    // a `transition:` directive describes the slide's own entrance.
-                    transitionSpec = {
-                        transitionSpecFor(TransitionResolver.resolve(targetState, state.transition))
-                    },
+                SlideMagnifier(
+                    active = state.isMagnifierActive,
+                    zoom = state.magnifierZoom,
+                    lensBackground = state.currentTheme.background,
+                    lensBorder = state.currentTheme.primary,
+                    onZoomSteps = state::zoomMagnifierBy,
                     modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) { slide ->
-                    SlideSurface(
-                        slide = slide,
-                        theme = state.currentTheme,
-                        totalSlides = state.slides.size,
+                    overlay = {
+                        // Interactive Laser Pointer & Drawing Overlay, kept above the lens.
+                        SlideAnnotationOverlay(
+                            state = state,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                ) {
+                    AnimatedContent(
+                        targetState = currentSlide,
+                        // DEL-01/DEL-10: the slide being animated *to* decides the transition, so
+                        // a `transition:` directive describes the slide's own entrance.
+                        transitionSpec = {
+                            transitionSpecFor(TransitionResolver.resolve(targetState, state.transition))
+                        },
                         modifier = Modifier.fillMaxSize(),
-                        votes = state.getVotesForSlide(slide.index),
-                        onVote = { state.recordVote(slide.index, it) }
-                    )
+                        contentAlignment = Alignment.Center
+                    ) { slide ->
+                        SlideSurface(
+                            slide = slide,
+                            theme = state.currentTheme,
+                            totalSlides = state.slides.size,
+                            modifier = Modifier.fillMaxSize(),
+                            votes = state.getVotesForSlide(slide.index),
+                            onVote = { state.recordVote(slide.index, it) }
+                        )
+                    }
                 }
-
-                // Interactive Laser Pointer & Drawing Overlay
-                SlideAnnotationOverlay(
-                    state = state,
-                    modifier = Modifier.fillMaxSize()
-                )
             }
         }
 
@@ -336,6 +346,24 @@ fun FullscreenDeck(
                         imageVector = Icons.Default.Highlight,
                         contentDescription = "Laser Pointer",
                         tint = if (state.isLaserPointerActive) Color(0xFFFF1744) else state.currentTheme.textMuted,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            // Magnifier Toggle (M)
+            AppTooltip(text = "Toggle Magnifier (wheel to zoom)", theme = state.currentTheme, shortcut = "M") {
+                IconButton(
+                    onClick = { state.toggleMagnifier() },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(if (state.isMagnifierActive) state.currentTheme.primary.copy(alpha = 0.2f) else Color.Transparent)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ZoomIn,
+                        contentDescription = "Magnifier",
+                        tint = if (state.isMagnifierActive) state.currentTheme.primary else state.currentTheme.textMuted,
                         modifier = Modifier.size(16.dp)
                     )
                 }

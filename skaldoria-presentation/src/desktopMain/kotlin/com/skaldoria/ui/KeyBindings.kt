@@ -83,6 +83,7 @@ object KeyBindings {
         "I" to Key.I,
         "K" to Key.K,
         "L" to Key.L,
+        "M" to Key.M,
         "O" to Key.O,
         "P" to Key.P,
         "S" to Key.S,

@@ -106,6 +106,7 @@ object AppCommands {
     val GRID_OVERVIEW = AppCommand("deck.grid", "Grid Overview", setOf(CommandScope.DECK), listOf(Shortcut("G")))
     val LASER_POINTER = AppCommand("deck.laser", "Toggle Laser Pointer", setOf(CommandScope.DECK), listOf(Shortcut("L")))
     val PEN_DRAWING = AppCommand("deck.pen", "Toggle Pen Annotation", setOf(CommandScope.DECK), listOf(Shortcut("P")))
+    val MAGNIFIER = AppCommand("deck.magnifier", "Toggle Magnifier", setOf(CommandScope.DECK), listOf(Shortcut("M")))
     val CLEAR_ANNOTATIONS = AppCommand("deck.clear", "Clear All Slide Drawings", setOf(CommandScope.DECK), listOf(Shortcut("C")))
     val UNDO_STROKE = AppCommand("deck.undoStroke", "Undo Last Stroke", setOf(CommandScope.DECK), listOf(Shortcut("Z", ctrl = true)))
     val EXIT_FULLSCREEN = AppCommand("deck.exit", "Exit Fullscreen", setOf(CommandScope.DECK), listOf(Shortcut("Escape"), Shortcut("F11")))
@@ -166,7 +167,7 @@ object AppCommands {
     val ALL: List<AppCommand> = listOf(
         NEXT_SLIDE, PREVIOUS_SLIDE, FIRST_SLIDE, LAST_SLIDE, CYCLE_THEME,
         TOGGLE_HUD, BLACKOUT, WHITEOUT, GRID_OVERVIEW,
-        LASER_POINTER, PEN_DRAWING, CLEAR_ANNOTATIONS, UNDO_STROKE, EXIT_FULLSCREEN,
+        LASER_POINTER, PEN_DRAWING, MAGNIFIER, CLEAR_ANNOTATIONS, UNDO_STROKE, EXIT_FULLSCREEN,
         REDO, UNDO, OPEN, SAVE_AS, SAVE, EXPORT, FIND, REPLACE, FIND_PREVIOUS, FIND_NEXT,
         FONT_INCREASE, FONT_DECREASE, FONT_RESET, COMMAND_PALETTE, PRESENT,
         FORMAT_BOLD, FORMAT_ITALIC, FORMAT_LINK

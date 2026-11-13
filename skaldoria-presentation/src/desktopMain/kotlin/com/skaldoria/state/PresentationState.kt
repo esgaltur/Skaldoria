@@ -170,6 +170,12 @@ class PresentationState(
 
     var isPenDrawingActive by mutableStateOf(false)
 
+    var isMagnifierActive by mutableStateOf(false)
+        private set
+
+    var magnifierZoom by mutableStateOf(MagnifierZoom.DEFAULT)
+        private set
+
     var currentPenColor by mutableStateOf(Color(0xFFFF1744))
 
     var transition by mutableStateOf(SlideTransition.FADE)
@@ -956,7 +962,21 @@ class PresentationState(
 
     fun togglePenDrawing() {
         isPenDrawingActive = !isPenDrawingActive
-        if (isPenDrawingActive) isLaserPointerActive = false
+        if (isPenDrawingActive) {
+            isLaserPointerActive = false
+            isMagnifierActive = false
+        }
+    }
+
+    // The lens and the pen both own the pointer, so only one of them can be on. The laser
+    // can stay: its dot is drawn on top of the magnified slide.
+    fun toggleMagnifier() {
+        isMagnifierActive = !isMagnifierActive
+        if (isMagnifierActive) isPenDrawingActive = false
+    }
+
+    fun zoomMagnifierBy(steps: Int) {
+        magnifierZoom = MagnifierZoom.step(magnifierZoom, steps)
     }
 
     fun clearAnnotations() = annotationLayer.clear(currentSlideIndex)
