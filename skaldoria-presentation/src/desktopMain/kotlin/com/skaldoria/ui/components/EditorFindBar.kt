@@ -115,6 +115,7 @@ fun EditorFindBar(
                     modifier = Modifier
                         .weight(1f)
                         .focusRequester(searchFocusRequester)
+                        .keepTypingInField()
                         .onKeyEvent { keyEvent ->
                             if (keyEvent.type == KeyEventType.KeyDown) {
                                 when (keyEvent.key) {
@@ -386,6 +387,7 @@ fun EditorFindBar(
                             onValueChange = state::updateReplaceQuery,
                             modifier = Modifier
                                 .weight(1f)
+                                .keepTypingInField()
                                 .onKeyEvent { keyEvent ->
                                     if (keyEvent.type == KeyEventType.KeyDown) {
                                         when (keyEvent.key) {

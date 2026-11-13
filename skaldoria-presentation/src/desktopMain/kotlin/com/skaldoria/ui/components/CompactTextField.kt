@@ -60,6 +60,7 @@ fun CompactTextField(
 ) {
     Row(
         modifier = modifier
+            .keepTypingInField()
             .heightIn(min = minHeight)
             .clip(RoundedCornerShape(cornerRadius))
             .background(containerColor ?: theme.surfaceVariant.copy(alpha = 0.3f))

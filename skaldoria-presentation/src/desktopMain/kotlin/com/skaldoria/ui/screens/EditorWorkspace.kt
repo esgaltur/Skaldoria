@@ -750,6 +750,7 @@ private fun MarkdownSourceField(
                 .fillMaxSize()
                 .focusRequester(focusRequester)
                 .onFocusChanged { isFocused = it.isFocused }
+                .keepTypingInField()
                 // Unbounded height for the field, scrolled by this modifier rather than by the
                 // field's own internal scroller — which is what makes `getLineTop` above
                 // address the whole document instead of just the visible window.

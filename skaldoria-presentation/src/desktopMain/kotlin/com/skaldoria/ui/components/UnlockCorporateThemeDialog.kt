@@ -100,7 +100,7 @@ fun UnlockCorporateThemeDialog(
                             Icon(Icons.Default.VpnKey, contentDescription = null, tint = theme.primary)
                         },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().keepTypingInField(),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = theme.primary,
                             unfocusedBorderColor = theme.cardBorder,

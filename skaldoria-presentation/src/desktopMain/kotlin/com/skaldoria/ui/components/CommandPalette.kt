@@ -122,7 +122,8 @@ fun CommandPalette(
                     placeholder = { Text("Jump to slide by title, code, or keyword...", color = state.currentTheme.textMuted, fontSize = 14.sp) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .focusRequester(focusRequester),
+                        .focusRequester(focusRequester)
+                        .keepTypingInField(),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent,
